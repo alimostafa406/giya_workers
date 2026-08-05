@@ -1,0 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+:root {
+  --bg: #f3f1eb;
+  --bg-soft: #fcfaf6;
+  --primary: #185a4a;
+  --primary-strong: #0f3f33;
+  --accent: #cc7a2f;
+  --border: #d6d2c8;
+  --text: #19231f;
+  --muted: #6b736d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  direction: rtl;
+}
+
+body {
+  margin: 0;
+  font-family: 'Cairo', sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 8% 10%, rgba(204, 122, 47, 0.18) 0, transparent 35%),
+    radial-gradient(circle at 92% 90%, rgba(24, 90, 74, 0.14) 0, transparent 40%),
+    linear-gradient(180deg, #f8f5ef 0%, var(--bg) 100%);
+}
+
+.surface-card {
+  @apply rounded-2xl border border-(--border) bg-(--bg-soft) shadow-sm;
+}
+
+.input-base {
+  @apply w-full rounded-xl border border-(--border) bg-white px-3 py-2 text-sm text-(--text) outline-none transition focus:border-(--primary) focus:ring-2 focus:ring-(--primary)/20;
+}
+
+.btn-primary {
+  @apply rounded-xl bg-(--primary) px-4 py-2 text-sm font-semibold text-white transition hover:bg-(--primary-strong) disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.btn-secondary {
+  @apply rounded-xl border border-(--border) bg-white px-4 py-2 text-sm font-semibold text-(--text) transition hover:bg-stone-100;
+}
