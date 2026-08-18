@@ -4,6 +4,7 @@ import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
 import Table from '../components/Table/Table'
+import { useTranslation } from '../i18n/LanguageContext'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -38,6 +39,7 @@ const getTodayLocalDate = () => {
 }
 
 function Dashboard() {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [teams, setTeams] = useState([])
@@ -89,6 +91,10 @@ function Dashboard() {
     () => todayAttendance.filter((item) => isAbsentStatus(item.status || item.status_key)).length,
     [todayAttendance],
   )
+  const halfDayCount = useMemo(
+    () => todayAttendance.filter((item) => String(item.status || item.status_key || '').toLowerCase() === 'half_day').length,
+    [todayAttendance],
+  )
 
   const notRecordedCount = Math.max(activeWorkers.length - recordedWorkerIds.size, 0)
 
@@ -124,43 +130,43 @@ function Dashboard() {
   }, [attendance])
 
   const cards = [
-    { label: 'عدد الفرق', value: teams.length },
-    { label: 'عدد العمال', value: workers.length },
-    { label: 'حاضر اليوم', value: presentCount },
-    { label: 'غائب اليوم', value: absentCount },
-    { label: 'لم يسجلوا اليوم', value: notRecordedCount },
-    { label: 'فرق لم تسجل اليوم', value: teamsWithMissingAttendanceToday.length },
+    { label: t('dashboard.presentToday'), value: presentCount },
+    { label: t('dashboard.halfDay'), value: halfDayCount },
+    { label: t('dashboard.absentToday'), value: absentCount },
+    { label: t('dashboard.notRecorded'), value: notRecordedCount },
+    { label: t('dashboard.totalWorkers'), value: activeWorkers.length },
+    { label: t('dashboard.lastUpdate'), value: latestAttendance[0]?.updated_at ? new Date(latestAttendance[0].updated_at).toLocaleTimeString() : '—' },
   ]
 
   const columns = [
     {
       key: 'worker',
-      header: 'العامل',
+      header: t('attendance.worker'),
       render: (row) => row.worker?.full_name || row.worker_name || '-',
     },
     {
       key: 'team',
-      header: 'الفريق',
+      header: t('attendance.team'),
       render: (row) => row.team?.name || row.team_name || '-',
     },
     {
       key: 'status',
-      header: 'الحالة',
+      header: t('attendance.status'),
       render: (row) => row.status || '-',
     },
     {
       key: 'check_in',
-      header: 'تسجيل الدخول',
+      header: t('attendance.checkIn'),
       render: (row) => row.check_in || '-',
     },
     {
       key: 'check_out',
-      header: 'تسجيل الخروج',
+      header: t('attendance.checkOut'),
       render: (row) => row.check_out || '-',
     },
     {
       key: 'note',
-      header: 'ملاحظة',
+      header: t('attendance.notes'),
       render: (row) => row.note || '-',
     },
   ]
@@ -168,7 +174,7 @@ function Dashboard() {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-extrabold">ملخص التشغيل اليومي</h2>
+        <h2 className="text-xl font-extrabold">{t('dashboard.title')}</h2>
       </div>
 
       {error ? (
@@ -192,7 +198,7 @@ function Dashboard() {
       </div>
 
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-lg font-bold">آخر عمليات تسجيل الحضور</h3>
+        <h3 className="text-lg font-bold">{t('dashboard.recentAttendance')}</h3>
         <p className="text-sm text-(--muted)">{today}</p>
       </div>
       <Table columns={columns} data={latestAttendance} loading={loading} />

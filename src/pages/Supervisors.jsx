@@ -10,6 +10,7 @@ import {
 import Modal from '../components/Modal/Modal'
 import SupervisorForm from '../components/Forms/SupervisorForm'
 import Table from '../components/Table/Table'
+import { useTranslation } from '../i18n/LanguageContext'
 
 const asArray = (value) => {
 	if (Array.isArray(value)) {
@@ -26,6 +27,7 @@ const getSupervisorIsActive = (supervisor) => {
 }
 
 function Supervisors() {
+	const { t } = useTranslation()
 	const [supervisors, setSupervisors] = useState([])
 	const [teams, setTeams] = useState([])
 	const [searchQuery, setSearchQuery] = useState('')
@@ -95,7 +97,7 @@ function Supervisors() {
 	}
 
 	const handleDelete = async (supervisor) => {
-		const confirmed = window.confirm('هل أنت متأكد من حذف هذا المشرف؟')
+		const confirmed = window.confirm(t('supervisors.deleteConfirm'))
 
 		if (!confirmed) {
 			return
@@ -106,7 +108,7 @@ function Supervisors() {
 		try {
 			await deleteSupervisorRequest(supervisor.id)
 			await loadData()
-			setSuccess('تم حذف المشرف بنجاح')
+			setSuccess(t('supervisors.deleted'))
 		} catch (err) {
 			setError(getErrorMessage(err))
 		}
@@ -124,7 +126,7 @@ function Supervisors() {
 			}
 			closeModal()
 			await loadData()
-			setSuccess(selectedSupervisor?.id ? 'تم تحديث المشرف بنجاح' : 'تم إنشاء المشرف بنجاح')
+			setSuccess(selectedSupervisor?.id ? t('supervisors.updated') : t('supervisors.created'))
 		} catch (err) {
 			setError(getErrorMessage(err))
 		} finally {
@@ -143,34 +145,34 @@ function Supervisors() {
 				is_active: !getSupervisorIsActive(supervisor),
 			})
 			await loadData()
-			setSuccess(getSupervisorIsActive(supervisor) ? 'تم تعطيل المشرف بنجاح' : 'تم تفعيل المشرف بنجاح')
+			setSuccess(getSupervisorIsActive(supervisor) ? t('supervisors.disabled') : t('supervisors.enabled'))
 		} catch (err) {
 			setError(getErrorMessage(err))
 		}
 	}
 
 	const columns = [
-		{ key: 'username', header: 'اسم المستخدم', render: (row) => row.username || '-' },
-		{ key: 'display_name', header: 'الاسم الكامل', render: (row) => row.full_name || '-' },
-		{ key: 'team_name', header: 'الفريق', render: (row) => row.team_name || row.team?.name || '-' },
-		{ key: 'status', header: 'الحالة', render: (row) => (getSupervisorIsActive(row) ? 'نشط' : 'غير نشط') },
+		{ key: 'username', header: t('supervisors.username'), render: (row) => row.username || '-' },
+		{ key: 'display_name', header: t('supervisors.fullName'), render: (row) => row.full_name || '-' },
+		{ key: 'team_name', header: t('common.team'), render: (row) => row.team_name || row.team?.name || '-' },
+		{ key: 'status', header: t('common.status'), render: (row) => (getSupervisorIsActive(row) ? t('common.active') : t('common.inactive')) },
 		{
 			key: 'actions',
-			header: 'الإجراءات',
+			header: t('common.actions'),
 			render: (row) => (
 				<div className="flex gap-2">
 					<button type="button" onClick={() => openEdit(row)} className="btn-secondary px-3 py-1">
-						تعديل
+						{t('common.edit')}
 					</button>
 					<button type="button" onClick={() => handleToggleActive(row)} className="btn-secondary px-3 py-1">
-						{getSupervisorIsActive(row) ? 'تعطيل' : 'تفعيل'}
+						{getSupervisorIsActive(row) ? t('common.disable') : t('common.enable')}
 					</button>
 					<button
 						type="button"
 						onClick={() => handleDelete(row)}
 						className="rounded-lg bg-red-600 px-3 py-1 text-sm font-semibold text-white transition hover:bg-red-700"
 					>
-						حذف
+						{t('common.delete')}
 					</button>
 				</div>
 			),
@@ -180,9 +182,9 @@ function Supervisors() {
 	return (
 		<section>
 			<div className="mb-4 flex items-center justify-between">
-				<h2 className="text-xl font-extrabold">المشرفون</h2>
+				<h2 className="text-xl font-extrabold">{t('supervisors.title')}</h2>
 				<button type="button" className="btn-primary" onClick={openCreate}>
-					إضافة مشرف
+					{t('supervisors.add')}
 				</button>
 			</div>
 
@@ -196,7 +198,7 @@ function Supervisors() {
 					value={searchQuery}
 					onChange={(e) => setSearchQuery(e.target.value)}
 					className="input-base"
-					placeholder="ابحث باسم المستخدم أو الاسم الكامل أو اسم الفريق"
+					placeholder={t('supervisors.searchPlaceholder')}
 				/>
 			</div>
 
@@ -204,10 +206,10 @@ function Supervisors() {
 				columns={columns}
 				data={filteredSupervisors}
 				loading={loading}
-				emptyMessage={searchQuery.trim() ? 'لا توجد نتائج' : 'لا يوجد مشرفون'}
+				emptyMessage={searchQuery.trim() ? t('common.noResults') : t('supervisors.noSupervisors')}
 			/>
 
-			<Modal isOpen={isModalOpen} title={selectedSupervisor ? 'تعديل مشرف' : 'إضافة مشرف'} onClose={closeModal}>
+			<Modal isOpen={isModalOpen} title={selectedSupervisor ? t('supervisors.edit') : t('supervisors.add')} onClose={closeModal}>
 				<SupervisorForm initialValues={selectedSupervisor} teams={teams} onSubmit={handleSubmit} isSaving={isSaving} />
 			</Modal>
 		</section>

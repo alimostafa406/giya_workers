@@ -7,21 +7,23 @@ function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   return (
-    <div className="min-h-screen lg:flex">
+    <div className="min-h-screen bg-(--bg) lg:flex">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       {isSidebarOpen ? (
         <button
           type="button"
-          aria-label="close sidebar"
-          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          aria-label="إغلاق القائمة الجانبية"
+          className="fixed inset-0 z-30 bg-slate-950/30 backdrop-blur-[1px] lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       ) : null}
 
-      <main className="z-10 flex-1 p-4 lg:p-6">
+      <main className="z-10 min-w-0 flex-1 p-4 sm:p-5 lg:p-7">
         <Navbar onOpenSidebar={() => setIsSidebarOpen(true)} />
-        <Outlet />
+        <div className="mx-auto w-full max-w-7xl">
+          <Outlet />
+        </div>
       </main>
     </div>
   )

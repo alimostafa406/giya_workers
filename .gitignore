@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+.local_hikvision_faces/
+public/hikvision_faces/
+.env.hikvision_sync
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +25,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.env
+.env.hikvision_sync
+__pycache__/
+hikvision_raw/
+src/data/hikvisionRawData.js

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from '../../i18n/LanguageContext'
 
 function TeamForm({ initialValues, supervisors, onSubmit, isSaving }) {
+  const { t } = useTranslation()
   const [name, setName] = useState(initialValues?.name || '')
   const [supervisorId, setSupervisorId] = useState(initialValues?.supervisor_id || '')
   const [isActive, setIsActive] = useState(Boolean(initialValues?.is_active ?? true))
@@ -23,24 +25,24 @@ function TeamForm({ initialValues, supervisors, onSubmit, isSaving }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="mb-1 block text-sm font-semibold">اسم الفريق</label>
+        <label className="mb-1 block text-sm font-semibold">{t('teams.name')}</label>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="input-base"
-          placeholder="مثال: فريق الأساسات"
+          placeholder={t('teams.nameExample')}
           required
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-semibold">المشرف</label>
+        <label className="mb-1 block text-sm font-semibold">{t('teams.supervisor')}</label>
         <select
           value={supervisorId}
           onChange={(e) => setSupervisorId(e.target.value)}
           className="input-base"
         >
-          <option value="">بدون مشرف</option>
+          <option value="">{t('common.noSupervisor')}</option>
           {supervisors.map((supervisor) => (
             <option key={supervisor.id} value={supervisor.id}>
               {supervisor.full_name}
@@ -55,10 +57,10 @@ function TeamForm({ initialValues, supervisors, onSubmit, isSaving }) {
           checked={isActive}
           onChange={(e) => setIsActive(e.target.checked)}
         />
-        نشط
+        {t('common.active')}
       </label>
       <button type="submit" className="btn-primary" disabled={isSaving}>
-        {isSaving ? 'جاري الحفظ...' : 'حفظ'}
+        {isSaving ? t('common.saving') : t('common.save')}
       </button>
     </form>
   )

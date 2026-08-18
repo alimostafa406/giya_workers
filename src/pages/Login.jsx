@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useAuthStore } from '../store/authStore'
+import { useTranslation } from '../i18n/LanguageContext'
 
 function Login() {
+  const { t } = useTranslation()
   const isReady = useAuthStore((state) => state.isReady)
   const login = useAuthStore((state) => state.login)
   const isLoading = useAuthStore((state) => state.isLoading)
@@ -15,7 +17,7 @@ function Login() {
   if (!isReady) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-(--muted)">
-        جاري تحميل الجلسة...
+        {t('app.loading')}
       </div>
     )
   }
@@ -29,12 +31,12 @@ function Login() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-md rounded-3xl border border-(--border) bg-(--bg-soft) p-6 shadow-xl">
         <p className="text-xs text-(--muted)">Workers Attendance Admin</p>
-        <h1 className="mb-5 mt-2 text-2xl font-extrabold">تسجيل دخول الإدارة</h1>
-        <p className="mb-5 text-sm text-(--muted)">تسجيل دخول المدير عبر البريد الإلكتروني وكلمة المرور.</p>
+        <h1 className="mb-5 mt-2 text-2xl font-extrabold">{t('app.name')}</h1>
+        <p className="mb-5 text-sm text-(--muted)">{t('common.currentUser')}</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-semibold">البريد الإلكتروني</label>
+            <label className="mb-1 block text-sm font-semibold">{t('login.email')}</label>
             <input
               type="email"
               value={form.email}
@@ -45,7 +47,7 @@ function Login() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-semibold">كلمة المرور</label>
+            <label className="mb-1 block text-sm font-semibold">{t('login.password')}</label>
             <input
               type="password"
               value={form.password}
@@ -64,7 +66,7 @@ function Login() {
           ) : null}
 
           <button className="btn-primary w-full" type="submit" disabled={isLoading}>
-            {isLoading ? 'جاري تسجيل الدخول...' : 'دخول'}
+            {isLoading ? '...' : t('login.signIn')}
           </button>
         </form>
       </div>

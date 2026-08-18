@@ -5,6 +5,7 @@ import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
 import Modal from '../components/Modal/Modal'
 import Table from '../components/Table/Table'
+import { useTranslation } from '../i18n/LanguageContext'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -25,12 +26,13 @@ const getTodayLocalDate = () => {
 const getAttendanceDate = (row) => row.attendance_date || row.date || ''
 const getAttendanceKey = (row) => String(row.worker_id || row.id || '')
 
-const formatSupervisorPhone = (phone) => {
+const formatSupervisorPhone = (phone, t) => {
   const normalized = String(phone || '').trim()
-  return normalized || 'لا يوجد رقم هاتف'
+  return normalized || t('missingAttendance.noPhone')
 }
 
 function MissingAttendance() {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [teams, setTeams] = useState([])
@@ -92,24 +94,24 @@ function MissingAttendance() {
         return {
           id: team.id,
           teamName: team.name || '-',
-          supervisorName: team.supervisor?.full_name || team.supervisor_name || 'بدون مشرف',
-          supervisorPhone: formatSupervisorPhone(team.supervisor?.phone),
+          supervisorName: team.supervisor?.full_name || team.supervisor_name || t('common.noSupervisor'),
+          supervisorPhone: formatSupervisorPhone(team.supervisor?.phone, t),
           missingCount: missingWorkers.length,
           missingWorkers,
         }
       })
       .filter(Boolean)
-  }, [teams, workers, recordedWorkerIds])
+  }, [teams, workers, recordedWorkerIds, t])
 
   const missingWorkersColumns = [
     {
       key: 'full_name',
-      header: 'اسم العامل',
+      header: t('workers.name'),
       render: (row) => row.full_name || '-',
     },
     {
       key: 'phone',
-      header: 'الهاتف',
+      header: t('workers.phone'),
       render: (row) => row.phone || '-',
     },
   ]
@@ -117,7 +119,7 @@ function MissingAttendance() {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-extrabold">فرق لم تسجل</h2>
+        <h2 className="text-xl font-extrabold">{t('missingAttendance.title')}</h2>
         <p className="text-sm text-(--muted)">{today}</p>
       </div>
 
@@ -128,23 +130,23 @@ function MissingAttendance() {
       ) : null}
 
       {loading ? (
-        <div className="surface-card p-4 text-sm text-(--muted)">جاري تحميل البيانات...</div>
+        <div className="surface-card p-4 text-sm text-(--muted)">{t('missingAttendance.loading')}</div>
       ) : missingTeams.length === 0 ? (
-        <div className="surface-card p-4 text-sm text-(--muted)">لا توجد فرق متأخرة في تسجيل الحضور اليوم.</div>
+        <div className="surface-card p-4 text-sm text-(--muted)">{t('missingAttendance.empty')}</div>
       ) : (
         <div className="space-y-3">
           {missingTeams.map((team) => (
             <div key={team.id} className="surface-card p-4">
-              <p className="font-semibold">الفريق: {team.teamName}</p>
-              <p className="text-sm">المشرف: {team.supervisorName}</p>
-              <p className="text-sm">الهاتف: {team.supervisorPhone}</p>
-              <p className="mt-1 text-sm font-semibold text-red-700">لم يسجل: {team.missingCount} عامل</p>
+              <p className="font-semibold">{t('common.team')}: {team.teamName}</p>
+              <p className="text-sm">{t('common.supervisor')}: {team.supervisorName}</p>
+              <p className="text-sm">{t('common.phone')}: {team.supervisorPhone}</p>
+              <p className="mt-1 text-sm font-semibold text-red-700">{t('missingAttendance.missing', { count: team.missingCount })}</p>
               <button
                 type="button"
                 className="btn-secondary mt-2 px-3 py-1"
                 onClick={() => setSelectedTeam(team)}
               >
-                عرض العمال
+                {t('missingAttendance.showWorkers')}
               </button>
             </div>
           ))}
@@ -153,14 +155,14 @@ function MissingAttendance() {
 
       <Modal
         isOpen={Boolean(selectedTeam)}
-        title={`العمال غير المسجلين - ${selectedTeam?.teamName || ''}`}
+        title={t('missingAttendance.unrecordedWorkers', { team: selectedTeam?.teamName || '' })}
         onClose={() => setSelectedTeam(null)}
       >
         <Table
           columns={missingWorkersColumns}
           data={selectedTeam?.missingWorkers || []}
           loading={false}
-          emptyMessage="لا يوجد عمال غير مسجلين."
+          emptyMessage={t('missingAttendance.noUnrecordedWorkers')}
         />
       </Modal>
     </section>

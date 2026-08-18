@@ -2,14 +2,23 @@
 @import 'tailwindcss';
 
 :root {
-  --bg: #f3f1eb;
-  --bg-soft: #fcfaf6;
-  --primary: #185a4a;
-  --primary-strong: #0f3f33;
-  --accent: #cc7a2f;
-  --border: #d6d2c8;
-  --text: #19231f;
-  --muted: #6b736d;
+  --bg: #f5f7f8;
+  --bg-soft: #ffffff;
+  --surface-subtle: #f8fafb;
+  --primary: #0f766e;
+  --primary-strong: #115e59;
+  --primary-soft: #e6f4f1;
+  --accent: #b7791f;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #17212b;
+  --muted: #64748b;
+  --success: #15803d;
+  --success-soft: #f0fdf4;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --danger: #b91c1c;
+  --danger-soft: #fef2f2;
 }
 
 * {
@@ -24,30 +33,89 @@ body,
 
 html {
   direction: rtl;
+  background: var(--bg);
+}
+
+html[dir='ltr'] {
+  direction: ltr;
 }
 
 body {
   margin: 0;
   font-family: 'Cairo', sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(circle at 8% 10%, rgba(204, 122, 47, 0.18) 0, transparent 35%),
-    radial-gradient(circle at 92% 90%, rgba(24, 90, 74, 0.14) 0, transparent 40%),
-    linear-gradient(180deg, #f8f5ef 0%, var(--bg) 100%);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html[dir='ltr'] .app-sidebar {
+  right: auto;
+  left: 0;
+  border-left: 0;
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.06);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 .surface-card {
-  @apply rounded-2xl border border-(--border) bg-(--bg-soft) shadow-sm;
+  @apply rounded-2xl border border-(--border) bg-(--bg-soft) shadow-[0_1px_2px_rgba(15,23,42,0.03),0_3px_10px_rgba(15,23,42,0.02)];
 }
 
 .input-base {
-  @apply w-full rounded-xl border border-(--border) bg-white px-3 py-2 text-sm text-(--text) outline-none transition focus:border-(--primary) focus:ring-2 focus:ring-(--primary)/20;
+  @apply w-full rounded-xl border border-(--border-strong) bg-white px-3.5 py-2.5 text-sm text-(--text) outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-(--primary) focus:ring-4 focus:ring-(--primary)/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400;
 }
 
 .btn-primary {
-  @apply rounded-xl bg-(--primary) px-4 py-2 text-sm font-semibold text-white transition hover:bg-(--primary-strong) disabled:cursor-not-allowed disabled:opacity-60;
+  @apply inline-flex items-center justify-center rounded-xl bg-(--primary) px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-(--primary-strong) focus:outline-none focus:ring-4 focus:ring-(--primary)/15 disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .btn-secondary {
-  @apply rounded-xl border border-(--border) bg-white px-4 py-2 text-sm font-semibold text-(--text) transition hover:bg-stone-100;
+  @apply inline-flex items-center justify-center rounded-xl border border-(--border-strong) bg-white px-4 py-2.5 text-sm font-bold text-(--text) shadow-sm transition hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.btn-danger {
+  @apply inline-flex items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.status-badge {
+  @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold;
+}
+
+.status-badge--success {
+  @apply bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15;
+}
+
+.status-badge--warning {
+  @apply bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15;
+}
+
+.status-badge--danger {
+  @apply bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/15;
+}
+
+.status-badge--neutral {
+  @apply bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-500/10;
+}
+
+.alert {
+  @apply flex items-start gap-3 rounded-xl border px-4 py-3 text-sm font-medium;
+}
+
+.alert--error {
+  @apply border-red-200 bg-red-50 text-red-700;
+}
+
+.alert--success {
+  @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+}
+
+.alert--warning {
+  @apply border-amber-200 bg-amber-50 text-amber-800;
 }

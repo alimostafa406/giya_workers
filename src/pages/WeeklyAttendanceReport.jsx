@@ -7,6 +7,7 @@ import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
 import Table from '../components/Table/Table'
+import { useTranslation } from '../i18n/LanguageContext'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -29,7 +30,10 @@ const getDefaultWeekRange = () => {
   const day = today.getDay()
   const offsetToSaturday = (day + 1) % 7
   const start = new Date(today)
-  start.setDate(today.getDate() - offsetToSaturday)
+  // On Saturday a new workweek has just begun. Open the report on the most
+  // recently completed Saturday–Friday week so Friday's finalized attendance
+  // is visible immediately; managers can still select any range manually.
+  start.setDate(today.getDate() - offsetToSaturday - (day === 6 ? 7 : 0))
   const end = new Date(start)
   end.setDate(start.getDate() + 6)
 
@@ -66,20 +70,31 @@ const buildDateRange = (startDate, endDate) => {
 const getAttendanceDate = (row) => row.attendance_date || row.date || '-'
 const getAttendanceKey = (row) => row.worker_id || row.id
 
-const isPresentStatus = (status) => {
+const getReportDayStatus = (status) => {
   const normalized = String(status || '').toLowerCase()
-  return normalized === 'present' || normalized === 'حاضر'
+  if (normalized === 'present' || normalized === 'حاضر') {
+    return 'present'
+  }
+  if (normalized === 'half_day') {
+    return 'half_day'
+  }
+  return 'absent'
 }
 
-const getDayLabel = (dateText) => {
+const getDayLabel = (dateText, language) => {
   const date = toMidnightDate(dateText)
-  const dayName = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date)
+  const locale = { ar: 'ar', en: 'en-US', fr: 'fr-FR' }[language] || 'en-US'
+  const dayName = new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(date)
   return `${dayName} ${dateText.slice(5)}`
 }
 
-const statusToLabel = (status) => (status === 'present' ? 'Present' : 'Absent')
-
 function WeeklyAttendanceReport() {
+  const { t, language } = useTranslation()
+  const statusToLabel = (status) => {
+    if (status === 'present') return t('reports.present')
+    if (status === 'half_day') return '½'
+    return '-'
+  }
   const defaultWeekRange = useMemo(() => getDefaultWeekRange(), [])
 
   const [loading, setLoading] = useState(true)
@@ -127,20 +142,29 @@ function WeeklyAttendanceReport() {
 
       byId.set(String(team.supervisor_id), {
         id: String(team.supervisor_id),
-        name: team.supervisor?.full_name || team.supervisor_name || 'بدون مشرف',
+        name: team.supervisor?.full_name || team.supervisor_name || t('common.noSupervisor'),
       })
     })
 
     return Array.from(byId.values())
-  }, [teams])
+  }, [teams, t])
 
   const weeklyDates = useMemo(
     () => buildDateRange(weeklyFilters.startDate, weeklyFilters.endDate),
     [weeklyFilters.startDate, weeklyFilters.endDate],
   )
 
+  const selectedTeam = useMemo(
+    () => teams.find((team) => String(team.id) === String(weeklyFilters.teamId)) || null,
+    [teams, weeklyFilters.teamId],
+  )
+
+  const reportTitle = selectedTeam
+    ? t('reports.weeklyTitleForTeam', { team: selectedTeam.name })
+    : t('reports.weeklyTitle')
+
   const weeklyReportRows = useMemo(() => {
-    if (weeklyDates.length === 0) {
+    if (!weeklyFilters.teamId || weeklyDates.length === 0) {
       return []
     }
 
@@ -157,9 +181,9 @@ function WeeklyAttendanceReport() {
       const workerId = String(getAttendanceKey(row))
       const mapKey = `${workerId}|${date}`
       const prev = attendanceByWorkerDay.get(mapKey)
-      const nextStatus = isPresentStatus(row.status || row.status_key) ? 'present' : 'absent'
+      const nextStatus = getReportDayStatus(row.status || row.status_key)
 
-      if (!prev || (prev === 'absent' && nextStatus === 'present')) {
+      if (!prev || (prev !== 'present' && nextStatus === 'present')) {
         attendanceByWorkerDay.set(mapKey, nextStatus)
       }
     })
@@ -192,7 +216,7 @@ function WeeklyAttendanceReport() {
         id: worker.id,
         workerName: worker.full_name || '-',
         teamName: team?.name || worker.team?.name || worker.team_name || '-',
-        supervisorName: team?.supervisor?.full_name || team?.supervisor_name || 'بدون مشرف',
+        supervisorName: team?.supervisor?.full_name || team?.supervisor_name || t('common.noSupervisor'),
       }
 
       let presentDays = 0
@@ -214,30 +238,30 @@ function WeeklyAttendanceReport() {
 
       return row
     })
-  }, [attendance, teams, weeklyDates, weeklyFilters.supervisorId, weeklyFilters.teamId, workers])
+  }, [attendance, teams, weeklyDates, weeklyFilters.supervisorId, weeklyFilters.teamId, workers, t])
 
   const weeklyColumns = useMemo(() => {
     const baseColumns = [
       {
         key: 'workerName',
-        header: 'Worker',
+        header: t('reports.worker'),
         render: (row) => row.workerName,
       },
       {
         key: 'teamName',
-        header: 'Team',
+        header: t('reports.team'),
         render: (row) => row.teamName,
       },
       {
         key: 'supervisorName',
-        header: 'Supervisor',
+        header: t('reports.supervisor'),
         render: (row) => row.supervisorName,
       },
     ]
 
     const dayColumns = weeklyDates.map((date, index) => ({
       key: `day_${index}`,
-      header: getDayLabel(date),
+      header: getDayLabel(date, language),
       render: (row) => statusToLabel(row[`day_${index}`]),
     }))
 
@@ -246,27 +270,27 @@ function WeeklyAttendanceReport() {
       ...dayColumns,
       {
         key: 'presentDays',
-        header: 'Present Days',
+        header: t('reports.presentDays'),
         render: (row) => row.presentDays,
       },
       {
         key: 'absentDays',
-        header: 'Absent Days',
+        header: t('reports.absentDays'),
         render: (row) => row.absentDays,
       },
     ]
-  }, [weeklyDates])
+  }, [weeklyDates, language, t])
 
   const exportHeaders = useMemo(
     () => [
-      'Worker',
-      'Team',
-      'Supervisor',
-      ...weeklyDates.map((date) => getDayLabel(date)),
-      'Present Days',
-      'Absent Days',
+      t('reports.worker'),
+      t('reports.team'),
+      t('reports.supervisor'),
+      ...weeklyDates.map((date) => getDayLabel(date, language)),
+      t('reports.presentDays'),
+      t('reports.absentDays'),
     ],
-    [weeklyDates],
+    [weeklyDates, language, t],
   )
 
   const exportRows = useMemo(
@@ -282,6 +306,10 @@ function WeeklyAttendanceReport() {
   )
 
   const handlePrintWeeklyReport = () => {
+    if (!selectedTeam) {
+      return
+    }
+
     const printWindow = window.open('', '_blank')
     if (!printWindow) {
       return
@@ -294,7 +322,7 @@ function WeeklyAttendanceReport() {
     printWindow.document.write(`
       <html>
         <head>
-          <title>Weekly Attendance Report</title>
+          <title>${reportTitle}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
             table { border-collapse: collapse; width: 100%; }
@@ -303,7 +331,7 @@ function WeeklyAttendanceReport() {
           </style>
         </head>
         <body>
-          <h2>Weekly Attendance Report</h2>
+          <h2>${reportTitle}</h2>
           <table>
             <thead>
               <tr>${exportHeaders.map((header) => `<th>${header}</th>`).join('')}</tr>
@@ -319,10 +347,17 @@ function WeeklyAttendanceReport() {
   }
 
   const handleExportWeeklyPdf = () => {
+    if (!selectedTeam) {
+      return
+    }
+
     const doc = new jsPDF({ orientation: 'landscape' })
+    doc.setFontSize(14)
+    doc.text(reportTitle, 14, 14)
     autoTable(doc, {
       head: [exportHeaders],
       body: exportRows,
+      startY: 20,
       styles: { fontSize: 8 },
       headStyles: { fillColor: [39, 39, 42] },
     })
@@ -330,16 +365,20 @@ function WeeklyAttendanceReport() {
   }
 
   const handleExportWeeklyExcel = () => {
-    const sheet = XLSX.utils.aoa_to_sheet([exportHeaders, ...exportRows])
+    if (!selectedTeam) {
+      return
+    }
+
+    const sheet = XLSX.utils.aoa_to_sheet([[reportTitle], [], exportHeaders, ...exportRows])
     const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, sheet, 'Weekly Attendance')
+    XLSX.utils.book_append_sheet(workbook, sheet, t('reports.weeklySheet'))
     XLSX.writeFile(workbook, `weekly-attendance-${weeklyFilters.startDate}-to-${weeklyFilters.endDate}.xlsx`)
   }
 
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-extrabold">Weekly Attendance Report</h2>
+        <h2 className="text-xl font-extrabold">{reportTitle}</h2>
       </div>
 
       {error ? (
@@ -350,7 +389,7 @@ function WeeklyAttendanceReport() {
 
       <div className="surface-card mb-4 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
         <div>
-          <label className="mb-1 block text-sm font-semibold">Start Date</label>
+          <label className="mb-1 block text-sm font-semibold">{t('reports.from')}</label>
           <input
             type="date"
             value={weeklyFilters.startDate}
@@ -360,7 +399,7 @@ function WeeklyAttendanceReport() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-semibold">End Date</label>
+          <label className="mb-1 block text-sm font-semibold">{t('reports.to')}</label>
           <input
             type="date"
             value={weeklyFilters.endDate}
@@ -370,13 +409,13 @@ function WeeklyAttendanceReport() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-semibold">Team</label>
+          <label className="mb-1 block text-sm font-semibold">{t('reports.team')}</label>
           <select
             value={weeklyFilters.teamId}
             onChange={(e) => setWeeklyFilters((prev) => ({ ...prev, teamId: e.target.value }))}
             className="input-base"
           >
-            <option value="">All Teams</option>
+            <option value="">{t('common.chooseTeam')}</option>
             {teams.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
@@ -386,13 +425,13 @@ function WeeklyAttendanceReport() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-semibold">Supervisor</label>
+          <label className="mb-1 block text-sm font-semibold">{t('reports.supervisor')}</label>
           <select
             value={weeklyFilters.supervisorId}
             onChange={(e) => setWeeklyFilters((prev) => ({ ...prev, supervisorId: e.target.value }))}
             className="input-base"
           >
-            <option value="">All Supervisors</option>
+            <option value="">{t('reports.allSupervisors')}</option>
             {supervisorsOptions.map((supervisor) => (
               <option key={supervisor.id} value={supervisor.id}>
                 {supervisor.name}
@@ -403,26 +442,35 @@ function WeeklyAttendanceReport() {
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <button type="button" className="btn-secondary px-3 py-2" onClick={handlePrintWeeklyReport}>
-          Print Report
+        <button type="button" className="btn-secondary px-3 py-2" onClick={handlePrintWeeklyReport} disabled={!selectedTeam}>
+          {t('reports.print')}
         </button>
-        <button type="button" className="btn-secondary px-3 py-2" onClick={handleExportWeeklyPdf}>
-          Export PDF
+        <button type="button" className="btn-secondary px-3 py-2" onClick={handleExportWeeklyPdf} disabled={!selectedTeam}>
+          {t('reports.pdf')}
         </button>
-        <button type="button" className="btn-secondary px-3 py-2" onClick={handleExportWeeklyExcel}>
-          Export Excel (.xlsx)
+        <button type="button" className="btn-secondary px-3 py-2" onClick={handleExportWeeklyExcel} disabled={!selectedTeam}>
+          {t('reports.excel')}
         </button>
       </div>
 
-      {weeklyDates.length === 0 ? (
-        <div className="surface-card p-4 text-sm text-(--muted)">يرجى اختيار مدى زمني صحيح للتقرير الأسبوعي.</div>
+      {!weeklyFilters.teamId ? (
+        <div className="surface-card p-4 text-sm text-(--muted)">{t('reports.selectTeamToView')}</div>
+      ) : weeklyDates.length === 0 ? (
+        <div className="surface-card p-4 text-sm text-(--muted)">{t('reports.invalidRange')}</div>
       ) : (
-        <Table
-          columns={weeklyColumns}
-          data={weeklyReportRows}
-          loading={loading}
-          emptyMessage="لا توجد بيانات للفلاتر المختارة"
-        />
+        <>
+          <p className="mb-3 text-xs text-(--muted)">
+            <span className="font-bold">-</span> = {t('reports.absent')}
+            <span className="mx-2">·</span>
+            <span className="font-bold">½</span> = {t('attendance.halfDay')}
+          </p>
+          <Table
+            columns={weeklyColumns}
+            data={weeklyReportRows}
+            loading={loading}
+            emptyMessage={t('reports.noData')}
+          />
+        </>
       )}
     </section>
   )

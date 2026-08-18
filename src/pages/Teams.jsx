@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getErrorMessage } from '../api/axios'
+import { getBiometricMappingsRequest } from '../api/biometricMappingApi'
 import { getSupervisorsRequest } from '../api/supervisorsApi'
 import {
   createTeamRequest,
@@ -9,6 +10,7 @@ import {
 import TeamForm from '../components/Forms/TeamForm'
 import Modal from '../components/Modal/Modal'
 import Table from '../components/Table/Table'
+import { useTranslation } from '../i18n/LanguageContext'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -21,6 +23,7 @@ const asArray = (value) => {
 }
 
 function Teams() {
+  const { t } = useTranslation()
   const [teams, setTeams] = useState([])
   const [supervisors, setSupervisors] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -30,6 +33,7 @@ function Teams() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedTeam, setSelectedTeam] = useState(null)
   const [detailsTeam, setDetailsTeam] = useState(null)
+  const [biometricMappings, setBiometricMappings] = useState([])
 
   const getTeamIsActive = (team) => {
     return Boolean(team?.is_active)
@@ -79,6 +83,13 @@ function Teams() {
       ])
       setTeams(asArray(teamsRes.data))
       setSupervisors(asArray(supervisorsRes.data))
+      try {
+        const mappingsRes = await getBiometricMappingsRequest()
+        setBiometricMappings(asArray(mappingsRes.data).filter((mapping) => mapping.is_active !== false))
+      } catch {
+        // Teams remain usable before the biometric mapping migration is applied.
+        setBiometricMappings([])
+      }
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -89,6 +100,15 @@ function Teams() {
   useEffect(() => {
     loadTeams()
   }, [])
+
+  const biometricByWorkerId = useMemo(() => {
+    const result = new Map()
+    biometricMappings.forEach((mapping) => {
+      const workerId = String(mapping.worker_id)
+      result.set(workerId, [...(result.get(workerId) || []), mapping])
+    })
+    return result
+  }, [biometricMappings])
 
   const openCreate = () => {
     setSelectedTeam(null)
@@ -174,27 +194,27 @@ function Teams() {
   const columns = [
     {
       key: 'name',
-      header: 'اسم الفريق',
+      header: t('teams.name'),
       render: (row) => row.name,
     },
     {
       key: 'supervisor_name',
-      header: 'المشرف',
-      render: (row) => row.supervisor_name || row.supervisor?.name || 'بدون مشرف',
+      header: t('teams.supervisor'),
+      render: (row) => row.supervisor_name || row.supervisor?.name || t('common.noSupervisor'),
     },
     {
       key: 'workers_count',
-      header: 'عدد العمال',
+      header: t('teams.workerCount'),
       render: (row) => row.workers_count || row.workers?.length || 0,
     },
     {
       key: 'status',
-      header: 'الحالة',
-      render: (row) => (getTeamIsActive(row) ? 'نشط' : 'غير نشط'),
+      header: t('common.status'),
+      render: (row) => (getTeamIsActive(row) ? t('common.active') : t('common.inactive')),
     },
     {
       key: 'actions',
-      header: 'الإجراءات',
+      header: t('common.actions'),
       render: (row) => (
         <div className="flex gap-2">
           <button
@@ -202,21 +222,21 @@ function Teams() {
             onClick={() => openDetails(row)}
             className="btn-secondary px-3 py-1"
           >
-            عرض الأعضاء
+            {t('teams.viewMembers')}
           </button>
           <button
             type="button"
             onClick={() => openEdit(row)}
             className="btn-secondary px-3 py-1"
           >
-            تعديل
+            {t('common.edit')}
           </button>
           <button
             type="button"
             onClick={() => handleToggleActive(row)}
             className="btn-secondary px-3 py-1"
           >
-            {getTeamIsActive(row) ? 'تعطيل' : 'تفعيل'}
+            {getTeamIsActive(row) ? t('common.disable') : t('common.enable')}
           </button>
         </div>
       ),
@@ -226,9 +246,9 @@ function Teams() {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-extrabold">الفرق</h2>
+        <h2 className="text-xl font-extrabold">{t('teams.title')}</h2>
         <button type="button" className="btn-primary" onClick={openCreate}>
-          إضافة فريق
+          {t('teams.add')}
         </button>
       </div>
 
@@ -238,7 +258,7 @@ function Teams() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="input-base"
-          placeholder="ابحث باسم الفريق أو اسم المشرف"
+          placeholder={t('teams.searchPlaceholder')}
         />
       </div>
 
@@ -252,12 +272,12 @@ function Teams() {
         columns={columns}
         data={filteredTeams}
         loading={loading}
-        emptyMessage={searchQuery.trim() ? 'لا توجد نتائج' : 'لا توجد فرق'}
+        emptyMessage={searchQuery.trim() ? t('common.noResults') : t('teams.noTeams')}
       />
 
       <Modal
         isOpen={isModalOpen}
-        title={selectedTeam ? 'تعديل فريق' : 'إضافة فريق'}
+        title={selectedTeam ? t('teams.edit') : t('teams.add')}
         onClose={closeModal}
       >
         <TeamForm
@@ -270,32 +290,33 @@ function Teams() {
 
       <Modal
         isOpen={Boolean(detailsTeam)}
-        title={`تفاصيل الفريق: ${detailsTeam?.name || ''}`}
+        title={`${t('common.details')}: ${detailsTeam?.name || ''}`}
         onClose={closeDetails}
       >
         <div className="space-y-4">
           <div>
-            <p className="text-sm text-(--muted)">المشرف</p>
+            <p className="text-sm text-(--muted)">{t('teams.supervisor')}</p>
             <p className="mt-1 font-semibold">
-              {detailsTeam?.supervisor_name || detailsTeam?.supervisor?.name || 'بدون مشرف'}
+              {detailsTeam?.supervisor_name || detailsTeam?.supervisor?.name || t('common.noSupervisor')}
             </p>
           </div>
 
           <div>
-            <p className="text-sm text-(--muted)">أعضاء الفريق</p>
+            <p className="text-sm text-(--muted)">{t('teams.members')}</p>
             <div className="mt-2 space-y-2">
               {detailsTeam?.workers?.length ? (
                 detailsTeam.workers.map((worker) => (
-                  <div
-                    key={worker.id}
-                    className="rounded-xl border border-(--border) bg-white px-3 py-2"
-                  >
-                    <p className="font-semibold">{worker.full_name}</p>
-                    <p className="text-xs text-(--muted)">{worker.is_active === false ? 'غير نشط' : 'نشط'}</p>
-                  </div>
+                  (() => {
+                    const mappings = biometricByWorkerId.get(String(worker.id)) || []
+                    const mapping = mappings[0]
+                    return <div key={worker.id} className="rounded-xl border border-(--border) bg-white px-3 py-2">
+                      <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2">{mapping?.device_picture_url ? <img src={mapping.device_picture_url} alt="" className="h-7 w-7 rounded-lg border border-(--border) object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}<p className="truncate font-semibold">{worker.full_name}</p></div>{mappings.length > 1 ? <span className="status-badge status-badge--danger">{t('workers.conflict')}</span> : mapping ? <span className="status-badge status-badge--success">{t('workers.linked')}</span> : <span className="status-badge status-badge--neutral">{t('workers.unlinked')}</span>}</div>
+                      <p className="mt-1 text-xs text-(--muted)">{worker.is_active === false ? t('common.inactive') : t('common.active')}{mapping ? ` · ${t('teams.deviceNumber')}: ${mapping.device_employee_no}` : ''}</p>
+                    </div>
+                  })()
                 ))
               ) : (
-                <p className="text-sm text-(--muted)">لا يوجد أعضاء في هذا الفريق.</p>
+                <p className="text-sm text-(--muted)">{t('teams.noMembers')}</p>
               )}
             </div>
           </div>

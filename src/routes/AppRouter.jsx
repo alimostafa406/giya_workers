@@ -10,6 +10,8 @@ import {
 import { supabase } from '../lib/supabase'
 import Layout from '../components/Layout/Layout'
 import Attendance from '../pages/Attendance'
+import SpecialStaffAttendance from '../pages/SpecialStaffAttendance'
+import BiometricMapping from '../pages/BiometricMapping'
 import Dashboard from '../pages/Dashboard'
 import Login from '../pages/Login'
 import MissingAttendance from '../pages/MissingAttendance'
@@ -17,6 +19,8 @@ import WeeklyAttendanceReport from '../pages/WeeklyAttendanceReport'
 import Teams from '../pages/Teams'
 import Supervisors from '../pages/Supervisors'
 import Workers from '../pages/Workers'
+import AdvancedSettings from '../pages/AdvancedSettings'
+import Payroll from '../pages/Payroll'
 import { useAuthStore } from '../store/authStore'
 
 function ProtectedRoute() {
@@ -111,8 +115,12 @@ function AppRouter() {
             <Route path="/supervisors" element={<Supervisors />} />
             <Route path="/workers" element={<Workers />} />
             <Route path="/attendance" element={<Attendance />} />
+            <Route path="/special-staff-attendance" element={<SpecialStaffAttendance />} />
+            <Route path="/biometric-mapping" element={<BiometricMapping />} />
             <Route path="/missing-attendance" element={<MissingAttendance />} />
             <Route path="/reports/weekly-attendance" element={<WeeklyAttendanceReport />} />
+            <Route path="/advanced-settings" element={<AdvancedSettings />} />
+            <Route path="/payroll" element={<Payroll />} />
           </Route>
         </Route>
 

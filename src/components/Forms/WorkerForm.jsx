@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from '../../i18n/LanguageContext'
 
-function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
+function WorkerForm({ initialValues, teams, onSubmit, isSaving, requireTeam = true }) {
+  const { t } = useTranslation()
   const [fullName, setFullName] = useState(initialValues?.full_name || '')
   const [employeeCode, setEmployeeCode] = useState(initialValues?.employee_code || '')
   const [phone, setPhone] = useState(initialValues?.phone || '')
@@ -31,18 +33,18 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="mb-1 block text-sm font-semibold">اسم العامل</label>
+        <label className="mb-1 block text-sm font-semibold">{t('workers.name')}</label>
         <input
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           className="input-base"
-          placeholder="مثال: أحمد محمود"
+          placeholder={t('workers.nameExample')}
           required
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-semibold">كود الموظف</label>
+        <label className="mb-1 block text-sm font-semibold">{t('workers.employeeCode')}</label>
         <input
           value={employeeCode}
           onChange={(e) => setEmployeeCode(e.target.value)}
@@ -53,7 +55,7 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-semibold">رقم الهاتف</label>
+        <label className="mb-1 block text-sm font-semibold">{t('workers.phone')}</label>
         <input
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
@@ -62,14 +64,14 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
         />
       </div>
       <div>
-        <label className="mb-1 block text-sm font-semibold">الفريق</label>
+        <label className="mb-1 block text-sm font-semibold">{t('attendance.team')}</label>
         <select
           value={teamId}
           onChange={(e) => setTeamId(e.target.value)}
           className="input-base"
-          required
+          required={requireTeam}
         >
-          <option value="">اختر الفريق</option>
+          <option value="">{t('common.chooseTeam')}</option>
           {teams.map((team) => (
             <option key={team.id} value={team.id}>
               {team.name}
@@ -84,10 +86,10 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
           checked={isActive}
           onChange={(e) => setIsActive(e.target.checked)}
         />
-        نشط
+        {t('workers.active')}
       </label>
       <button type="submit" className="btn-primary" disabled={isSaving}>
-        {isSaving ? 'جاري الحفظ...' : 'حفظ'}
+        {isSaving ? t('common.saving') : t('common.save')}
       </button>
     </form>
   )

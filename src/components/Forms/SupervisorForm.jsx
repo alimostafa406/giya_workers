@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from '../../i18n/LanguageContext'
 
 function SupervisorForm({ initialValues, teams, onSubmit, isSaving }) {
+	const { t } = useTranslation()
 	const [username, setUsername] = useState(initialValues?.username || '')
 	const [password, setPassword] = useState('')
 	const [fullName, setFullName] = useState(initialValues?.full_name || '')
@@ -32,7 +34,7 @@ function SupervisorForm({ initialValues, teams, onSubmit, isSaving }) {
 	return (
 		<form onSubmit={handleSubmit} className="space-y-4">
 			<div>
-				<label className="mb-1 block text-sm font-semibold">اسم المستخدم</label>
+				<label className="mb-1 block text-sm font-semibold">{t('supervisors.username')}</label>
 				<input
 					value={username}
 					onChange={(e) => setUsername(e.target.value)}
@@ -43,7 +45,7 @@ function SupervisorForm({ initialValues, teams, onSubmit, isSaving }) {
 
 			<div>
 				<label className="mb-1 block text-sm font-semibold">
-					{initialValues?.id ? 'كلمة المرور الجديدة' : 'كلمة المرور'}
+					{initialValues?.id ? t('supervisors.newPassword') : t('supervisors.password')}
 				</label>
 				<input
 					type="password"
@@ -51,12 +53,12 @@ function SupervisorForm({ initialValues, teams, onSubmit, isSaving }) {
 					onChange={(e) => setPassword(e.target.value)}
 					className="input-base"
 					required={!initialValues?.id}
-					placeholder={initialValues?.id ? 'اتركه فارغًا للاحتفاظ بالكلمة الحالية' : ''}
+					placeholder={initialValues?.id ? t('supervisors.keepPassword') : ''}
 				/>
 			</div>
 
 			<div>
-				<label className="mb-1 block text-sm font-semibold">الاسم الكامل</label>
+				<label className="mb-1 block text-sm font-semibold">{t('supervisors.fullName')}</label>
 				<input
 					value={fullName}
 					onChange={(e) => setFullName(e.target.value)}
@@ -66,7 +68,7 @@ function SupervisorForm({ initialValues, teams, onSubmit, isSaving }) {
 			</div>
 
 			<div>
-				<label className="mb-1 block text-sm font-semibold">رقم الهاتف (اختياري)</label>
+				<label className="mb-1 block text-sm font-semibold">{t('supervisors.optionalPhone')}</label>
 				<input
 					type="tel"
 					value={phone}
@@ -77,14 +79,14 @@ function SupervisorForm({ initialValues, teams, onSubmit, isSaving }) {
 			</div>
 
 			<div>
-				<label className="mb-1 block text-sm font-semibold">الفريق</label>
+				<label className="mb-1 block text-sm font-semibold">{t('common.team')}</label>
 				<select
 					value={teamId}
 					onChange={(e) => setTeamId(e.target.value)}
 					className="input-base"
 					required
 				>
-					<option value="">اختر المجموعة</option>
+					<option value="">{t('common.chooseTeam')}</option>
 					{teams.map((team) => (
 						<option key={team.id} value={team.id}>
 							{team.name}
@@ -99,11 +101,11 @@ function SupervisorForm({ initialValues, teams, onSubmit, isSaving }) {
 					checked={isActive}
 					onChange={(e) => setIsActive(e.target.checked)}
 				/>
-				نشط
+				{t('common.active')}
 			</label>
 
 			<button type="submit" className="btn-primary" disabled={isSaving}>
-				{isSaving ? 'جاري الحفظ...' : 'حفظ'}
+				{isSaving ? t('common.saving') : t('common.save')}
 			</button>
 		</form>
 	)
