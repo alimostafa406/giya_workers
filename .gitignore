@@ -30,4 +30,3 @@ public/hikvision_faces/
 .env.hikvision_sync
 __pycache__/
 hikvision_raw/
-src/data/hikvisionRawData.js
