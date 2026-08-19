@@ -28,6 +28,53 @@ class UserSyncCountTests(unittest.TestCase):
         self.assertEqual(summary['device_user_counts']['office-secondary'], 254)
         self.assertEqual(summary['device_sync_status']['office-secondary']['state'], 'success')
 
+    def test_office_main_target_does_not_query_office_secondary(self):
+        main_users = [{'_device_id': 'office-main', 'employeeNo': '100', 'name': 'Main'}]
+        with patch('hikvision_user_sync.configured_devices', return_value=self.devices), \
+             patch('hikvision_user_sync.fetch_current_users_for_device', return_value=main_users) as fetch:
+            results, failures = fetch_current_users('office-main')
+        self.assertFalse(failures)
+        self.assertEqual(list(results), ['office-main'])
+        self.assertEqual(fetch.call_args.args[0].device_id, 'office-main')
+        self.assertEqual(fetch.call_count, 1)
+
+    def test_office_secondary_target_does_not_query_office_main(self):
+        secondary_users = [{'_device_id': 'office-secondary', 'employeeNo': '200', 'name': 'Secondary'}]
+        with patch('hikvision_user_sync.configured_devices', return_value=self.devices), \
+             patch('hikvision_user_sync.fetch_current_users_for_device', return_value=secondary_users) as fetch:
+            results, failures = fetch_current_users('office-secondary')
+        self.assertFalse(failures)
+        self.assertEqual(list(results), ['office-secondary'])
+        self.assertEqual(fetch.call_args.args[0].device_id, 'office-secondary')
+        self.assertEqual(fetch.call_count, 1)
+
+    def test_single_device_sync_only_updates_that_device_presence(self):
+        cached_users = [
+            {'employeeNo': '100', 'name': 'Shared', 'devices': ['office-main', 'office-secondary'],
+             'device_presence': {'office-main': True, 'office-secondary': True}},
+            {'employeeNo': '200', 'name': 'Secondary only', 'devices': ['office-secondary'],
+             'device_presence': {'office-main': False, 'office-secondary': True}},
+        ]
+        # A complete office-main response no longer contains 100. It must retain
+        # office-secondary presence and must not mark either secondary identity missing.
+        main_users = [{'employeeNo': '300', 'name': 'New main', '_device_id': 'office-main'}]
+        with tempfile.TemporaryDirectory() as directory:
+            users_file = Path(directory) / 'users.json'
+            users_file.write_text(__import__('json').dumps(cached_users), encoding='utf-8')
+            with patch('hikvision_user_sync._users_file', return_value=users_file), \
+                 patch('hikvision_user_sync.configured_devices', return_value=self.devices), \
+                 patch('hikvision_user_sync.fetch_current_users', return_value=({'office-main': main_users}, {})), \
+                 patch('hikvision_user_sync.persist_device_identity_presence', return_value={'state': 'success'}) as persist:
+                summary = sync_users_dataset('office-main')
+        self.assertEqual(summary['status'], 'ok')
+        self.assertEqual(summary['target_device_id'], 'office-main')
+        self.assertEqual(persist.call_args.args[0], {'office-main': main_users})
+        preserved = next(user for user in summary['users'] if user['employeeNo'] == '100')
+        self.assertEqual(preserved['device_presence'], {'office-main': False, 'office-secondary': True})
+        self.assertEqual(preserved['devices'], ['office-secondary'])
+        self.assertTrue(preserved['_local_sync']['is_currently_returned'])
+        self.assertEqual(summary['device_sync_status']['office-secondary']['state'], 'not_requested')
+
 
 if __name__ == '__main__':
     unittest.main()

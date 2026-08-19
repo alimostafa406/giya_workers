@@ -74,10 +74,21 @@ def fetch_current_users_for_device(device) -> list[dict]:
         return current_users
 
 
-def fetch_current_users() -> tuple[dict[str, list[dict]], dict[str, str]]:
+def _selected_devices(target_device_id: str | None = 'all') -> list:
+    devices = configured_devices()
+    if target_device_id in (None, '', 'all'):
+        return devices
+    selected = [device for device in devices if device.device_id == target_device_id]
+    if not selected:
+        raise ValueError(f'Unknown Hikvision device target: {target_device_id}')
+    return selected
+
+
+def fetch_current_users(target_device_id: str | None = 'all') -> tuple[dict[str, list[dict]], dict[str, str]]:
+    """Fetch only the requested device, or both devices for the all-device sync."""
     users_by_device: dict[str, list[dict]] = {}
     failures: dict[str, str] = {}
-    for device in configured_devices():
+    for device in _selected_devices(target_device_id):
         try:
             device_users = fetch_current_users_for_device(device)
             users_by_device[device.device_id] = device_users
@@ -162,7 +173,67 @@ def persist_device_identity_presence(users_by_device: dict[str, list[dict]]) -> 
     return {'state': 'success', 'observed': len(rows), 'seen_at': seen_at}
 
 
-def sync_users_dataset() -> dict:
+def _cached_device_presence(user: dict, device_ids: list[str]) -> dict[str, bool]:
+    stored = user.get('device_presence')
+    if isinstance(stored, dict):
+        return {device_id: bool(stored.get(device_id)) for device_id in device_ids}
+    devices = {str(device_id) for device_id in (user.get('devices') or [])}
+    return {device_id: device_id in devices for device_id in device_ids}
+
+
+def _merge_single_device_inventory(cached_users: list[dict], device_users: list[dict], target_device_id: str, device_ids: list[str]) -> tuple[list[dict], dict[str, dict], int]:
+    """Replace one device's inventory while retaining the other device's last known state."""
+    records: dict[str, dict] = {}
+    previous_on_target: set[str] = set()
+    for cached in cached_users:
+        employee_no = str(cached.get('employeeNo') or cached.get('employeeNoString') or '').strip()
+        if not employee_no:
+            continue
+        presence = _cached_device_presence(cached, device_ids)
+        if presence.get(target_device_id):
+            previous_on_target.add(employee_no)
+        presence[target_device_id] = False  # A complete selected-device read replaces this device only.
+        records[employee_no] = {**cached, 'employeeNo': employee_no, 'device_presence': presence}
+
+    discovered = 0
+    for user in device_users:
+        employee_no = str(user.get('employeeNo') or user.get('employeeNoString') or '').strip()
+        if not employee_no:
+            continue
+        if employee_no not in previous_on_target:
+            discovered += 1
+        existing = records.get(employee_no, {})
+        presence = _cached_device_presence(existing, device_ids) if existing else {device_id: False for device_id in device_ids}
+        presence[target_device_id] = True
+        records[employee_no] = {
+            **existing,
+            **{key: value for key, value in user.items() if key != '_device_id'},
+            'employeeNo': employee_no,
+            'device_presence': presence,
+        }
+
+    current_by_no: dict[str, dict] = {}
+    merged: list[dict] = []
+    for employee_no, record in records.items():
+        presence = _cached_device_presence(record, device_ids)
+        devices = sorted(device_id for device_id, present in presence.items() if present)
+        is_current = bool(devices)
+        item = {
+            **record,
+            'devices': devices,
+            'device_presence': presence,
+            '_local_sync': {
+                'is_currently_returned': is_current,
+                'removed_from_all_devices': not is_current,
+            },
+        }
+        merged.append(item)
+        if is_current:
+            current_by_no[employee_no] = item
+    return merged, current_by_no, discovered
+
+
+def sync_users_dataset(target_device_id: str | None = 'all') -> dict:
     """Keep current device presence separate from retained local audit history."""
     users_file = _users_file()
     cached_users = read_cached_users()
@@ -171,10 +242,52 @@ def sync_users_dataset() -> dict:
         for user in cached_users
     }
     cached_by_no.pop("", None)
-    users_by_device, device_failures = fetch_current_users()
+    target = target_device_id or 'all'
+    device_ids = [device.device_id for device in configured_devices()]
+    users_by_device, device_failures = fetch_current_users(target)
+    if target != 'all' and target not in users_by_device:
+        # Do not alter the local inventory or presence table when the requested
+        # device could not be read completely.
+        return {
+            'status': 'failed', 'target_device_id': target, 'total': 0,
+            'device_failures': device_failures, 'users_file_updated': False,
+        }
+
+    if target != 'all':
+        merged, current_by_no, new_count = _merge_single_device_inventory(
+            cached_users, users_by_device[target], target, device_ids,
+        )
+        conflicts = []
+        device_user_counts = {target: len(users_by_device[target])}
+        try:
+            presence_sync = persist_device_identity_presence(users_by_device)
+        except (RuntimeError, requests.RequestException, ValueError) as error:
+            presence_sync = {'state': 'failed', 'error': f'{type(error).__name__}: {error}'}
+        users_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary_file = users_file.with_suffix(f"{users_file.suffix}.tmp")
+        with temporary_file.open("w", encoding="utf-8") as destination:
+            json.dump(merged, destination, ensure_ascii=False, indent=2)
+        temporary_file.replace(users_file)
+        return {
+            'status': 'ok', 'target_device_id': target, 'total': len(current_by_no),
+            'unique_current_users': len(current_by_no), 'device_user_counts': device_user_counts,
+            'device_sync_status': {
+                device_id: ({'state': 'success', 'count': len(users_by_device[target])}
+                            if device_id == target else {'state': 'not_requested', 'count': None})
+                for device_id in device_ids
+            },
+            'present_on_both': sum(1 for user in current_by_no.values() if len(user['devices']) >= 2),
+            'office_main_only': sum(1 for user in current_by_no.values() if user['devices'] == ['office-main']),
+            'office_secondary_only': sum(1 for user in current_by_no.values() if user['devices'] == ['office-secondary']),
+            'removed_from_all_devices': sum(1 for user in merged if user['_local_sync']['removed_from_all_devices']),
+            'presence_unknown_due_to_device_failure': 0, 'new': new_count,
+            'existing': max(0, len(current_by_no) - new_count), 'disappeared': 0,
+            'device_failures': device_failures, 'device_identity_conflicts': conflicts,
+            'users_file_updated': True, 'identity_presence_sync': presence_sync, 'users': merged,
+        }
+
     current_users = [user for device_users in users_by_device.values() for user in device_users]
     current_by_no, conflicts = merge_device_users(current_users)
-    device_ids = [device.device_id for device in configured_devices()]
     device_user_counts = {device_id: len(users_by_device[device_id]) for device_id in users_by_device}
 
     current_by_no, conflicts = build_current_inventory(current_users, device_ids)
@@ -216,6 +329,7 @@ def sync_users_dataset() -> dict:
         presence_sync = {'state': 'failed', 'error': f'{type(error).__name__}: {error}'}
     return {
         "status": "ok",
+        "target_device_id": "all",
         "total": len(current_by_no),
         "unique_current_users": len(current_by_no),
         "device_user_counts": device_user_counts,

@@ -74,21 +74,22 @@ class UserSyncJob:
         with self.lock:
             return dict(self.state)
 
-    def start(self):
+    def start(self, target_device_id='all'):
         with self.lock:
             if self.state["status"] == "running":
                 return False, dict(self.state)
             self.state = {
                 "status": "running", "started_at": helper_timestamp(), "finished_at": None,
                 "progress": "reading_hikvision_users", "result": None, "error": None,
+                "target_device_id": target_device_id,
             }
             snapshot = dict(self.state)
-        threading.Thread(target=self._run, name="hikvision-user-sync", daemon=True).start()
+        threading.Thread(target=self._run, args=(target_device_id,), name="hikvision-user-sync", daemon=True).start()
         return True, snapshot
 
-    def _run(self):
+    def _run(self, target_device_id):
         try:
-            result = self.sync_function()
+            result = self.sync_function(target_device_id)
             if not isinstance(result, dict) or result.get("status") != "ok":
                 raise RuntimeError("Hikvision user synchronization did not return a valid result.")
             with self.lock:
@@ -382,7 +383,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.path not in {"/sync-users/start", "/sync-users"}:
             self.send_json(404, diagnostic("route_not_found", "Ù…Ø³Ø§Ø± ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ."))
             return
-        created, job = USER_SYNC_JOB.start()
+        try:
+            payload = parse_request_json(self)
+            target_device_id = payload.get('device_id', 'all')
+            if not isinstance(target_device_id, str) or target_device_id not in {'all', 'office-main', 'office-secondary'}:
+                raise ValueError('invalid_device_id')
+        except ValueError:
+            self.send_json(400, diagnostic('invalid_device_id', 'Invalid Hikvision device target.'))
+            return
+        created, job = USER_SYNC_JOB.start(target_device_id)
         self.send_json(202 if created else 200, {**job, "already_running": not created})
         return
         try:

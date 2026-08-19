@@ -49,6 +49,7 @@ export default function BiometricMapping() {
   const [recentlyAdded, setRecentlyAdded] = useState(readRecent)
   const [lastSyncAt, setLastSyncAt] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const [syncTarget, setSyncTarget] = useState('all')
   const syncBeforeRef = useRef(new Set())
   const [todayActivity, setTodayActivity] = useState(null)
   const [todayLoading, setTodayLoading] = useState(false)
@@ -132,7 +133,7 @@ export default function BiometricMapping() {
       clearSelections()
     } catch { setError(t('common.updateFailed')) }
   }
-  const syncUsers = async () => {
+  const syncUsers = async (targetDeviceId) => {
     if (!helper) return
     setError('')
     setMessage('')
@@ -140,10 +141,15 @@ export default function BiometricMapping() {
     try {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), HELPER_LIGHTWEIGHT_TIMEOUT_MS)
-      const response = await fetch(`${helper}/sync-users/start`, { method: 'POST', signal: controller.signal })
+      const response = await fetch(`${helper}/sync-users/start`, {
+        method: 'POST', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: targetDeviceId }),
+      })
       window.clearTimeout(timeout)
       const result = await response.json().catch(() => null)
       if (!response.ok || !['running', 'success'].includes(result?.status)) throw new Error('sync_start_failed')
+      setSyncTarget(result?.target_device_id || targetDeviceId)
       setSyncing(true)
     } catch { setError(t('biometric.syncFailed')) }
   }
@@ -169,7 +175,11 @@ export default function BiometricMapping() {
         sessionStorage.setItem(RECENT_IDENTITIES_KEY, JSON.stringify(nextRecent))
         setRecentlyAdded(nextRecent); setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(job.result.users)
         await load()
-        if (!cancelled) setMessage(t('biometric.syncSucceeded'))
+        if (!cancelled) {
+          setShowOld(false)
+          if (job.target_device_id && job.target_device_id !== 'all') setDeviceFilter(job.target_device_id)
+          setMessage(t('biometric.syncSucceeded'))
+        }
         void loadTodayActivity()
       } catch {
         if (!cancelled) { setSyncing(false); setError(t('biometric.syncFailed')) }
@@ -177,10 +187,14 @@ export default function BiometricMapping() {
     }
     poll()
     return () => { cancelled = true; if (timer) window.clearTimeout(timer) }
-  }, [syncing])
+  }, [syncing, syncTarget])
+
+  const syncLabel = syncing
+    ? (syncTarget === 'office-main' ? t('biometric.syncingOfficeMain') : syncTarget === 'office-secondary' ? t('biometric.syncingOfficeSecondary') : t('biometric.syncingAllDevices'))
+    : null
 
   return <section>
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-extrabold">{t('biometricMapping.title')}</h2><p className="text-sm text-(--muted)">{t('biometricMapping.subtitle')}</p></div><div className="text-end"><button type="button" className="btn-primary" disabled={!helper || syncing} onClick={syncUsers}>{syncing ? t('biometric.syncing') : t('biometric.syncUsers')}</button>{lastSyncAt ? <p className="mt-1 text-xs text-(--muted)">{t('biometric.lastSync')}: {timeLabel(lastSyncAt)}</p> : null}</div></div>
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-extrabold">{t('biometricMapping.title')}</h2><p className="text-sm text-(--muted)">{t('biometricMapping.subtitle')}</p></div><div className="text-end"><div className="flex flex-wrap justify-end gap-2"><button type="button" className="btn-primary" disabled={!helper || syncing} onClick={() => syncUsers('office-main')}>{syncing && syncTarget === 'office-main' ? syncLabel : t('biometric.syncOfficeMain')}</button><button type="button" className="btn-secondary" disabled={!helper || syncing} onClick={() => syncUsers('office-secondary')}>{syncing && syncTarget === 'office-secondary' ? syncLabel : t('biometric.syncOfficeSecondary')}</button><button type="button" className="btn-secondary" disabled={!helper || syncing} onClick={() => syncUsers('all')}>{syncing && syncTarget === 'all' ? syncLabel : t('biometric.syncAllDevices')}</button></div>{lastSyncAt ? <p className="mt-1 text-xs text-(--muted)">{t('biometric.lastSync')}: {timeLabel(lastSyncAt)}</p> : null}</div></div>
     {error ? <p className="alert alert--error mb-3">{error}</p> : null}{message ? <p className="mb-3 rounded bg-green-50 p-3 text-green-700">{message}</p> : null}{inventoryRefreshError ? <p className="alert alert--error mb-3">{t('biometric.inventoryRefreshFailed')}</p> : null}
     <TodayPunchesPanel t={t} activity={todayActivity} loading={todayLoading} error={todayActivityError} onRefresh={loadTodayActivity} />
     <section className="surface-card mb-4 border-2 border-blue-200 p-4"><div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]"><div className={selectedDevice ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedDeviceIdentity')}</p>{selectedDevice ? <><p className="mt-1 font-extrabold">{selectedDevice.name}</p><p dir="ltr">{selectedDevice.employeeNo}</p><p className="text-xs text-(--muted)">{deviceSource(selectedDevice)} · {deviceStatus(selectedDevice)}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometricMapping.selectIdentity')}</p>}</div><p className="self-center text-center text-3xl" dir="ltr">→</p><div className={selectedWorker ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedWorker')}</p>{selectedWorker ? <><p className="mt-1 font-extrabold">{selectedWorker.full_name}</p><p dir="ltr">{selectedWorker.employee_code || '—'}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometric.chooseWorkerFirst')}</p>}</div></div><div className="mt-3 flex flex-wrap gap-2 border-t border-(--border) pt-3"><button type="button" className="btn-secondary" onClick={clearSelections}>{t('biometric.clearSelection')}</button><button type="button" className="btn-primary px-8" disabled={!selectedDevice || !selectedWorker?.id} onClick={link}>{t('biometric.link')}</button></div></section>

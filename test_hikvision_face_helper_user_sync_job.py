@@ -22,18 +22,19 @@ class HelperUserSyncJobTests(unittest.TestCase):
         entered = threading.Event()
         release = threading.Event()
 
-        def sync():
+        def sync(_target='all'):
             entered.set()
             release.wait(1)
             return {"status": "ok", "users": []}
 
         job = UserSyncJob(sync)
         started_at = time.monotonic()
-        created, initial = job.start()
+        created, initial = job.start('office-main')
         elapsed = time.monotonic() - started_at
         self.assertTrue(created)
         self.assertLess(elapsed, 0.2)
         self.assertEqual(initial["status"], "running")
+        self.assertEqual(initial["target_device_id"], "office-main")
         self.assertTrue(entered.wait(1))
         duplicate_created, duplicate = job.start()
         self.assertFalse(duplicate_created)
@@ -43,7 +44,7 @@ class HelperUserSyncJobTests(unittest.TestCase):
         self.assertEqual(job.snapshot()["result"], {"status": "ok", "users": []})
 
     def test_failed_job_reports_a_safe_failed_status(self):
-        job = UserSyncJob(lambda: (_ for _ in ()).throw(ConnectionError("do not expose endpoint")))
+        job = UserSyncJob(lambda _target='all': (_ for _ in ()).throw(ConnectionError("do not expose endpoint")))
         created, _ = job.start()
         self.assertTrue(created)
         self.assertTrue(self._wait_for_status(job, "failed"))
@@ -56,7 +57,7 @@ class HelperUserSyncJobTests(unittest.TestCase):
         entered = threading.Event()
         release = threading.Event()
 
-        def sync():
+        def sync(_target='all'):
             entered.set()
             release.wait(1)
             return {"status": "ok", "users": []}
@@ -69,10 +70,11 @@ class HelperUserSyncJobTests(unittest.TestCase):
         base_url = f"http://127.0.0.1:{server.server_address[1]}"
         try:
             started_at = time.monotonic()
-            response = requests.post(f"{base_url}/sync-users/start", timeout=.5)
+            response = requests.post(f"{base_url}/sync-users/start", json={'device_id': 'office-secondary'}, timeout=.5)
             self.assertLess(time.monotonic() - started_at, .2)
             self.assertEqual(response.status_code, 202)
             self.assertEqual(response.json()["status"], "running")
+            self.assertEqual(response.json()["target_device_id"], "office-secondary")
             self.assertTrue(entered.wait(1))
             self.assertEqual(requests.get(f"{base_url}/sync-users/status", timeout=.5).json()["status"], "running")
             release.set()
