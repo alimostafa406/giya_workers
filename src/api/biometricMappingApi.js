@@ -46,6 +46,14 @@ const getIgnoredDeviceIdentitiesRequest = async () => {
   return toArray(data)
 }
 
+const getDeviceIdentityPresenceRequest = async () => {
+  const { data, error } = await getSupabaseClient()
+    .from('biometric_device_identity_presence')
+    .select('device_id,device_employee_no,first_seen_at,last_seen_at,is_current')
+  if (error) throw error
+  return toArray(data)
+}
+
 export const setDeviceIdentityIgnoredRequest = async (deviceUser) => {
   const employeeNo = normalizeDeviceEmployeeNo(deviceUser?.employeeNo)
   if (!employeeNo) throw new Error('رقم هوية الجهاز مطلوب.')
@@ -72,11 +80,12 @@ const getActiveMappings = (mappings) => toArray(mappings).filter(
 )
 
 export const getBiometricMappingWorkspaceRequest = async () => {
-  const [workersResponse, mappingsResponse, classifications, ignoredIdentities] = await Promise.all([
+  const [workersResponse, mappingsResponse, classifications, ignoredIdentities, presences] = await Promise.all([
     getWorkersRequest(),
     getBiometricMappingsRequest(),
     getWorkerClassificationsRequest(),
     getIgnoredDeviceIdentitiesRequest(),
+    getDeviceIdentityPresenceRequest(),
   ])
 
   const workers = toArray(workersResponse.data).filter(Boolean)
@@ -103,6 +112,12 @@ export const getBiometricMappingWorkspaceRequest = async () => {
   }))
   const workersById = new Map(enrichedWorkers.map((worker) => [String(worker.id), worker]))
   const ignoredByDeviceNo = new Set(ignoredIdentities.map((row) => normalizeDeviceEmployeeNo(row.device_employee_no)))
+  const presenceByEmployeeNo = new Map()
+  presences.filter((presence) => presence.is_current).forEach((presence) => {
+    const employeeNo = normalizeDeviceEmployeeNo(presence.device_employee_no)
+    const existing = presenceByEmployeeNo.get(employeeNo)
+    if (!existing || new Date(presence.first_seen_at) < new Date(existing.first_seen_at)) presenceByEmployeeNo.set(employeeNo, presence)
+  })
   const rawDeviceUsers = getHikvisionDeviceUsers()
   const deviceNameCounts = rawDeviceUsers.reduce((counts, user) => {
     const name = normalizePersonName(user.name)
@@ -128,6 +143,8 @@ export const getBiometricMappingWorkspaceRequest = async () => {
     const isAmbiguousMatch = !isUniqueExactMatch && sameNameWorkers.length > 0
     return {
       ...deviceUser,
+      firstSeenAt: presenceByEmployeeNo.get(deviceUser.employeeNo)?.first_seen_at || null,
+      lastSeenAt: presenceByEmployeeNo.get(deviceUser.employeeNo)?.last_seen_at || null,
       ignored: ignoredByDeviceNo.has(deviceUser.employeeNo),
       mapping: deviceMappings[0] || null,
       mappingCount: deviceMappings.length,

@@ -139,6 +139,8 @@ Object.assign(translations.ar.biometric, {
   mappingSaved: 'تم حفظ الربط بنجاح.',
   syncSucceeded: 'تمت المزامنة بنجاح.',
   syncFailed: 'تعذرت مزامنة مستخدمي جهاز البصمة. حاول مرة أخرى.',
+  newUnmapped: 'غير مربوطين جدد', allUnmapped: 'جميع غير المربوطين', showAllUnmapped: 'عرض جميع غير المربوطين', showRecentUnmapped: 'عرض غير المربوطين الجدد', firstSeen: 'أول ظهور',
+  todayActivity: 'حركة البصمة اليوم',
 })
 Object.assign(translations.en.biometric, {
   deviceUsers: 'Hikvision device users',
@@ -151,6 +153,8 @@ Object.assign(translations.en.biometric, {
   mappingSaved: 'Mapping saved successfully.',
   syncSucceeded: 'Synchronization completed successfully.',
   syncFailed: 'Unable to synchronize Hikvision users. Please try again.',
+  newUnmapped: 'New unlinked identities', allUnmapped: 'All unlinked identities', showAllUnmapped: 'Show all unlinked identities', showRecentUnmapped: 'Show new unlinked identities', firstSeen: 'First seen',
+  todayActivity: 'Today’s biometric activity',
 })
 Object.assign(translations.fr.biometric, {
   deviceUsers: 'Utilisateurs de l’appareil Hikvision',
@@ -163,6 +167,8 @@ Object.assign(translations.fr.biometric, {
   mappingSaved: 'Liaison enregistrée avec succès.',
   syncSucceeded: 'Synchronisation terminée avec succès.',
   syncFailed: 'Impossible de synchroniser les utilisateurs Hikvision. Veuillez réessayer.',
+  newUnmapped: 'Nouvelles identités non liées', allUnmapped: 'Toutes les identités non liées', showAllUnmapped: 'Afficher toutes les identités non liées', showRecentUnmapped: 'Afficher les nouvelles identités non liées', firstSeen: 'Première détection',
+  todayActivity: 'Activité biométrique du jour',
 })
 
 Object.assign(translations.ar.biometric, {

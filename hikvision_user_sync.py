@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -139,6 +140,28 @@ def check_hikvision_reachable() -> tuple[bool, str | None]:
         return False, str(error)
 
 
+def persist_device_identity_presence(users_by_device: dict[str, list[dict]]) -> dict:
+    """Persist device discovery times without changing attendance or mappings."""
+    base_url = os.environ.get('SUPABASE_URL', '').rstrip('/')
+    service_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip()
+    if not base_url or not service_key:
+        raise RuntimeError('Missing Supabase configuration for biometric identity presence persistence.')
+    rows = []
+    for device_id, users in users_by_device.items():
+        for user in users:
+            employee_no = str(user.get('employeeNo') or user.get('employeeNoString') or '').strip()
+            if employee_no:
+                rows.append({'device_id': device_id, 'device_employee_no': employee_no, 'device_name': str(user.get('name') or '').strip() or None})
+    seen_at = datetime.now(timezone.utc).isoformat()
+    response = requests.post(
+        f'{base_url}/rest/v1/rpc/sync_biometric_device_identity_presence',
+        headers={'apikey': service_key, 'Authorization': f'Bearer {service_key}', 'Content-Type': 'application/json'},
+        json={'p_present': rows, 'p_successful_device_ids': list(users_by_device), 'p_seen_at': seen_at}, timeout=30,
+    )
+    response.raise_for_status()
+    return {'state': 'success', 'observed': len(rows), 'seen_at': seen_at}
+
+
 def sync_users_dataset() -> dict:
     """Keep current device presence separate from retained local audit history."""
     users_file = _users_file()
@@ -186,6 +209,11 @@ def sync_users_dataset() -> dict:
     with temporary_file.open("w", encoding="utf-8") as destination:
         json.dump(merged, destination, ensure_ascii=False, indent=2)
     temporary_file.replace(users_file)
+    try:
+        presence_sync = persist_device_identity_presence(users_by_device)
+    except (RuntimeError, requests.RequestException, ValueError) as error:
+        # Inventory remains usable; the next existing user-sync cycle retries this additive tracking write.
+        presence_sync = {'state': 'failed', 'error': f'{type(error).__name__}: {error}'}
     return {
         "status": "ok",
         "total": len(current_by_no),
@@ -208,5 +236,6 @@ def sync_users_dataset() -> dict:
         "device_failures": device_failures,
         "device_identity_conflicts": sorted(set(conflicts)),
         "users_file_updated": True,
+        "identity_presence_sync": presence_sync,
         "users": merged,
     }

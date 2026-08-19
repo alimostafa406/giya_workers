@@ -8,12 +8,26 @@ const isLocalDashboard = typeof window !== 'undefined' && ['127.0.0.1', 'localho
 const helper = import.meta.env.VITE_LOCAL_HIKVISION_HELPER_URL || (isLocalDashboard ? 'http://127.0.0.1:8765' : '')
 const HELPER_LIGHTWEIGHT_TIMEOUT_MS = 5000
 const RECENT_IDENTITIES_KEY = 'biometric_recent_device_identities'
+const editDistance = (left, right) => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let row = 1; row <= left.length; row += 1) {
+    let diagonal = previous[0]
+    previous[0] = row
+    for (let column = 1; column <= right.length; column += 1) {
+      const saved = previous[column]
+      previous[column] = Math.min(previous[column] + 1, previous[column - 1] + 1, diagonal + (left[row - 1] === right[column - 1] ? 0 : 1))
+      diagonal = saved
+    }
+  }
+  return previous[right.length]
+}
 const rankWorkerName = (deviceName, workerName) => {
   const device = normalizePersonName(deviceName)
   const worker = normalizePersonName(workerName)
   if (!device || !worker) return 9
   if (device === worker) return 0
   if (worker.startsWith(device) || device.startsWith(worker)) return 1
+  if (Math.min(device.length, worker.length) >= 4 && editDistance(device, worker) <= Math.max(1, Math.floor(Math.max(device.length, worker.length) * .2))) return 2
   const deviceTokens = device.split(' ')
   const workerTokens = worker.split(' ')
   if (deviceTokens.some((token) => workerTokens.some((candidate) => token.startsWith(candidate) || candidate.startsWith(token)))) return 2
@@ -74,10 +88,13 @@ export default function BiometricMapping() {
     .filter((worker) => worker.is_active !== false)
     .filter((worker) => !activeMappedWorkerIds.has(String(worker.id))), [activeMappedWorkerIds, data])
   const deviceUsers = useMemo(() => allDeviceUsers
-    .filter((user) => user.isCurrentlyReturned === false ? showOld : (!user.mapping || user.mapping?.mapping_review_state === 'needs_review') && !user.ignored)
+    .filter((user) => user.isCurrentlyReturned !== false)
+    .filter((user) => user.mapping?.is_active === false || user.mapping?.mapping_review_state !== 'confirmed')
+    .filter((user) => !user.ignored)
+    .filter((user) => showOld || (user.firstSeenAt && new Date(user.firstSeenAt).getTime() >= Date.now() - 7 * 24 * 60 * 60 * 1000))
     .filter((user) => deviceFilter === 'all' || (user.devices || []).includes(deviceFilter))
     .filter((user) => `${user.name || ''} ${user.employeeNo || ''}`.toLowerCase().includes(deviceQuery.trim().toLowerCase()))
-    .sort((a, b) => Number(b.isNewThisSession) - Number(a.isNewThisSession) || String(a.name || '').localeCompare(String(b.name || ''))), [allDeviceUsers, deviceFilter, deviceQuery, showOld])
+    .sort((a, b) => new Date(b.firstSeenAt || 0) - new Date(a.firstSeenAt || 0) || String(a.name || '').localeCompare(String(b.name || ''))), [allDeviceUsers, deviceFilter, deviceQuery, showOld])
   const workers = useMemo(() => availableWorkers
     .filter((worker) => `${worker.full_name || ''} ${worker.employee_code || ''}`.toLowerCase().includes(workerQuery.trim().toLowerCase()))
     .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''))), [availableWorkers, workerQuery])
@@ -155,7 +172,7 @@ export default function BiometricMapping() {
     <section className="surface-card mb-4 border-2 border-blue-200 p-4"><div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]"><div className={selectedDevice ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedDeviceIdentity')}</p>{selectedDevice ? <><p className="mt-1 font-extrabold">{selectedDevice.name}</p><p dir="ltr">{selectedDevice.employeeNo}</p><p className="text-xs text-(--muted)">{deviceSource(selectedDevice)} · {deviceStatus(selectedDevice)}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometricMapping.selectIdentity')}</p>}</div><p className="self-center text-center text-3xl" dir="ltr">→</p><div className={selectedWorker ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedWorker')}</p>{selectedWorker ? <><p className="mt-1 font-extrabold">{selectedWorker.full_name}</p><p dir="ltr">{selectedWorker.employee_code || '—'}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometric.chooseWorkerFirst')}</p>}</div></div><div className="mt-3 flex flex-wrap gap-2 border-t border-(--border) pt-3"><button type="button" className="btn-secondary" onClick={clearSelections}>{t('biometric.clearSelection')}</button><button type="button" className="btn-primary px-8" disabled={!selectedDevice || !selectedWorker?.id} onClick={link}>{t('biometric.link')}</button></div></section>
     {selectedDevice ? <section className="surface-card mb-4 p-4"><h3 className="font-extrabold">{t('biometric.similarNames')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{similarWorkers.map(({ worker }) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'btn-primary text-start' : 'btn-secondary text-start'}><b>{worker.full_name}</b><span className="block text-xs" dir="ltr">{worker.employee_code || '—'}</span><span className="block text-xs">{worker.team?.name || worker.team_name || '—'}</span></button>)}</div>{!similarWorkers.length ? <p className="mt-3 text-sm text-(--muted)">{t('biometricMapping.noSimilarNames')}</p> : null}</section> : null}
     <div className="grid gap-4 xl:grid-cols-2">
-      <section className="surface-card overflow-hidden"><div className="border-b border-(--border) p-4"><h3 className="font-extrabold">{t('biometric.deviceUsers')}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2"><input className="input-base" value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder={t('biometric.searchDevice')} /><select className="input-base" value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)}><option value="all">{t('biometric.allDevices')}</option><option value="office-main">{t('biometric.officeMain')}</option><option value="office-secondary">{t('biometric.officeSecondary')}</option></select></div><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={showOld} onChange={(event) => setShowOld(event.target.checked)} />{t('biometric.showOldRecords')}</label></div><div className="max-h-[34rem] divide-y divide-(--border) overflow-y-auto">{deviceUsers.map((user) => <button type="button" key={user.employeeNo} onClick={() => selectDevice(user)} className={selectedDeviceIdentity === user.employeeNo ? 'block w-full bg-blue-100 p-4 text-start ring-2 ring-inset ring-blue-600' : 'block w-full p-4 text-start hover:bg-slate-50'}><div className="flex items-center justify-between gap-2"><b>{user.name}</b><span dir="ltr">{user.employeeNo}</span></div><p className="mt-1 text-xs text-(--muted)">{deviceSource(user)} · {deviceStatus(user)}</p>{user.isNewThisSession ? <span className="mt-2 inline-block rounded bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-800">{t('biometric.new')}</span> : null}</button>)}{!deviceUsers.length ? <p className="p-5 text-sm text-(--muted)">{t('biometric.empty')}</p> : null}</div></section>
+      <section className="surface-card overflow-hidden"><div className="border-b border-(--border) p-4"><div className="flex items-center justify-between gap-2"><h3 className="font-extrabold">{showOld ? t('biometric.allUnmapped') : t('biometric.newUnmapped')}</h3><button type="button" className="btn-secondary" onClick={() => setShowOld((value) => !value)}>{showOld ? t('biometric.showRecentUnmapped') : t('biometric.showAllUnmapped')}</button></div><div className="mt-3 grid gap-2 sm:grid-cols-2"><input className="input-base" value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder={t('biometric.searchDevice')} /><select className="input-base" value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)}><option value="all">{t('biometric.allDevices')}</option><option value="office-main">{t('biometric.officeMain')}</option><option value="office-secondary">{t('biometric.officeSecondary')}</option></select></div></div><div className="max-h-[34rem] divide-y divide-(--border) overflow-y-auto">{deviceUsers.map((user) => <button type="button" key={user.employeeNo} onClick={() => selectDevice(user)} className={selectedDeviceIdentity === user.employeeNo ? 'block w-full bg-blue-100 p-4 text-start ring-2 ring-inset ring-blue-600' : 'block w-full p-4 text-start hover:bg-slate-50'}><div className="flex items-center justify-between gap-2"><b>{user.name}</b><span dir="ltr">{user.employeeNo}</span></div><p className="mt-1 text-xs text-(--muted)">{deviceSource(user)} · {t('biometric.firstSeen')}: {timeLabel(user.firstSeenAt)}</p></button>)}{!deviceUsers.length ? <p className="p-5 text-sm text-(--muted)">{t('biometric.empty')}</p> : null}</div></section>
       <section className="surface-card overflow-hidden"><div className="border-b border-(--border) p-4"><h3 className="font-extrabold">{t('biometric.systemWorkers')}</h3><input className="input-base mt-3" value={workerQuery} onChange={(event) => setWorkerQuery(event.target.value)} placeholder={t('biometric.searchWorker')} /></div><div className="max-h-[34rem] divide-y divide-(--border) overflow-y-auto">{workers.map((worker) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'block w-full bg-blue-100 p-4 text-start ring-2 ring-inset ring-blue-600' : 'block w-full p-4 text-start hover:bg-slate-50'}><b>{worker.full_name}</b><p className="mt-1 text-xs text-(--muted)"><span dir="ltr">{worker.employee_code || '—'}</span> · {worker.team?.name || worker.team_name || '—'}</p></button>)}{!workers.length ? <p className="p-5 text-sm text-(--muted)">{t('common.noResults')}</p> : null}</div></section>
     </div>
   </section>

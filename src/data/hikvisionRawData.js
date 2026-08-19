@@ -7,7 +7,10 @@ export const replaceHikvisionDeviceUsers = (users) => {
 export const normalizeDeviceEmployeeNo = (value) => String(value || '').trim()
 
 export const normalizePersonName = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
   .trim()
+  .replace(/[^\p{L}\p{N}]+/gu, ' ')
   .replace(/\s+/g, ' ')
   .toLocaleLowerCase()
 

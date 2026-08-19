@@ -22,7 +22,8 @@ class UserSyncCountTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch('hikvision_user_sync._users_file', return_value=Path(directory) / 'users.json'), \
                  patch('hikvision_user_sync.configured_devices', return_value=self.devices), \
-                 patch('hikvision_user_sync.fetch_current_users', return_value=({'office-main': main_users, 'office-secondary': secondary_users}, {})):
+                 patch('hikvision_user_sync.fetch_current_users', return_value=({'office-main': main_users, 'office-secondary': secondary_users}, {})), \
+                 patch('hikvision_user_sync.persist_device_identity_presence', return_value={'state': 'success'}):
                 summary = sync_users_dataset()
         self.assertEqual(summary['device_user_counts']['office-secondary'], 254)
         self.assertEqual(summary['device_sync_status']['office-secondary']['state'], 'success')
