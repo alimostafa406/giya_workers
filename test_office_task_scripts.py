@@ -48,6 +48,12 @@ class OfficeTaskScriptTests(unittest.TestCase):
         self.assertIn('http://127.0.0.1:4173/biometric-mapping', source)
         self.assertIn('Start-Process', source)
         self.assertNotIn('Register-ScheduledTask', source)
+        self.assertIn('[string] $PythonPath', source)
+        self.assertIn('$env:HIKVISION_PYTHON_PATH', source)
+        self.assertIn("Join-Path $env:LOCALAPPDATA 'Programs\\Python'", source)
+        self.assertIn("@('pythonw.exe', 'pythonw', 'python.exe', 'python')", source)
+        self.assertIn("'pythonw.exe'", source)
+        self.assertIn('Python used: $pythonPath', source)
         command = f"[void][scriptblock]::Create((Get-Content -LiteralPath '{path}' -Raw))"
         result = subprocess.run(['powershell.exe', '-NoProfile', '-Command', command], cwd=ROOT, capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)

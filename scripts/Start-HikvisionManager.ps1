@@ -1,5 +1,6 @@
 param(
-  [string] $ProjectPath = (Split-Path -Parent $PSScriptRoot)
+  [string] $ProjectPath = (Split-Path -Parent $PSScriptRoot),
+  [string] $PythonPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,13 +22,42 @@ function Test-HelperHealth {
   }
 }
 
+function Resolve-HelperPythonPath {
+  param([string] $ExplicitPythonPath)
+
+  $candidates = New-Object System.Collections.Generic.List[string]
+  if ($ExplicitPythonPath) { $candidates.Add($ExplicitPythonPath) }
+  if ($env:HIKVISION_PYTHON_PATH) { $candidates.Add($env:HIKVISION_PYTHON_PATH) }
+
+  if ($env:LOCALAPPDATA) {
+    $pythonRoot = Join-Path $env:LOCALAPPDATA 'Programs\Python'
+    if (Test-Path -LiteralPath $pythonRoot) {
+      Get-ChildItem -LiteralPath $pythonRoot -Directory -Filter 'Python*' -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        ForEach-Object {
+          $candidates.Add((Join-Path $_.FullName 'pythonw.exe'))
+          $candidates.Add((Join-Path $_.FullName 'python.exe'))
+        }
+    }
+  }
+
+  foreach ($commandName in @('pythonw.exe', 'pythonw', 'python.exe', 'python')) {
+    $command = Get-Command $commandName -ErrorAction SilentlyContinue
+    if ($command -and $command.Source) { $candidates.Add($command.Source) }
+  }
+
+  foreach ($candidate in $candidates) {
+    if (-not $candidate -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+    $siblingPythonw = Join-Path (Split-Path -Parent $candidate) 'pythonw.exe'
+    if (Test-Path -LiteralPath $siblingPythonw -PathType Leaf) { return $siblingPythonw }
+    return $candidate
+  }
+
+  throw 'Python was not found. Supply -PythonPath or install Python under %LOCALAPPDATA%\Programs\Python.'
+}
+
 if (-not (Test-HelperHealth)) {
-  $python = Get-Command python.exe -ErrorAction SilentlyContinue
-  if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
-  if (-not $python) { throw 'Python was not found. Install Python or add it to PATH.' }
-  $pythonPath = $python.Source
-  $pythonwPath = Join-Path (Split-Path -Parent $pythonPath) 'pythonw.exe'
-  if (Test-Path -LiteralPath $pythonwPath) { $pythonPath = $pythonwPath }
+  $pythonPath = Resolve-HelperPythonPath -ExplicitPythonPath $PythonPath
 
   Start-Process -FilePath $pythonPath -ArgumentList @($helperScript) -WorkingDirectory $ProjectPath -WindowStyle Hidden
   $deadline = (Get-Date).AddSeconds(15)
@@ -37,7 +67,7 @@ if (-not (Test-HelperHealth)) {
   } while ((Get-Date) -lt $deadline)
 
   if (-not (Test-HelperHealth)) {
-    throw 'Hikvision Helper did not become healthy within 15 seconds.'
+    throw "Hikvision Helper did not become healthy within 15 seconds. Python used: $pythonPath"
   }
 }
 
