@@ -16,6 +16,7 @@ class OfficeTaskScriptTests(unittest.TestCase):
         self.assertIn('-MultipleInstances IgnoreNew', source)
         self.assertIn('-RestartCount 999', source)
         self.assertIn('-DontStopIfGoingOnBatteries', source)
+        self.assertIn('Stop-ScheduledTask', source)
         self.assertIn('Serve-Dashboard.py', source)
         self.assertIn('hikvision_attendance_agent.py', source)
         self.assertNotIn('Start-AttendanceAgent.ps1`"', source)

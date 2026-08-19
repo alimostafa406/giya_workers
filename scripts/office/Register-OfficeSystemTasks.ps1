@@ -40,6 +40,14 @@ $dashboardAction = New-ScheduledTaskAction -Execute $pythonWindowlessPath -Argum
 $agentAction = New-ScheduledTaskAction -Execute $pythonWindowlessPath -Argument "`"$agentPath`"" -WorkingDirectory $ProjectPath
 
 try {
+  # Stop an old action before replacing it so a legacy launcher or server does
+  # not remain alive after its task definition has been repaired.
+  foreach ($taskName in @($DashboardTaskName, $AgentTaskName)) {
+    $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if ($existingTask -and $existingTask.State -eq 'Running') {
+      Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
+    }
+  }
   Register-ScheduledTask -TaskName $DashboardTaskName -Action $dashboardAction -Trigger $trigger -Principal $principal -Settings $settings -Description 'Local Workers Management production dashboard' -Force -ErrorAction Stop
   Register-ScheduledTask -TaskName $AgentTaskName -Action $agentAction -Trigger $trigger -Principal $principal -Settings $settings -Description 'Local Hikvision attendance agent' -Force -ErrorAction Stop
 } catch {
