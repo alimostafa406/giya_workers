@@ -1,13 +1,15 @@
 param(
   [string] $ProjectPath = (Split-Path -Parent $PSScriptRoot),
-  [string] $PythonPath
+  [string] $PythonPath,
+  [string] $DashboardUrl
 )
 
 $ErrorActionPreference = 'Stop'
 $ProjectPath = (Resolve-Path -LiteralPath $ProjectPath).Path
 $helperScript = Join-Path $ProjectPath 'hikvision_face_helper.py'
 $healthUrl = 'http://127.0.0.1:8765/health'
-$dashboardUrl = 'http://127.0.0.1:4173/biometric-mapping'
+$viteDashboardUrl = 'http://localhost:5173'
+$productionDashboardUrl = 'http://127.0.0.1:4173'
 
 if (-not (Test-Path -LiteralPath $helperScript)) {
   throw "Hikvision Helper was not found: $helperScript"
@@ -56,6 +58,30 @@ function Resolve-HelperPythonPath {
   throw 'Python was not found. Supply -PythonPath or install Python under %LOCALAPPDATA%\Programs\Python.'
 }
 
+function Test-DashboardHealth {
+  param([string] $BaseUrl)
+  try {
+    $response = Invoke-WebRequest -Uri $BaseUrl -UseBasicParsing -TimeoutSec 2
+    return $response.StatusCode -ge 200 -and $response.StatusCode -lt 400
+  } catch {
+    return $false
+  }
+}
+
+function Resolve-DashboardUrl {
+  param([string] $ExplicitDashboardUrl)
+  if ($ExplicitDashboardUrl) {
+    $baseUrl = $ExplicitDashboardUrl.TrimEnd('/')
+    if (-not (Test-DashboardHealth $baseUrl)) {
+      throw "Dashboard is not running at $baseUrl. Start it first."
+    }
+    return $baseUrl
+  }
+  if (Test-DashboardHealth $viteDashboardUrl) { return $viteDashboardUrl }
+  if (Test-DashboardHealth $productionDashboardUrl) { return $productionDashboardUrl }
+  throw 'Dashboard is not running. Start it with npm run dev.'
+}
+
 if (-not (Test-HelperHealth)) {
   $pythonPath = Resolve-HelperPythonPath -ExplicitPythonPath $PythonPath
 
@@ -71,4 +97,5 @@ if (-not (Test-HelperHealth)) {
   }
 }
 
-Start-Process $dashboardUrl
+$activeDashboardUrl = Resolve-DashboardUrl -ExplicitDashboardUrl $DashboardUrl
+Start-Process "$activeDashboardUrl/biometric-mapping"
