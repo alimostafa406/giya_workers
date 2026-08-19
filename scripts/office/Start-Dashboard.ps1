@@ -1,6 +1,7 @@
 param(
   [string] $ProjectPath = (Join-Path $PSScriptRoot '..\..'),
   [int] $Port = 4173,
+  [string] $PythonPath,
   [switch] $Foreground
 )
 
@@ -13,10 +14,15 @@ if (-not (Test-Path -LiteralPath $indexPath)) {
   throw "Production dashboard build is missing: $indexPath. Run 'npm.cmd run build' in $ProjectPath first."
 }
 
-$npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
-if (-not $npm) {
-  throw 'npm.cmd was not found. Install Node.js LTS, then run npm.cmd ci and npm.cmd run build.'
+if (-not $PythonPath) {
+  $python = Get-Command python.exe -ErrorAction SilentlyContinue
+  if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
+  if (-not $python) { throw 'Python was not found. Re-run with -PythonPath pointing to python.exe.' }
+  $PythonPath = $python.Source
 }
+if (-not (Test-Path -LiteralPath $PythonPath)) { throw "Python was not found: $PythonPath" }
+$serverPath = Join-Path $ProjectPath 'scripts\office\Serve-Dashboard.py'
+if (-not (Test-Path -LiteralPath $serverPath)) { throw "Dashboard server was not found: $serverPath" }
 
 function Test-LocalPortListening {
   param([int] $LocalPort)
@@ -38,20 +44,15 @@ if (Test-LocalPortListening -LocalPort $Port) {
   exit 0
 }
 
-$arguments = @('run', 'preview', '--', '--host', '127.0.0.1', '--port', $Port, '--strictPort')
+$arguments = @($serverPath, '--dist', $distPath, '--host', '127.0.0.1', '--port', $Port)
 if ($Foreground) {
-  Push-Location $ProjectPath
-  try {
-    & $npm.Source @arguments
-    exit $LASTEXITCODE
-  } finally {
-    Pop-Location
-  }
+  & $PythonPath @arguments
+  exit $LASTEXITCODE
 }
 
 $logsPath = Join-Path $ProjectPath 'logs'
 New-Item -ItemType Directory -Path $logsPath -Force | Out-Null
-$process = Start-Process -FilePath $npm.Source -ArgumentList $arguments -WorkingDirectory $ProjectPath -WindowStyle Hidden -PassThru `
+$process = Start-Process -FilePath $PythonPath -ArgumentList $arguments -WorkingDirectory $ProjectPath -WindowStyle Hidden -PassThru `
   -RedirectStandardOutput (Join-Path $logsPath 'office-dashboard.log') `
   -RedirectStandardError (Join-Path $logsPath 'office-dashboard.error.log')
 Start-Sleep -Seconds 2

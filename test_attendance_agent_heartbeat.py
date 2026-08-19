@@ -2,11 +2,13 @@
 
 import logging
 import unittest
+from types import SimpleNamespace
 from collections import Counter
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
-from hikvision_attendance_agent import AttendanceAgent, completion_plans, previous_workday
+from hikvision_attendance_agent import AttendanceAgent, completion_plans, previous_workday, run_agent_loop
+from hikvision_device_lock import HikvisionDeviceLockTimeout
 from hikvision_attendance_sync import biometric_payload, is_manual_protected, payload_changed
 
 
@@ -86,6 +88,26 @@ class AttendanceAgentHeartbeatTests(unittest.TestCase):
         self.assertTrue(agent.client.payloads[-1]['hikvision_reachable'])
         agent.heartbeat()
         self.assertFalse(agent.client.payloads[-1]['hikvision_reachable'])
+
+    def test_scheduler_loop_survives_lock_timeout_and_runs_a_later_cycle(self):
+        logger = logging.getLogger('attendance-agent-loop-test')
+        logger.handlers = [logging.NullHandler()]
+        cycle_calls = []
+        heartbeats = []
+
+        def run_cycle(*_):
+            cycle_calls.append(True)
+            if len(cycle_calls) == 1:
+                raise HikvisionDeviceLockTimeout('office-main device lock timed out')
+
+        agent = SimpleNamespace(last_error=None, logger=logger, run_cycle=run_cycle, heartbeat=lambda: heartbeats.append(True))
+        with patch('hikvision_attendance_agent.time_module.monotonic', side_effect=range(1, 20)), patch(
+            'hikvision_attendance_agent.time_module.sleep'
+        ):
+            run_agent_loop(agent, attendance_interval=1, users_interval=1, heartbeat_interval=1, max_iterations=2)
+
+        self.assertEqual(len(cycle_calls), 2)
+        self.assertEqual(len(heartbeats), 2)
 
 
 class PreviousWorkdayCompletionTests(unittest.TestCase):

@@ -297,6 +297,57 @@ class AttendanceAgent:
             self.last_error = None
 
 
+def run_agent_loop(
+    agent: AttendanceAgent,
+    *,
+    attendance_interval: int,
+    users_interval: int,
+    heartbeat_interval: int,
+    once: bool = False,
+    max_iterations: int | None = None,
+) -> None:
+    """Run scheduled work indefinitely; one unexpected cycle error is never fatal."""
+    last_users = 0.0
+    last_attendance = 0.0
+    last_heartbeat = 0.0
+    iterations = 0
+    while True:
+        now = time_module.monotonic()
+        users_due = now - last_users >= users_interval
+        attendance_due = now - last_attendance >= attendance_interval
+        try:
+            if users_due or attendance_due:
+                agent.run_cycle(users_due, attendance_due)
+                if users_due:
+                    last_users = now
+                if attendance_due:
+                    last_attendance = now
+        except KeyboardInterrupt:
+            raise
+        except Exception as error:
+            agent.last_error = f'{type(error).__name__}: {error}'
+            agent.logger.exception('Attendance Agent scheduled cycle failed; continuing: %s', agent.last_error)
+
+        heartbeat_due = now - last_heartbeat >= heartbeat_interval
+        try:
+            if heartbeat_due:
+                agent.heartbeat()
+                last_heartbeat = now
+        except KeyboardInterrupt:
+            raise
+        except Exception as error:
+            agent.last_error = f'{type(error).__name__}: {error}'
+            agent.logger.exception('Attendance Agent heartbeat failed; continuing: %s', agent.last_error)
+
+        iterations += 1
+        if once or (max_iterations is not None and iterations >= max_iterations):
+            return
+        next_users = max(0.0, users_interval - (time_module.monotonic() - last_users))
+        next_attendance = max(0.0, attendance_interval - (time_module.monotonic() - last_attendance))
+        next_heartbeat = max(0.0, heartbeat_interval - (time_module.monotonic() - last_heartbeat))
+        time_module.sleep(max(1.0, min(60.0, next_users, next_attendance, next_heartbeat)))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='Run the local Hikvision Attendance Agent.')
     parser.add_argument('--once', action='store_true', help='Run due user and attendance cycles once, then exit.')
@@ -317,33 +368,24 @@ def main() -> int:
     agent = AttendanceAgent(not attendance_writes_enabled, logger)
     logger.info('Attendance Agent started: agent_id=%s dry_run=%s attendance_interval=%ss users_interval=%ss heartbeat_interval=%ss', agent.agent_id, agent.dry_run, attendance_interval, users_interval, heartbeat_interval)
 
-    recovery_ok, recovery_error = agent.complete_previous_workday()
-    if not recovery_ok:
-        agent.last_error = recovery_error
+    try:
+        recovery_ok, recovery_error = agent.complete_previous_workday()
+        if not recovery_ok:
+            agent.last_error = recovery_error
+    except KeyboardInterrupt:
+        raise
+    except Exception as error:
+        agent.last_error = f'{type(error).__name__}: {error}'
+        logger.exception('Previous-workday startup recovery failed; continuing: %s', agent.last_error)
 
-    last_users = 0.0
-    last_attendance = 0.0
-    last_heartbeat = 0.0
-    while True:
-        now = time_module.monotonic()
-        users_due = now - last_users >= users_interval
-        attendance_due = now - last_attendance >= attendance_interval
-        if users_due or attendance_due:
-            agent.run_cycle(users_due, attendance_due)
-            if users_due:
-                last_users = now
-            if attendance_due:
-                last_attendance = now
-        heartbeat_due = now - last_heartbeat >= heartbeat_interval
-        if heartbeat_due:
-            agent.heartbeat()
-            last_heartbeat = now
-        if args.once:
-            return 0
-        next_users = max(0.0, users_interval - (time_module.monotonic() - last_users))
-        next_attendance = max(0.0, attendance_interval - (time_module.monotonic() - last_attendance))
-        next_heartbeat = max(0.0, heartbeat_interval - (time_module.monotonic() - last_heartbeat))
-        time_module.sleep(max(1.0, min(60.0, next_users, next_attendance, next_heartbeat)))
+    run_agent_loop(
+        agent,
+        attendance_interval=attendance_interval,
+        users_interval=users_interval,
+        heartbeat_interval=heartbeat_interval,
+        once=args.once,
+    )
+    return 0
 
 
 if __name__ == '__main__':
