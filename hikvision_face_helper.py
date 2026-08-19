@@ -49,8 +49,11 @@ HEALTH_CACHE = {"checked_at": 0.0, "result": {"helper_connected": True, "hikvisi
 HEALTH_CACHE_LOCK = threading.Lock()
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-SESSION = requests.Session()
-SESSION.auth = HTTPDigestAuth(USERNAME, PASSWORD)
+def helper_session():
+    """Each threaded Helper request owns its Digest session."""
+    session = requests.Session()
+    session.auth = HTTPDigestAuth(USERNAME, PASSWORD)
+    return session
 
 def diagnostic(code, message, http_status=None):
     return {"code": code, "message": message, "hikvision_status": http_status}
@@ -65,14 +68,17 @@ def face_result(employee_no):
         return cached.read_bytes(), content_type, {"code": "registered_face_cached", "message": "تمت قراءة الصورة المسجلة من التخزين المحلي."}
 
     url = f"http://{DEVICE_IP}/ISAPI/AccessControl/UserInfo/Face?format=json&employeeNo={quote(safe_no)}"
+    session = helper_session()
     try:
-        response = SESSION.get(url, timeout=20)
+        response = session.get(url, timeout=20)
     except requests.ConnectionError:
         return None, None, diagnostic("device_unreachable", "لا يمكن الوصول إلى جهاز Hikvision على الشبكة المحلية.")
     except requests.Timeout:
         return None, None, diagnostic("device_unreachable", "انتهت مهلة الاتصال بجهاز Hikvision.")
     except requests.RequestException as error:
         return None, None, diagnostic("helper_request_error", f"فشل طلب الجهاز: {error}")
+    finally:
+        session.close()
 
     content_type = response.headers.get("content-type", "").lower()
     if response.ok and content_type.startswith("image/"):
@@ -100,8 +106,12 @@ def device_health():
         if now - HEALTH_CACHE["checked_at"] < HEALTH_CACHE_SECONDS:
             return dict(HEALTH_CACHE["result"])
         try:
-            response = SESSION.get(f"http://{DEVICE_IP}/ISAPI/System/capabilities", timeout=2)
-            result = {"helper_connected": True, "hikvision_reachable": response.ok, "hikvision_status": response.status_code}
+            session = helper_session()
+            try:
+                response = session.get(f"http://{DEVICE_IP}/ISAPI/System/capabilities", timeout=2)
+                result = {"helper_connected": True, "hikvision_reachable": response.ok, "hikvision_status": response.status_code}
+            finally:
+                session.close()
         except requests.Timeout:
             result = {"helper_connected": True, "hikvision_reachable": False, "error": "device_timeout"}
         except requests.RequestException:
@@ -316,4 +326,9 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
-ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+def main():
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+
+
+if __name__ == '__main__':
+    main()

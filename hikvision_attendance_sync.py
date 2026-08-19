@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 from hikvision_http import HikvisionReadClient
+from hikvision_device_lock import HikvisionDeviceOperationLock
 from hikvision_devices import configured_devices
 from hikvision_local_config import load_local_hikvision_config, require_local_settings
 
@@ -364,16 +365,20 @@ def hikvision_events_for_device_segmented_recovery(
 
 
 def hikvision_events_for_device_with_recovery(target_date: date_type, diagnostics: RequestDiagnostics, device) -> tuple[list[dict], dict]:
-    events, status = hikvision_events_for_device(target_date, diagnostics, device, return_status=True)
-    if status['state'] == 'complete':
-        return events, status
-    failed_position = status.get('failed_position')
-    if failed_position is not None:
-        print(
-            f'[HIKVISION] {device.device_id} normal read {status["state"]} at position {failed_position}',
-            file=sys.stderr,
-        )
-    return hikvision_events_for_device_segmented_recovery(target_date, diagnostics, device, events)
+    # Keep the normal read and its possible segmented recovery together.  A
+    # Helper request must not start a competing pagination midway through this
+    # device operation, while the other configured device remains independent.
+    with HikvisionDeviceOperationLock(device.device_id, 'event search'):
+        events, status = hikvision_events_for_device(target_date, diagnostics, device, return_status=True)
+        if status['state'] == 'complete':
+            return events, status
+        failed_position = status.get('failed_position')
+        if failed_position is not None:
+            print(
+                f'[HIKVISION] {device.device_id} normal read {status["state"]} at position {failed_position}',
+                file=sys.stderr,
+            )
+        return hikvision_events_for_device_segmented_recovery(target_date, diagnostics, device, events)
 
 
 def incomplete_device_reads(device_reads: dict[str, dict]) -> dict[str, dict]:

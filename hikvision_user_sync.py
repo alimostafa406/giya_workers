@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import requests
 from hikvision_http import HikvisionReadClient
+from hikvision_device_lock import HikvisionDeviceOperationLock
 from hikvision_devices import configured_devices
 
 
@@ -33,40 +35,42 @@ def read_cached_users() -> list[dict]:
 
 def fetch_current_users_for_device(device) -> list[dict]:
     """Read every device user through Hikvision's paginated UserInfo/Search API."""
-    hikvision = HikvisionReadClient(device.ip, device.username, device.password, device.device_id)
-    url = hikvision.url('/ISAPI/AccessControl/UserInfo/Search?format=json')
-    current_users: list[dict] = []
-    position = 0
-    successful_batches = 0
-    try:
-        while True:
-            payload = {
-                "UserInfoSearchCond": {
-                    "searchID": "local-attendance-user-sync",
-                    "searchResultPosition": position,
-                    "maxResults": 100,
+    with HikvisionDeviceOperationLock(device.device_id, 'user search'):
+        hikvision = HikvisionReadClient(device.ip, device.username, device.password, device.device_id)
+        url = hikvision.url('/ISAPI/AccessControl/UserInfo/Search?format=json')
+        current_users: list[dict] = []
+        position = 0
+        successful_batches = 0
+        try:
+            while True:
+                payload = {
+                    "UserInfoSearchCond": {
+                        "searchID": "local-attendance-user-sync",
+                        "searchResultPosition": position,
+                        "maxResults": 100,
+                    }
                 }
-            }
-            response = hikvision.request('POST', url, json=payload, timeout=30)
-            # Keep first-page 401 strict. A later 401 after successful pages is
-            # a stale device Digest challenge: refresh once for this page only.
-            if response.status_code == 401 and successful_batches > 0:
-                print(f'[HIKVISION] {device.device_id} stale Digest suspected at user batch position {position}; refreshing once', file=sys.stderr)
-                hikvision.refresh_digest_session()
                 response = hikvision.request('POST', url, json=payload, timeout=30)
-            response.raise_for_status()
-            result = response.json().get("UserInfoSearch", {})
-            batch = result.get("UserInfo") or []
-            if isinstance(batch, dict):
-                batch = [batch]
-            current_users.extend([{**user, '_device_id': device.device_id} for user in batch])
-            successful_batches += 1
-            if result.get("responseStatusStrg") != "MORE" or not batch:
-                break
-            position += len(batch)
-    finally:
-        hikvision.close()
-    return current_users
+                # Keep first-page 401 strict. A later 401 after successful pages is
+                # a stale device Digest challenge: refresh once for this page only.
+                if response.status_code == 401 and successful_batches > 0:
+                    print(f'[HIKVISION] {device.device_id} stale Digest suspected at user batch position {position}; refreshing once', file=sys.stderr)
+                    hikvision.refresh_digest_session()
+                    response = hikvision.request('POST', url, json=payload, timeout=30)
+                response.raise_for_status()
+                result = response.json().get("UserInfoSearch", {})
+                batch = result.get("UserInfo") or []
+                if isinstance(batch, dict):
+                    batch = [batch]
+                current_users.extend([{**user, '_device_id': device.device_id} for user in batch])
+                successful_batches += 1
+                if result.get("responseStatusStrg") != "MORE" or not batch:
+                    break
+                position += len(batch)
+                time.sleep(0.2)
+        finally:
+            hikvision.close()
+        return current_users
 
 
 def fetch_current_users() -> tuple[dict[str, list[dict]], dict[str, str]]:
