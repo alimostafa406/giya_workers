@@ -3,7 +3,12 @@
 import unittest
 from datetime import date
 
-from hikvision_attendance_sync import plan_attendance, resolved_biometric_event_rows
+from hikvision_attendance_sync import (
+    monitoring_timestamp_repairs,
+    parse_event_time,
+    plan_attendance,
+    resolved_biometric_event_rows,
+)
 
 
 TARGET_DATE = date(2026, 8, 18)
@@ -17,6 +22,17 @@ def event(serial, value, employee_no='8', device_id='office-main'):
         'employeeNoString': employee_no,
         'serialNo': serial,
         'time': f'2026-08-18T{value}+01:00',
+        '_device_id': device_id,
+    }
+
+
+def event_with_timestamp(serial, timestamp, device_id):
+    return {
+        'major': 5,
+        'minor': 75,
+        'employeeNoString': '8',
+        'serialNo': serial,
+        'time': timestamp,
         '_device_id': device_id,
     }
 
@@ -51,6 +67,34 @@ class BiometricEventMonitoringTests(unittest.TestCase):
         self.assertEqual(len(rows_once), 1)
         self.assertEqual(rows_once, rows_retried)
         self.assertEqual(rows_once[0]['device_id'], 'office-main')
+
+    def test_monitoring_preserves_office_main_kinshasa_wall_clock(self):
+        row = resolved_biometric_event_rows([
+            event_with_timestamp('main-time', '2026-08-18T08:08:00+01:00', 'office-main'),
+        ], resolution(), TARGET_DATE)[0]
+        self.assertEqual(row['event_timestamp'], '2026-08-18T08:08:00+01:00')
+
+    def test_monitoring_normalizes_secondary_bad_offset_to_kinshasa_wall_clock(self):
+        source = '2026-08-18T08:08:00+08:00'
+        row = resolved_biometric_event_rows([
+            event_with_timestamp('secondary-time', source, 'office-secondary'),
+        ], resolution(), TARGET_DATE)[0]
+        self.assertEqual(row['event_timestamp'], '2026-08-18T08:08:00+01:00')
+        self.assertEqual(parse_event_time(source).isoformat(), source)
+
+    def test_timestamp_repair_keeps_identity_and_only_changes_different_timestamp(self):
+        row = resolved_biometric_event_rows([
+            event_with_timestamp('secondary-time', '2026-08-18T08:08:00+08:00', 'office-secondary'),
+        ], resolution(), TARGET_DATE)[0]
+        existing = [{
+            'id': 'event-row-1',
+            'device_id': row['device_id'],
+            'event_identity': row['event_identity'],
+            'event_timestamp': '2026-08-18T01:08:00+00:00',
+        }]
+        repairs = monitoring_timestamp_repairs([row], existing)
+        self.assertEqual(repairs, [{'id': 'event-row-1', 'event_timestamp': '2026-08-18T08:08:00+01:00'}])
+        self.assertEqual(row['event_identity'], existing[0]['event_identity'])
 
     def test_unmapped_or_ignored_events_are_never_persisted(self):
         self.assertEqual(resolved_biometric_event_rows([event('unmapped', '12:03:00', employee_no='99')], resolution(), TARGET_DATE), [])

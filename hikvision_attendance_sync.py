@@ -15,7 +15,8 @@ import time as time_module
 from urllib.parse import urlparse
 from collections import Counter, defaultdict
 from datetime import date as date_type
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 from hikvision_http import HikvisionReadClient
@@ -41,6 +42,12 @@ HIKVISION_EVENT_WINDOWS = (
     (time(19, 0), time(21, 59, 59)),
     (time(22, 0), time(23, 59, 59)),
 )
+try:
+    MONITORING_TIME_ZONE = ZoneInfo('Africa/Kinshasa')
+except ZoneInfoNotFoundError:
+    # Windows Python installations without the optional tzdata package still
+    # need a safe Kinshasa zone. Kinshasa has no DST and remains UTC+01:00.
+    MONITORING_TIME_ZONE = timezone(timedelta(hours=1), name='Africa/Kinshasa')
 
 
 class RequestDiagnostics:
@@ -80,6 +87,17 @@ def local_now() -> datetime:
 
 def parse_event_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace('Z', '+00:00'))
+
+
+def parse_monitoring_event_time(value: str) -> datetime:
+    """Use the terminal's displayed wall-clock time for monitoring only.
+
+    Some terminals label their otherwise-correct local clock with an incorrect
+    UTC offset. Official attendance keeps using ``parse_event_time`` unchanged.
+    Monitoring stores the displayed clock explicitly as Kinshasa local time.
+    """
+    raw_timestamp = parse_event_time(value)
+    return raw_timestamp.replace(tzinfo=None).replace(tzinfo=MONITORING_TIME_ZONE)
 
 
 def attendance_time_value(value: datetime | None) -> str | None:
@@ -153,7 +171,7 @@ def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_d
         if not worker or worker.get('is_active') is False:
             continue
         try:
-            event_timestamp = parse_event_time(str(event.get('time') or ''))
+            event_timestamp = parse_monitoring_event_time(str(event.get('time') or ''))
         except ValueError:
             continue
         if event_timestamp.date() != target_date:
@@ -175,6 +193,21 @@ def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_d
         })
 
     return sorted(rows, key=lambda row: (row['event_timestamp'], row['device_id'], row['event_identity']))
+
+
+def monitoring_timestamp_repairs(rows: list[dict], existing_rows: list[dict]) -> list[dict]:
+    """Return minimal timestamp-only repairs keyed by immutable device event identity."""
+    existing_by_key = {
+        (str(row.get('device_id') or ''), str(row.get('event_identity') or '')): row
+        for row in existing_rows
+        if row.get('id')
+    }
+    repairs: list[dict] = []
+    for row in rows:
+        existing = existing_by_key.get((row['device_id'], row['event_identity']))
+        if existing and str(existing.get('event_timestamp') or '') != row['event_timestamp']:
+            repairs.append({'id': str(existing['id']), 'event_timestamp': row['event_timestamp']})
+    return repairs
 
 
 def hikvision_events_for_device(
@@ -511,6 +544,36 @@ class SupabaseReadClient:
             response.raise_for_status()
         except requests.RequestException as error:
             self.diagnostics.failure('SUPABASE', target, 'POST', self.host, error)
+            raise
+        self.diagnostics.success('SUPABASE', response.status_code)
+
+    def read_biometric_attendance_events_by_identity(self, rows: list[dict]) -> list[dict]:
+        """Read only existing monitoring rows matching supplied stable event identities."""
+        existing: list[dict] = []
+        for row in rows:
+            existing.extend(self.read(
+                'biometric_attendance_events',
+                'id,device_id,event_identity,event_timestamp',
+                device_id=f"eq.{row['device_id']}",
+                event_identity=f"eq.{row['event_identity']}",
+            ))
+        return existing
+
+    def update_biometric_attendance_event_timestamp(self, event_id: str, event_timestamp: str) -> None:
+        """Repair a monitoring timestamp only; attendance is never touched."""
+        target = 'repairing observed biometric event timestamp'
+        self.diagnostics.start('SUPABASE', target, 'PATCH', self.host)
+        try:
+            response = requests.patch(
+                f'{self.base_url}/rest/v1/biometric_attendance_events',
+                headers={**self.headers, 'Prefer': 'return=minimal'},
+                params={'id': f'eq.{event_id}'},
+                json={'event_timestamp': event_timestamp},
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            self.diagnostics.failure('SUPABASE', target, 'PATCH', self.host, error)
             raise
         self.diagnostics.success('SUPABASE', response.status_code)
 
