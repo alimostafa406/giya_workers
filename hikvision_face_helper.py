@@ -47,6 +47,12 @@ ATTENDANCE_TEST_ONLY_DATE = date_type(2026, 8, 10)
 HEALTH_CACHE_SECONDS = 5
 HEALTH_CACHE = {"checked_at": 0.0, "result": {"helper_connected": True, "hikvision_reachable": False, "error": "not_checked"}}
 HEALTH_CACHE_LOCK = threading.Lock()
+LOCAL_DASHBOARD_ORIGINS = {
+    "http://127.0.0.1:4173",
+    "http://localhost:4173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+}
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 def helper_session():
@@ -231,12 +237,18 @@ def today_identity_activity():
     }
 
 class Handler(BaseHTTPRequestHandler):
+    def send_local_cors_headers(self):
+        origin = self.headers.get("Origin")
+        if origin in LOCAL_DASHBOARD_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
     def send_json(self, status, payload):
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         try:
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "http://localhost:5173")
+            self.send_local_cors_headers()
             self.end_headers()
             self.wfile.write(encoded)
         except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
@@ -246,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
-            self.send_header("Access-Control-Allow-Origin", "http://localhost:5173")
+            self.send_local_cors_headers()
             for name, value in headers.items():
                 self.send_header(name, value)
             self.end_headers()

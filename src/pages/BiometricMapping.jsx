@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { getBiometricMappingWorkspaceRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
 import { normalizePersonName, replaceHikvisionDeviceUsers } from '../data/hikvisionRawData'
 import { useTranslation } from '../i18n/LanguageContext'
+import TodayPunchesPanel from '../components/Biometric/TodayPunchesPanel'
 
-const helper = import.meta.env.VITE_LOCAL_HIKVISION_HELPER_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8765' : '')
+const isLocalDashboard = typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+const helper = import.meta.env.VITE_LOCAL_HIKVISION_HELPER_URL || (isLocalDashboard ? 'http://127.0.0.1:8765' : '')
 const RECENT_IDENTITIES_KEY = 'biometric_recent_device_identities'
 const rankWorkerName = (deviceName, workerName) => {
   const device = normalizePersonName(deviceName)
@@ -32,11 +34,30 @@ export default function BiometricMapping() {
   const [recentlyAdded, setRecentlyAdded] = useState(readRecent)
   const [lastSyncAt, setLastSyncAt] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const [todayActivity, setTodayActivity] = useState(null)
+  const [todayLoading, setTodayLoading] = useState(false)
+  const [todayActivityError, setTodayActivityError] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
   const load = async () => { try { setData((await getBiometricMappingWorkspaceRequest()).data); setError('') } catch { setError(t('common.updateFailed')) } }
-  useEffect(() => { load() }, [])
+  const loadTodayActivity = async () => {
+    if (!helper) return
+    setTodayLoading(true)
+    setTodayActivityError(false)
+    try {
+      const response = await fetch(`${helper}/today-events`)
+      const result = await response.json().catch(() => null)
+      if (!response.ok || result?.status !== 'ok' || !Array.isArray(result.identities)) throw new Error('today_events_unavailable')
+      setTodayActivity(result)
+    } catch {
+      setTodayActivity(null)
+      setTodayActivityError(true)
+    } finally {
+      setTodayLoading(false)
+    }
+  }
+  useEffect(() => { load(); loadTodayActivity() }, [])
 
   const allDeviceUsers = useMemo(() => (data?.deviceUsers || []).map((user) => ({ ...user, isNewThisSession: Boolean(recentlyAdded[user.employeeNo]) })), [data, recentlyAdded])
   // A worker can have only one active biometric identity. Keep this eligibility
@@ -93,13 +114,14 @@ export default function BiometricMapping() {
       const detected = Object.fromEntries(result.users.filter((user) => user?._local_sync?.is_currently_returned !== false).map((user) => String(user.employeeNo || user.employeeNoString || '').trim()).filter((employeeNo) => employeeNo && !before.has(employeeNo)).map((employeeNo) => [employeeNo, syncedAt]))
       const nextRecent = { ...recentlyAdded, ...detected }
       sessionStorage.setItem(RECENT_IDENTITIES_KEY, JSON.stringify(nextRecent))
-      setRecentlyAdded(nextRecent); setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(result.users); await load(); setMessage(t('biometric.syncSucceeded'))
-    } catch { setError(t('biometric.activityUnavailable')) } finally { setSyncing(false) }
+      setRecentlyAdded(nextRecent); setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(result.users); await Promise.all([load(), loadTodayActivity()]); setMessage(t('biometric.syncSucceeded'))
+    } catch { setError(t('common.updateFailed')) } finally { setSyncing(false) }
   }
 
   return <section>
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-extrabold">{t('biometricMapping.title')}</h2><p className="text-sm text-(--muted)">{t('biometricMapping.subtitle')}</p></div><div className="text-end"><button type="button" className="btn-primary" disabled={!helper || syncing} onClick={syncUsers}>{syncing ? t('biometric.syncing') : t('biometric.syncUsers')}</button>{lastSyncAt ? <p className="mt-1 text-xs text-(--muted)">{t('biometric.lastSync')}: {timeLabel(lastSyncAt)}</p> : null}</div></div>
     {error ? <p className="alert alert--error mb-3">{error}</p> : null}{message ? <p className="mb-3 rounded bg-green-50 p-3 text-green-700">{message}</p> : null}
+    <TodayPunchesPanel t={t} activity={todayActivity} loading={todayLoading} error={todayActivityError} onRefresh={loadTodayActivity} />
     <section className="surface-card mb-4 border-2 border-blue-200 p-4"><div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]"><div className={selectedDevice ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedDeviceIdentity')}</p>{selectedDevice ? <><p className="mt-1 font-extrabold">{selectedDevice.name}</p><p dir="ltr">{selectedDevice.employeeNo}</p><p className="text-xs text-(--muted)">{deviceSource(selectedDevice)} · {deviceStatus(selectedDevice)}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometricMapping.selectIdentity')}</p>}</div><p className="self-center text-center text-3xl" dir="ltr">→</p><div className={selectedWorker ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedWorker')}</p>{selectedWorker ? <><p className="mt-1 font-extrabold">{selectedWorker.full_name}</p><p dir="ltr">{selectedWorker.employee_code || '—'}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometric.chooseWorkerFirst')}</p>}</div></div><div className="mt-3 flex flex-wrap gap-2 border-t border-(--border) pt-3"><button type="button" className="btn-secondary" onClick={clearSelections}>{t('biometric.clearSelection')}</button><button type="button" className="btn-primary px-8" disabled={!selectedDevice || !selectedWorker?.id} onClick={link}>{t('biometric.link')}</button></div></section>
     {selectedDevice ? <section className="surface-card mb-4 p-4"><h3 className="font-extrabold">{t('biometric.similarNames')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{similarWorkers.map(({ worker }) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'btn-primary text-start' : 'btn-secondary text-start'}><b>{worker.full_name}</b><span className="block text-xs" dir="ltr">{worker.employee_code || '—'}</span><span className="block text-xs">{worker.team?.name || worker.team_name || '—'}</span></button>)}</div>{!similarWorkers.length ? <p className="mt-3 text-sm text-(--muted)">{t('biometricMapping.noSimilarNames')}</p> : null}</section> : null}
     <div className="grid gap-4 xl:grid-cols-2">
