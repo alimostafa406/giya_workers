@@ -12,6 +12,9 @@ from hikvision_face_helper import Handler, UserSyncJob
 
 class HelperUserSyncJobTests(unittest.TestCase):
     def test_helper_server_can_bind_without_starting_a_user_sync(self):
+        job = UserSyncJob(lambda _target='all': {'status': 'ok', 'users': []})
+        self.assertIn('target_device_id', job.snapshot())
+        self.assertIsNone(job.snapshot()['target_device_id'])
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         try:
             self.assertGreater(server.server_address[1], 0)
@@ -56,8 +59,10 @@ class HelperUserSyncJobTests(unittest.TestCase):
     def test_start_and_status_endpoints_do_not_wait_for_the_background_sync(self):
         entered = threading.Event()
         release = threading.Event()
+        targets = []
 
-        def sync(_target='all'):
+        def sync(target='all'):
+            targets.append(target)
             entered.set()
             release.wait(1)
             return {"status": "ok", "users": []}
@@ -69,14 +74,28 @@ class HelperUserSyncJobTests(unittest.TestCase):
         thread.start()
         base_url = f"http://127.0.0.1:{server.server_address[1]}"
         try:
+            preflight = requests.options(f"{base_url}/sync-users/start", headers={
+                'Origin': 'http://127.0.0.1:4173',
+                'Access-Control-Request-Method': 'POST',
+                'Access-Control-Request-Headers': 'content-type',
+            }, timeout=.5)
+            self.assertEqual(preflight.status_code, 204)
+            self.assertEqual(preflight.headers['Access-Control-Allow-Origin'], 'http://127.0.0.1:4173')
+            self.assertIn('POST', preflight.headers['Access-Control-Allow-Methods'])
+            self.assertIn('Content-Type', preflight.headers['Access-Control-Allow-Headers'])
             started_at = time.monotonic()
-            response = requests.post(f"{base_url}/sync-users/start", json={'device_id': 'office-secondary'}, timeout=.5)
+            response = requests.post(f"{base_url}/sync-users/start", json={'device_id': 'office-main'}, headers={
+                'Origin': 'http://127.0.0.1:4173', 'Content-Type': 'application/json',
+            }, timeout=.5)
             self.assertLess(time.monotonic() - started_at, .2)
             self.assertEqual(response.status_code, 202)
             self.assertEqual(response.json()["status"], "running")
-            self.assertEqual(response.json()["target_device_id"], "office-secondary")
+            self.assertEqual(response.json()["target_device_id"], "office-main")
             self.assertTrue(entered.wait(1))
-            self.assertEqual(requests.get(f"{base_url}/sync-users/status", timeout=.5).json()["status"], "running")
+            running = requests.get(f"{base_url}/sync-users/status", timeout=.5).json()
+            self.assertEqual(running["status"], "running")
+            self.assertEqual(running["target_device_id"], "office-main")
+            self.assertEqual(targets, ['office-main'])
             release.set()
             deadline = time.monotonic() + 1
             while time.monotonic() < deadline:

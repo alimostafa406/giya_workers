@@ -68,6 +68,7 @@ class UserSyncJob:
         self.state = {
             "status": "idle", "started_at": None, "finished_at": None,
             "progress": None, "result": None, "error": None,
+            "target_device_id": None,
         }
 
     def snapshot(self):
@@ -343,6 +344,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_local_cors_headers()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
 
     def do_POST(self):
