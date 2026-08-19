@@ -11,7 +11,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, unquote
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 
 import requests
 from requests.auth import HTTPDigestAuth
@@ -53,6 +53,56 @@ LOCAL_DASHBOARD_ORIGINS = {
     "http://127.0.0.1:5173",
     "http://localhost:5173",
 }
+
+
+def helper_timestamp():
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+class UserSyncJob:
+    """One asynchronous inventory sync shared by all loopback Helper requests."""
+
+    def __init__(self, sync_function):
+        self.sync_function = sync_function
+        self.lock = threading.Lock()
+        self.state = {
+            "status": "idle", "started_at": None, "finished_at": None,
+            "progress": None, "result": None, "error": None,
+        }
+
+    def snapshot(self):
+        with self.lock:
+            return dict(self.state)
+
+    def start(self):
+        with self.lock:
+            if self.state["status"] == "running":
+                return False, dict(self.state)
+            self.state = {
+                "status": "running", "started_at": helper_timestamp(), "finished_at": None,
+                "progress": "reading_hikvision_users", "result": None, "error": None,
+            }
+            snapshot = dict(self.state)
+        threading.Thread(target=self._run, name="hikvision-user-sync", daemon=True).start()
+        return True, snapshot
+
+    def _run(self):
+        try:
+            result = self.sync_function()
+            if not isinstance(result, dict) or result.get("status") != "ok":
+                raise RuntimeError("Hikvision user synchronization did not return a valid result.")
+            with self.lock:
+                self.state.update({"status": "success", "finished_at": helper_timestamp(), "progress": None, "result": result})
+        except Exception as error:
+            # Do not expose a device URL, request headers, or credentials to the browser.
+            with self.lock:
+                self.state.update({
+                    "status": "failed", "finished_at": helper_timestamp(), "progress": None,
+                    "error": f"{type(error).__name__}: Hikvision user synchronization failed locally.",
+                })
+
+
+USER_SYNC_JOB = UserSyncJob(sync_users_dataset)
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 def helper_session():
@@ -276,6 +326,9 @@ class Handler(BaseHTTPRequestHandler):
             except (requests.RequestException, RuntimeError, ValueError):
                 self.send_json(502, diagnostic("today_events_unavailable", "تعذر تحميل بصمات اليوم من أجهزة Hikvision المحلية."))
             return
+        if self.path == "/sync-users/status":
+            self.send_json(200, USER_SYNC_JOB.snapshot())
+            return
         if not self.path.startswith("/faces/"):
             self.send_json(404, diagnostic("route_not_found", "مسار غير معروف."))
             return
@@ -284,6 +337,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(502 if result["code"] == "device_unreachable" else 404, result)
             return
         self.send_bytes(200, content_type, image, **{"X-Face-Source": result["code"]})
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_local_cors_headers()
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.end_headers()
 
     def do_POST(self):
         if self.path in {"/attendance/preview", "/attendance/apply"}:
@@ -320,9 +379,12 @@ class Handler(BaseHTTPRequestHandler):
                     "message": "Attendance operation failed locally. Check the local helper logs.",
                 })
             return
-        if self.path != "/sync-users":
+        if self.path not in {"/sync-users/start", "/sync-users"}:
             self.send_json(404, diagnostic("route_not_found", "Ù…Ø³Ø§Ø± ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ."))
             return
+        created, job = USER_SYNC_JOB.start()
+        self.send_json(202 if created else 200, {**job, "already_running": not created})
+        return
         try:
             self.send_json(200, sync_users_dataset())
         except requests.Timeout:

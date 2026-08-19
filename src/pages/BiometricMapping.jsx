@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getBiometricMappingWorkspaceRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
 import { normalizePersonName, replaceHikvisionDeviceUsers } from '../data/hikvisionRawData'
 import { useTranslation } from '../i18n/LanguageContext'
@@ -6,6 +6,7 @@ import TodayPunchesPanel from '../components/Biometric/TodayPunchesPanel'
 
 const isLocalDashboard = typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
 const helper = import.meta.env.VITE_LOCAL_HIKVISION_HELPER_URL || (isLocalDashboard ? 'http://127.0.0.1:8765' : '')
+const HELPER_LIGHTWEIGHT_TIMEOUT_MS = 5000
 const RECENT_IDENTITIES_KEY = 'biometric_recent_device_identities'
 const rankWorkerName = (deviceName, workerName) => {
   const device = normalizePersonName(deviceName)
@@ -34,6 +35,7 @@ export default function BiometricMapping() {
   const [recentlyAdded, setRecentlyAdded] = useState(readRecent)
   const [lastSyncAt, setLastSyncAt] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const syncBeforeRef = useRef(new Set())
   const [todayActivity, setTodayActivity] = useState(null)
   const [todayLoading, setTodayLoading] = useState(false)
   const [todayActivityError, setTodayActivityError] = useState(false)
@@ -104,19 +106,47 @@ export default function BiometricMapping() {
   }
   const syncUsers = async () => {
     if (!helper) return
-    setSyncing(true)
+    setError('')
+    setMessage('')
+    syncBeforeRef.current = new Set(allDeviceUsers.filter((user) => user.isCurrentlyReturned !== false).map((user) => String(user.employeeNo)))
     try {
-      const before = new Set(allDeviceUsers.filter((user) => user.isCurrentlyReturned !== false).map((user) => String(user.employeeNo)))
-      const response = await fetch(`${helper}/sync-users`, { method: 'POST' })
-      const result = await response.json()
-      if (!response.ok || result.status !== 'ok' || !Array.isArray(result.users)) throw new Error('sync failed')
-      const syncedAt = new Date().toISOString()
-      const detected = Object.fromEntries(result.users.filter((user) => user?._local_sync?.is_currently_returned !== false).map((user) => String(user.employeeNo || user.employeeNoString || '').trim()).filter((employeeNo) => employeeNo && !before.has(employeeNo)).map((employeeNo) => [employeeNo, syncedAt]))
-      const nextRecent = { ...recentlyAdded, ...detected }
-      sessionStorage.setItem(RECENT_IDENTITIES_KEY, JSON.stringify(nextRecent))
-      setRecentlyAdded(nextRecent); setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(result.users); await Promise.all([load(), loadTodayActivity()]); setMessage(t('biometric.syncSucceeded'))
-    } catch { setError(t('common.updateFailed')) } finally { setSyncing(false) }
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), HELPER_LIGHTWEIGHT_TIMEOUT_MS)
+      const response = await fetch(`${helper}/sync-users/start`, { method: 'POST', signal: controller.signal })
+      window.clearTimeout(timeout)
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !['running', 'success'].includes(result?.status)) throw new Error('sync_start_failed')
+      setSyncing(true)
+    } catch { setError(t('biometric.syncFailed')) }
   }
+
+  useEffect(() => {
+    if (!syncing || !helper) return undefined
+    let cancelled = false
+    let timer = null
+    const poll = async () => {
+      try {
+        const controller = new AbortController()
+        const timeout = window.setTimeout(() => controller.abort(), HELPER_LIGHTWEIGHT_TIMEOUT_MS)
+        const response = await fetch(`${helper}/sync-users/status`, { signal: controller.signal })
+        window.clearTimeout(timeout)
+        const job = await response.json().catch(() => null)
+        if (!response.ok || !job?.status) throw new Error('sync_status_failed')
+        if (job.status === 'running') { timer = window.setTimeout(poll, 1500); return }
+        setSyncing(false)
+        if (job.status !== 'success' || !Array.isArray(job.result?.users)) { setError(t('biometric.syncFailed')); return }
+        const syncedAt = job.finished_at || new Date().toISOString()
+        const detected = Object.fromEntries(job.result.users.filter((user) => user?._local_sync?.is_currently_returned !== false).map((user) => String(user.employeeNo || user.employeeNoString || '').trim()).filter((employeeNo) => employeeNo && !syncBeforeRef.current.has(employeeNo)).map((employeeNo) => [employeeNo, syncedAt]))
+        const nextRecent = { ...recentlyAdded, ...detected }
+        sessionStorage.setItem(RECENT_IDENTITIES_KEY, JSON.stringify(nextRecent))
+        setRecentlyAdded(nextRecent); setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(job.result.users); await Promise.all([load(), loadTodayActivity()]); if (!cancelled) setMessage(t('biometric.syncSucceeded'))
+      } catch {
+        if (!cancelled) { setSyncing(false); setError(t('biometric.syncFailed')) }
+      }
+    }
+    poll()
+    return () => { cancelled = true; if (timer) window.clearTimeout(timer) }
+  }, [syncing])
 
   return <section>
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-extrabold">{t('biometricMapping.title')}</h2><p className="text-sm text-(--muted)">{t('biometricMapping.subtitle')}</p></div><div className="text-end"><button type="button" className="btn-primary" disabled={!helper || syncing} onClick={syncUsers}>{syncing ? t('biometric.syncing') : t('biometric.syncUsers')}</button>{lastSyncAt ? <p className="mt-1 text-xs text-(--muted)">{t('biometric.lastSync')}: {timeLabel(lastSyncAt)}</p> : null}</div></div>

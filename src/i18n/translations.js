@@ -138,6 +138,7 @@ Object.assign(translations.ar.biometric, {
   chooseWorkerFirst: 'اختر عاملاً من قائمة النظام لإكمال الربط.',
   mappingSaved: 'تم حفظ الربط بنجاح.',
   syncSucceeded: 'تمت المزامنة بنجاح.',
+  syncFailed: 'تعذرت مزامنة مستخدمي جهاز البصمة. حاول مرة أخرى.',
 })
 Object.assign(translations.en.biometric, {
   deviceUsers: 'Hikvision device users',
@@ -149,6 +150,7 @@ Object.assign(translations.en.biometric, {
   chooseWorkerFirst: 'Select a system worker to complete the link.',
   mappingSaved: 'Mapping saved successfully.',
   syncSucceeded: 'Synchronization completed successfully.',
+  syncFailed: 'Unable to synchronize Hikvision users. Please try again.',
 })
 Object.assign(translations.fr.biometric, {
   deviceUsers: 'Utilisateurs de l’appareil Hikvision',
@@ -160,6 +162,7 @@ Object.assign(translations.fr.biometric, {
   chooseWorkerFirst: 'Sélectionnez un travailleur du système pour terminer la liaison.',
   mappingSaved: 'Liaison enregistrée avec succès.',
   syncSucceeded: 'Synchronisation terminée avec succès.',
+  syncFailed: 'Impossible de synchroniser les utilisateurs Hikvision. Veuillez réessayer.',
 })
 
 Object.assign(translations.ar.biometric, {
