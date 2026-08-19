@@ -53,10 +53,21 @@ export default function BiometricMapping() {
   const [todayActivity, setTodayActivity] = useState(null)
   const [todayLoading, setTodayLoading] = useState(false)
   const [todayActivityError, setTodayActivityError] = useState(false)
+  const [inventoryRefreshError, setInventoryRefreshError] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
-  const load = async () => { try { setData((await getBiometricMappingWorkspaceRequest()).data); setError('') } catch { setError(t('common.updateFailed')) } }
+  const load = async () => {
+    try {
+      const workspace = (await getBiometricMappingWorkspaceRequest()).data
+      setData(workspace)
+      setInventoryRefreshError(Boolean(workspace.identityPresenceError))
+      return !workspace.identityPresenceError
+    } catch {
+      setInventoryRefreshError(true)
+      return false
+    }
+  }
   const loadTodayActivity = async () => {
     if (!helper) return
     setTodayLoading(true)
@@ -156,7 +167,10 @@ export default function BiometricMapping() {
         const detected = Object.fromEntries(job.result.users.filter((user) => user?._local_sync?.is_currently_returned !== false).map((user) => String(user.employeeNo || user.employeeNoString || '').trim()).filter((employeeNo) => employeeNo && !syncBeforeRef.current.has(employeeNo)).map((employeeNo) => [employeeNo, syncedAt]))
         const nextRecent = { ...recentlyAdded, ...detected }
         sessionStorage.setItem(RECENT_IDENTITIES_KEY, JSON.stringify(nextRecent))
-        setRecentlyAdded(nextRecent); setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(job.result.users); await Promise.all([load(), loadTodayActivity()]); if (!cancelled) setMessage(t('biometric.syncSucceeded'))
+        setRecentlyAdded(nextRecent); setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(job.result.users)
+        await load()
+        if (!cancelled) setMessage(t('biometric.syncSucceeded'))
+        void loadTodayActivity()
       } catch {
         if (!cancelled) { setSyncing(false); setError(t('biometric.syncFailed')) }
       }
@@ -167,7 +181,7 @@ export default function BiometricMapping() {
 
   return <section>
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-extrabold">{t('biometricMapping.title')}</h2><p className="text-sm text-(--muted)">{t('biometricMapping.subtitle')}</p></div><div className="text-end"><button type="button" className="btn-primary" disabled={!helper || syncing} onClick={syncUsers}>{syncing ? t('biometric.syncing') : t('biometric.syncUsers')}</button>{lastSyncAt ? <p className="mt-1 text-xs text-(--muted)">{t('biometric.lastSync')}: {timeLabel(lastSyncAt)}</p> : null}</div></div>
-    {error ? <p className="alert alert--error mb-3">{error}</p> : null}{message ? <p className="mb-3 rounded bg-green-50 p-3 text-green-700">{message}</p> : null}
+    {error ? <p className="alert alert--error mb-3">{error}</p> : null}{message ? <p className="mb-3 rounded bg-green-50 p-3 text-green-700">{message}</p> : null}{inventoryRefreshError ? <p className="alert alert--error mb-3">{t('biometric.inventoryRefreshFailed')}</p> : null}
     <TodayPunchesPanel t={t} activity={todayActivity} loading={todayLoading} error={todayActivityError} onRefresh={loadTodayActivity} />
     <section className="surface-card mb-4 border-2 border-blue-200 p-4"><div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]"><div className={selectedDevice ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedDeviceIdentity')}</p>{selectedDevice ? <><p className="mt-1 font-extrabold">{selectedDevice.name}</p><p dir="ltr">{selectedDevice.employeeNo}</p><p className="text-xs text-(--muted)">{deviceSource(selectedDevice)} · {deviceStatus(selectedDevice)}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometricMapping.selectIdentity')}</p>}</div><p className="self-center text-center text-3xl" dir="ltr">→</p><div className={selectedWorker ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedWorker')}</p>{selectedWorker ? <><p className="mt-1 font-extrabold">{selectedWorker.full_name}</p><p dir="ltr">{selectedWorker.employee_code || '—'}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometric.chooseWorkerFirst')}</p>}</div></div><div className="mt-3 flex flex-wrap gap-2 border-t border-(--border) pt-3"><button type="button" className="btn-secondary" onClick={clearSelections}>{t('biometric.clearSelection')}</button><button type="button" className="btn-primary px-8" disabled={!selectedDevice || !selectedWorker?.id} onClick={link}>{t('biometric.link')}</button></div></section>
     {selectedDevice ? <section className="surface-card mb-4 p-4"><h3 className="font-extrabold">{t('biometric.similarNames')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{similarWorkers.map(({ worker }) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'btn-primary text-start' : 'btn-secondary text-start'}><b>{worker.full_name}</b><span className="block text-xs" dir="ltr">{worker.employee_code || '—'}</span><span className="block text-xs">{worker.team?.name || worker.team_name || '—'}</span></button>)}</div>{!similarWorkers.length ? <p className="mt-3 text-sm text-(--muted)">{t('biometricMapping.noSimilarNames')}</p> : null}</section> : null}

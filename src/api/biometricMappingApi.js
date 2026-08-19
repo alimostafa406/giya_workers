@@ -80,13 +80,19 @@ const getActiveMappings = (mappings) => toArray(mappings).filter(
 )
 
 export const getBiometricMappingWorkspaceRequest = async () => {
-  const [workersResponse, mappingsResponse, classifications, ignoredIdentities, presences] = await Promise.all([
+  const [workersResponse, mappingsResponse, classifications, ignoredIdentities] = await Promise.all([
     getWorkersRequest(),
     getBiometricMappingsRequest(),
     getWorkerClassificationsRequest(),
     getIgnoredDeviceIdentitiesRequest(),
-    getDeviceIdentityPresenceRequest(),
   ])
+  let presences = []
+  let identityPresenceError = null
+  try {
+    presences = await getDeviceIdentityPresenceRequest()
+  } catch (error) {
+    identityPresenceError = error
+  }
 
   const workers = toArray(workersResponse.data).filter(Boolean)
   const mappings = toArray(mappingsResponse.data).filter(isMappingRecord)
@@ -173,6 +179,7 @@ export const getBiometricMappingWorkspaceRequest = async () => {
       deviceUsers,
       workerMappings,
       supabaseOnlyWorkers,
+      identityPresenceError,
     },
   }
 }
