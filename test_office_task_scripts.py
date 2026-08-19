@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 OFFICE = ROOT / 'scripts' / 'office'
+SCRIPTS = ROOT / 'scripts'
 
 
 class OfficeTaskScriptTests(unittest.TestCase):
@@ -38,6 +39,18 @@ class OfficeTaskScriptTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_hikvision_manager_launcher_is_manual_and_does_not_register_tasks(self):
+        path = SCRIPTS / 'Start-HikvisionManager.ps1'
+        source = path.read_text(encoding='utf-8')
+        self.assertIn('http://127.0.0.1:8765/health', source)
+        self.assertIn('hikvision_face_helper.py', source)
+        self.assertIn('http://127.0.0.1:4173/biometric-mapping', source)
+        self.assertIn('Start-Process', source)
+        self.assertNotIn('Register-ScheduledTask', source)
+        command = f"[void][scriptblock]::Create((Get-Content -LiteralPath '{path}' -Raw))"
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-Command', command], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':

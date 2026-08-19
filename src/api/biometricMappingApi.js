@@ -1,6 +1,7 @@
 import { getHikvisionDeviceUsers, normalizeDeviceEmployeeNo, normalizePersonName } from '../data/hikvisionRawData'
 import { getSupabaseClient } from '../lib/supabase'
 import { createWorkerRequest, getWorkersRequest, updateWorkerRequest } from './workersApi'
+import { getTeamsRequest } from './teamsApi'
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
 const mappingFields = 'id,worker_id,device_employee_no,device_name,device_picture_url,is_active,mapping_review_state,created_at,updated_at'
@@ -80,11 +81,12 @@ const getActiveMappings = (mappings) => toArray(mappings).filter(
 )
 
 export const getBiometricMappingWorkspaceRequest = async () => {
-  const [workersResponse, mappingsResponse, classifications, ignoredIdentities] = await Promise.all([
+  const [workersResponse, mappingsResponse, classifications, ignoredIdentities, teamsResponse] = await Promise.all([
     getWorkersRequest(),
     getBiometricMappingsRequest(),
     getWorkerClassificationsRequest(),
     getIgnoredDeviceIdentitiesRequest(),
+    getTeamsRequest(),
   ])
   let presences = []
   let identityPresenceError = null
@@ -179,9 +181,29 @@ export const getBiometricMappingWorkspaceRequest = async () => {
       deviceUsers,
       workerMappings,
       supabaseOnlyWorkers,
+      teams: toArray(teamsResponse.data).filter((team) => team?.is_active !== false),
       identityPresenceError,
     },
   }
+}
+
+export const createWorkerAndConfirmBiometricMappingRequest = async ({ deviceUser, fullName, employeeCode, teamId }) => {
+  const employeeNo = normalizeDeviceEmployeeNo(deviceUser?.employeeNo)
+  const name = String(fullName || '').trim()
+  const code = String(employeeCode || '').trim()
+  if (!employeeNo || !name || !code || !teamId) {
+    throw new Error('Device identity, worker name, employee code, and team are required.')
+  }
+  const { data, error } = await getSupabaseClient().rpc('create_worker_and_confirm_biometric_mapping', {
+    p_full_name: name,
+    p_employee_code: code,
+    p_team_id: teamId,
+    p_device_employee_no: employeeNo,
+    p_device_name: String(deviceUser?.name || '').trim() || null,
+    p_device_picture_url: deviceUser?.attendancePhotoUrl || null,
+  })
+  if (error) throw error
+  return { data: Array.isArray(data) ? data[0] : data }
 }
 
 export const saveBiometricMappingRequest = async ({ deviceUser, workerId, replaceExisting = false, reviewState = 'needs_review' }) => {

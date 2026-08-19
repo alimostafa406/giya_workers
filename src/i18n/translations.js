@@ -148,6 +148,10 @@ Object.assign(translations.ar.biometric, {
   newUnmapped: 'غير مربوطين جدد', allUnmapped: 'جميع غير المربوطين', showAllUnmapped: 'عرض جميع غير المربوطين', showRecentUnmapped: 'عرض غير المربوطين الجدد', firstSeen: 'أول ظهور',
   todayActivity: 'حركة البصمة اليوم',
   inventoryRefreshFailed: 'تعذر تحديث مخزون هويات جهاز البصمة. تأكد من تنفيذ ترحيل تتبع أول ظهور ثم أعد المحاولة.',
+  workerNotFound: 'لم تجد العامل؟',
+  addNewWorker: 'إضافة كعامل جديد',
+  newWorkerFromDevice: 'سيتم إنشاء عامل جديد لهوية الجهاز: {name} ({employeeNo})',
+  workerCreatedAndMapped: 'تمت إضافة العامل وربطه بجهاز البصمة بنجاح.',
 })
 Object.assign(translations.en.biometric, {
   deviceUsers: 'Hikvision device users',
@@ -169,6 +173,10 @@ Object.assign(translations.en.biometric, {
   newUnmapped: 'New unlinked identities', allUnmapped: 'All unlinked identities', showAllUnmapped: 'Show all unlinked identities', showRecentUnmapped: 'Show new unlinked identities', firstSeen: 'First seen',
   todayActivity: 'Today’s biometric activity',
   inventoryRefreshFailed: 'Unable to refresh the device identity inventory. Ensure the first-seen tracking migration has been applied, then try again.',
+  workerNotFound: 'Worker not found?',
+  addNewWorker: 'Add as a new worker',
+  newWorkerFromDevice: 'A new worker will be created for device identity: {name} ({employeeNo})',
+  workerCreatedAndMapped: 'Worker added and linked to the biometric device successfully.',
 })
 Object.assign(translations.fr.biometric, {
   deviceUsers: 'Utilisateurs de l’appareil Hikvision',
@@ -190,6 +198,10 @@ Object.assign(translations.fr.biometric, {
   newUnmapped: 'Nouvelles identités non liées', allUnmapped: 'Toutes les identités non liées', showAllUnmapped: 'Afficher toutes les identités non liées', showRecentUnmapped: 'Afficher les nouvelles identités non liées', firstSeen: 'Première détection',
   todayActivity: 'Activité biométrique du jour',
   inventoryRefreshFailed: 'Impossible d’actualiser l’inventaire des identités de l’appareil. Vérifiez que la migration de suivi de première détection est appliquée, puis réessayez.',
+  workerNotFound: 'Vous ne trouvez pas le travailleur ?',
+  addNewWorker: 'Ajouter comme nouveau travailleur',
+  newWorkerFromDevice: 'Un nouveau travailleur sera créé pour l’identité de l’appareil : {name} ({employeeNo})',
+  workerCreatedAndMapped: 'Le travailleur a été ajouté et lié à l’appareil biométrique avec succès.',
 })
 
 Object.assign(translations.ar.biometric, {

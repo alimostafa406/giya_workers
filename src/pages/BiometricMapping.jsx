@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getBiometricMappingWorkspaceRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
+import { createWorkerAndConfirmBiometricMappingRequest, getBiometricMappingWorkspaceRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
 import { normalizePersonName, replaceHikvisionDeviceUsers } from '../data/hikvisionRawData'
 import { useTranslation } from '../i18n/LanguageContext'
 import TodayPunchesPanel from '../components/Biometric/TodayPunchesPanel'
+import CreateWorkerFromDeviceModal from '../components/Biometric/CreateWorkerFromDeviceModal'
 
 const isLocalDashboard = typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
 const helper = import.meta.env.VITE_LOCAL_HIKVISION_HELPER_URL || (isLocalDashboard ? 'http://127.0.0.1:8765' : '')
@@ -55,6 +56,8 @@ export default function BiometricMapping() {
   const [todayLoading, setTodayLoading] = useState(false)
   const [todayActivityError, setTodayActivityError] = useState(false)
   const [inventoryRefreshError, setInventoryRefreshError] = useState(false)
+  const [createWorkerOpen, setCreateWorkerOpen] = useState(false)
+  const [creatingWorker, setCreatingWorker] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -133,6 +136,22 @@ export default function BiometricMapping() {
       clearSelections()
     } catch { setError(t('common.updateFailed')) }
   }
+  const createWorkerFromDevice = async ({ fullName, employeeCode, teamId }) => {
+    if (!selectedDevice) return
+    setCreatingWorker(true)
+    setError('')
+    try {
+      await createWorkerAndConfirmBiometricMappingRequest({ deviceUser: selectedDevice, fullName, employeeCode, teamId })
+      await load()
+      clearSelections()
+      setCreateWorkerOpen(false)
+      setMessage(t('biometric.workerCreatedAndMapped'))
+    } catch (createError) {
+      setError(createError?.message || t('common.updateFailed'))
+    } finally {
+      setCreatingWorker(false)
+    }
+  }
   const syncUsers = async (targetDeviceId) => {
     if (!helper) return
     setError('')
@@ -198,10 +217,11 @@ export default function BiometricMapping() {
     {error ? <p className="alert alert--error mb-3">{error}</p> : null}{message ? <p className="mb-3 rounded bg-green-50 p-3 text-green-700">{message}</p> : null}{inventoryRefreshError ? <p className="alert alert--error mb-3">{t('biometric.inventoryRefreshFailed')}</p> : null}
     <TodayPunchesPanel t={t} activity={todayActivity} loading={todayLoading} error={todayActivityError} onRefresh={loadTodayActivity} />
     <section className="surface-card mb-4 border-2 border-blue-200 p-4"><div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]"><div className={selectedDevice ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedDeviceIdentity')}</p>{selectedDevice ? <><p className="mt-1 font-extrabold">{selectedDevice.name}</p><p dir="ltr">{selectedDevice.employeeNo}</p><p className="text-xs text-(--muted)">{deviceSource(selectedDevice)} · {deviceStatus(selectedDevice)}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometricMapping.selectIdentity')}</p>}</div><p className="self-center text-center text-3xl" dir="ltr">→</p><div className={selectedWorker ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedWorker')}</p>{selectedWorker ? <><p className="mt-1 font-extrabold">{selectedWorker.full_name}</p><p dir="ltr">{selectedWorker.employee_code || '—'}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometric.chooseWorkerFirst')}</p>}</div></div><div className="mt-3 flex flex-wrap gap-2 border-t border-(--border) pt-3"><button type="button" className="btn-secondary" onClick={clearSelections}>{t('biometric.clearSelection')}</button><button type="button" className="btn-primary px-8" disabled={!selectedDevice || !selectedWorker?.id} onClick={link}>{t('biometric.link')}</button></div></section>
-    {selectedDevice ? <section className="surface-card mb-4 p-4"><h3 className="font-extrabold">{t('biometric.similarNames')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{similarWorkers.map(({ worker }) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'btn-primary text-start' : 'btn-secondary text-start'}><b>{worker.full_name}</b><span className="block text-xs" dir="ltr">{worker.employee_code || '—'}</span><span className="block text-xs">{worker.team?.name || worker.team_name || '—'}</span></button>)}</div>{!similarWorkers.length ? <p className="mt-3 text-sm text-(--muted)">{t('biometricMapping.noSimilarNames')}</p> : null}</section> : null}
+    {selectedDevice ? <section className="surface-card mb-4 p-4"><h3 className="font-extrabold">{t('biometric.similarNames')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{similarWorkers.map(({ worker }) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'btn-primary text-start' : 'btn-secondary text-start'}><b>{worker.full_name}</b><span className="block text-xs" dir="ltr">{worker.employee_code || '—'}</span><span className="block text-xs">{worker.team?.name || worker.team_name || '—'}</span></button>)}</div>{!similarWorkers.length ? <p className="mt-3 text-sm text-(--muted)">{t('biometricMapping.noSimilarNames')}</p> : null}<div className="mt-4 border-t border-(--border) pt-4"><p className="text-sm text-(--muted)">{t('biometric.workerNotFound')}</p><button type="button" className="btn-secondary mt-2" onClick={() => setCreateWorkerOpen(true)}>{t('biometric.addNewWorker')}</button></div></section> : null}
     <div className="grid gap-4 xl:grid-cols-2">
       <section className="surface-card overflow-hidden"><div className="border-b border-(--border) p-4"><div className="flex items-center justify-between gap-2"><h3 className="font-extrabold">{showOld ? t('biometric.allUnmapped') : t('biometric.newUnmapped')}</h3><button type="button" className="btn-secondary" onClick={() => setShowOld((value) => !value)}>{showOld ? t('biometric.showRecentUnmapped') : t('biometric.showAllUnmapped')}</button></div><div className="mt-3 grid gap-2 sm:grid-cols-2"><input className="input-base" value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder={t('biometric.searchDevice')} /><select className="input-base" value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)}><option value="all">{t('biometric.allDevices')}</option><option value="office-main">{t('biometric.officeMain')}</option><option value="office-secondary">{t('biometric.officeSecondary')}</option></select></div></div><div className="max-h-[34rem] divide-y divide-(--border) overflow-y-auto">{deviceUsers.map((user) => <button type="button" key={user.employeeNo} onClick={() => selectDevice(user)} className={selectedDeviceIdentity === user.employeeNo ? 'block w-full bg-blue-100 p-4 text-start ring-2 ring-inset ring-blue-600' : 'block w-full p-4 text-start hover:bg-slate-50'}><div className="flex items-center justify-between gap-2"><b>{user.name}</b><span dir="ltr">{user.employeeNo}</span></div><p className="mt-1 text-xs text-(--muted)">{deviceSource(user)} · {t('biometric.firstSeen')}: {timeLabel(user.firstSeenAt)}</p></button>)}{!deviceUsers.length ? <p className="p-5 text-sm text-(--muted)">{t('biometric.empty')}</p> : null}</div></section>
       <section className="surface-card overflow-hidden"><div className="border-b border-(--border) p-4"><h3 className="font-extrabold">{t('biometric.systemWorkers')}</h3><input className="input-base mt-3" value={workerQuery} onChange={(event) => setWorkerQuery(event.target.value)} placeholder={t('biometric.searchWorker')} /></div><div className="max-h-[34rem] divide-y divide-(--border) overflow-y-auto">{workers.map((worker) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'block w-full bg-blue-100 p-4 text-start ring-2 ring-inset ring-blue-600' : 'block w-full p-4 text-start hover:bg-slate-50'}><b>{worker.full_name}</b><p className="mt-1 text-xs text-(--muted)"><span dir="ltr">{worker.employee_code || '—'}</span> · {worker.team?.name || worker.team_name || '—'}</p></button>)}{!workers.length ? <p className="p-5 text-sm text-(--muted)">{t('common.noResults')}</p> : null}</div></section>
     </div>
+    <CreateWorkerFromDeviceModal deviceUser={selectedDevice} teams={data?.teams || []} isOpen={createWorkerOpen} isSaving={creatingWorker} onClose={() => setCreateWorkerOpen(false)} onSubmit={createWorkerFromDevice} />
   </section>
 }
