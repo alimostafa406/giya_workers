@@ -2,6 +2,7 @@
 
 import logging
 import unittest
+from collections import Counter
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
@@ -118,6 +119,32 @@ class PreviousWorkdayCompletionTests(unittest.TestCase):
     def test_recovery_does_not_create_historical_absence_without_existing_row(self):
         absent_plan = {'worker_id': 'worker-without-row', 'proposed_status': 'absent'}
         self.assertEqual(completion_plans([absent_plan], {}), [])
+
+    def test_previous_workday_uses_shared_resilient_device_reader(self):
+        logger = logging.getLogger('attendance-agent-previous-workday-test')
+        logger.handlers = [logging.NullHandler()]
+        with patch('hikvision_attendance_agent.configured_devices', return_value=[]):
+            agent = AttendanceAgent(dry_run=True, logger=logger)
+        agent.client = CapturingStatusClient()
+        agent.device_statuses['office-main'] = {
+            'reachable': False,
+            'last_successful_read_at': None,
+            'last_error': None,
+        }
+        complete_read = {'office-main': {'state': 'complete', 'event_count': 7, 'error': None}}
+        resolution = {'existing_attendance': {}}
+        monday = datetime(2026, 8, 17, 8, 0, tzinfo=timezone.utc)
+
+        with patch('hikvision_attendance_agent.local_now', return_value=monday), patch(
+            'hikvision_attendance_agent.hikvision_events_with_devices', return_value=([], complete_read),
+        ) as reader, patch('hikvision_attendance_agent.load_resolution_data', return_value=resolution), patch(
+            'hikvision_attendance_agent.plan_attendance', return_value=([], Counter()),
+        ):
+            ok, error = agent.complete_previous_workday()
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(reader.call_args.args[0], date(2026, 8, 15))
 
 
 if __name__ == '__main__':

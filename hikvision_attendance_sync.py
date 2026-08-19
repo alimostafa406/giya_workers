@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import sys
+import time as time_module
 from urllib.parse import urlparse
 from collections import Counter, defaultdict
 from datetime import date as date_type
@@ -30,6 +31,16 @@ WEEKDAY_FINALIZATION = time(17, 15)
 SATURDAY_FINALIZATION = time(14, 45)
 END_OF_DAY = time(23, 59, 59)
 HIKVISION_EVENT_BATCH_SIZE = 30
+HIKVISION_SUCCESSFUL_PAGE_DELAY_SECONDS = 0.2
+HIKVISION_EVENT_WINDOWS = (
+    (time(0, 0), time(6, 59, 59)),
+    (time(7, 0), time(9, 59, 59)),
+    (time(10, 0), time(12, 59, 59)),
+    (time(13, 0), time(15, 59, 59)),
+    (time(16, 0), time(18, 59, 59)),
+    (time(19, 0), time(21, 59, 59)),
+    (time(22, 0), time(23, 59, 59)),
+)
 
 
 class RequestDiagnostics:
@@ -94,12 +105,39 @@ def _filtered_device_events(events: list[dict], target_date: date_type, device) 
     )]
 
 
+def _query_timestamp(target_date: date_type, value: time) -> str:
+    return f'{target_date.isoformat()}T{value.strftime("%H:%M:%S")}+01:00'
+
+
+def hikvision_event_identity(event: dict) -> tuple:
+    """Stable per-device identity for merging overlapping/retried event responses."""
+    serial = event.get('serialNo') or event.get('eventSerialNo')
+    device_id = str(event.get('_device_id') or event.get('device_id') or '')
+    if serial is not None and str(serial).strip():
+        return ('serial', device_id, str(serial).strip())
+    return (
+        'event', device_id, str(event.get('employeeNoString') or event.get('employeeNo') or '').strip(),
+        str(event.get('time') or ''), event.get('major'), event.get('minor'),
+        event.get('cardReaderNo'), event.get('doorNo'),
+    )
+
+
+def deduplicate_hikvision_events(events: list[dict]) -> list[dict]:
+    unique: dict[tuple, dict] = {}
+    for event in events:
+        unique.setdefault(hikvision_event_identity(event), event)
+    return list(unique.values())
+
+
 def hikvision_events_for_device(
     target_date: date_type,
     diagnostics: RequestDiagnostics,
     device,
     *,
     return_status: bool = False,
+    start_time: time | None = None,
+    end_time: time | None = None,
+    search_suffix: str = '',
 ) -> list[dict] | tuple[list[dict], dict]:
     hikvision = HikvisionReadClient(device.ip, device.username, device.password, device.device_id)
     url = hikvision.url('/ISAPI/AccessControl/AcsEvent?format=json')
@@ -108,16 +146,19 @@ def hikvision_events_for_device(
     position = 0
     successful_batches = 0
     read_error: Exception | None = None
+    failed_position: int | None = None
+    start_time = start_time or time(0, 0)
+    end_time = end_time or END_OF_DAY
     try:
         while True:
             payload = {'AcsEventCond': {
-                'searchID': f'attendance-{target_date.isoformat()}',
+                'searchID': f'attendance-{target_date.isoformat()}{search_suffix}',
                 'searchResultPosition': position,
                 'maxResults': HIKVISION_EVENT_BATCH_SIZE,
                 'major': 0,
                 'minor': 0,
-                'startTime': f'{target_date.isoformat()}T00:00:00+01:00',
-                'endTime': f'{target_date.isoformat()}T23:59:59+01:00',
+                'startTime': _query_timestamp(target_date, start_time),
+                'endTime': _query_timestamp(target_date, end_time),
             }}
             target = f'event search (batch position {position})'
             diagnostics.start('HIKVISION', target, 'POST', host)
@@ -134,6 +175,7 @@ def hikvision_events_for_device(
             except requests.RequestException as error:
                 diagnostics.failure('HIKVISION', target, 'POST', host, error)
                 read_error = error
+                failed_position = position
                 break
             diagnostics.success('HIKVISION', response.status_code)
             successful_batches += 1
@@ -142,6 +184,7 @@ def hikvision_events_for_device(
             except ValueError as error:
                 diagnostics.failure('HIKVISION', target, 'POST', host, error)
                 read_error = RuntimeError(f'Hikvision returned invalid JSON for {target}')
+                failed_position = position
                 break
             batch = acs.get('InfoList') or []
             if isinstance(batch, dict):
@@ -150,6 +193,7 @@ def hikvision_events_for_device(
             if acs.get('responseStatusStrg') != 'MORE' or not batch:
                 break
             position += len(batch)
+            time_module.sleep(HIKVISION_SUCCESSFUL_PAGE_DELAY_SECONDS)
     finally:
         hikvision.close()
 
@@ -162,7 +206,7 @@ def hikvision_events_for_device(
         error_message = f'{type(read_error).__name__}: {read_error}'
         print(
             f'[HIKVISION] {device.device_id} attendance read is partial; '
-            f'preserving {len(filtered_events)} fetched events and blocking attendance apply.',
+            f'preserving {len(filtered_events)} fetched events.',
             file=sys.stderr,
         )
     else:
@@ -174,8 +218,81 @@ def hikvision_events_for_device(
         'state': state,
         'event_count': len(filtered_events),
         'error': error_message,
+        'failed_position': failed_position,
+        'query_start': start_time.strftime('%H:%M:%S'),
+        'query_end': end_time.strftime('%H:%M:%S'),
     }
     return (filtered_events, status) if return_status else filtered_events
+
+
+def hikvision_events_for_device_segmented_recovery(
+    target_date: date_type,
+    diagnostics: RequestDiagnostics,
+    device,
+    preserved_events: list[dict],
+) -> tuple[list[dict], dict]:
+    """Recover a failed deep daily search with independent, shallow time windows."""
+    print(f'[HIKVISION] {device.device_id} segmented recovery started', file=sys.stderr)
+    all_events = list(preserved_events)
+    segments = []
+    for index, (start_time, end_time) in enumerate(HIKVISION_EVENT_WINDOWS):
+        segment_events, status = hikvision_events_for_device(
+            target_date,
+            diagnostics,
+            device,
+            return_status=True,
+            start_time=start_time,
+            end_time=end_time,
+            search_suffix=f'-segment-{index}',
+        )
+        all_events.extend(segment_events)
+        segments.append(status)
+
+    merged_events = deduplicate_hikvision_events(all_events)
+    incomplete_segments = [segment for segment in segments if segment['state'] != 'complete']
+    if not incomplete_segments:
+        print(
+            f'[HIKVISION] {device.device_id} segmented recovery complete: {len(merged_events)} events',
+            file=sys.stderr,
+        )
+        return merged_events, {
+            'device_id': device.device_id,
+            'state': 'complete',
+            'event_count': len(merged_events),
+            'error': None,
+            'recovery': 'segmented',
+            'segments': segments,
+        }
+
+    error_details = ', '.join(
+        f"{segment['query_start']}-{segment['query_end']}={segment['state']}"
+        for segment in incomplete_segments
+    )
+    print(
+        f'[HIKVISION] {device.device_id} segmented recovery incomplete: {error_details}',
+        file=sys.stderr,
+    )
+    return merged_events, {
+        'device_id': device.device_id,
+        'state': 'partial' if merged_events else 'failed',
+        'event_count': len(merged_events),
+        'error': f'segmented recovery incomplete: {error_details}',
+        'recovery': 'segmented',
+        'segments': segments,
+    }
+
+
+def hikvision_events_for_device_with_recovery(target_date: date_type, diagnostics: RequestDiagnostics, device) -> tuple[list[dict], dict]:
+    events, status = hikvision_events_for_device(target_date, diagnostics, device, return_status=True)
+    if status['state'] == 'complete':
+        return events, status
+    failed_position = status.get('failed_position')
+    if failed_position is not None:
+        print(
+            f'[HIKVISION] {device.device_id} normal read {status["state"]} at position {failed_position}',
+            file=sys.stderr,
+        )
+    return hikvision_events_for_device_segmented_recovery(target_date, diagnostics, device, events)
 
 
 def incomplete_device_reads(device_reads: dict[str, dict]) -> dict[str, dict]:
@@ -202,9 +319,7 @@ def hikvision_events_with_devices(target_date: date_type, diagnostics: RequestDi
     device_reads: dict[str, dict] = {}
     for device in configured_devices():
         try:
-            device_events, read_status = hikvision_events_for_device(
-                target_date, diagnostics, device, return_status=True,
-            )
+            device_events, read_status = hikvision_events_for_device_with_recovery(target_date, diagnostics, device)
             events.extend(device_events)
             device_reads[device.device_id] = read_status
         except (RuntimeError, requests.RequestException, ValueError) as error:
