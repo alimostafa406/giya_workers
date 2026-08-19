@@ -205,6 +205,56 @@ export const getSpecialStaffAttendanceRequest = async (params = {}) => getAttend
   staff_classification: 'special_staff',
 })
 
+// Read-only roster view for the standalone foreign/special-staff attendance page.
+// Unlike getSpecialStaffAttendanceRequest, this includes every current special-staff
+// worker, including people with no attendance row on the selected date.
+export const getForeignAttendanceRequest = async (params = {}) => {
+  const client = getSupabaseClient()
+  const [attendance, workers, teams, classifications] = await Promise.all([
+    readAttendance(client),
+    readWorkers(client),
+    readTeams(client),
+    readWorkerClassifications(client),
+  ])
+
+  const classificationsByWorkerId = new Map(
+    classifications
+      .filter((item) => item?.worker_id)
+      .map((item) => [String(item.worker_id), item.classification]),
+  )
+  const teamsById = new Map(teams.map((team) => [String(team.id), team]))
+  const attendanceByWorkerId = new Map(
+    attendance
+      .filter((row) => row.attendance_date === params.date)
+      .map((row) => [String(row.worker_id), row]),
+  )
+
+  const data = workers
+    .filter((worker) => (
+      worker.is_active !== false
+      && classificationsByWorkerId.get(String(worker.id)) === 'special_staff'
+      && (!params.team_id || String(worker.team_id || '') === String(params.team_id))
+    ))
+    .map((worker) => {
+      const attendanceRow = attendanceByWorkerId.get(String(worker.id)) || null
+      const team = teamsById.get(String(worker.team_id || '')) || null
+      return {
+        worker_id: worker.id,
+        worker_name: worker.full_name || '-',
+        employee_code: worker.employee_code || null,
+        team_id: worker.team_id || null,
+        team_name: team?.name || '-',
+        attendance_date: params.date || null,
+        status: attendanceRow?.status || null,
+        check_in: attendanceRow?.check_in || null,
+        check_out: attendanceRow?.check_out || null,
+      }
+    })
+    .sort((left, right) => String(left.worker_name).localeCompare(String(right.worker_name)))
+
+  return { data, teams: teams.filter((team) => team.is_active !== false) }
+}
+
 export const updateAttendanceManuallyRequest = async (row, values) => {
   const client = getSupabaseClient()
   const payload = buildManualAttendancePayload(row, values)

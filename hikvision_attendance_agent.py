@@ -28,6 +28,7 @@ from hikvision_attendance_sync import (
     load_resolution_data,
     local_now,
     plan_attendance,
+    resolved_biometric_event_rows,
     workday_schedule,
     write_summary,
 )
@@ -163,6 +164,22 @@ class AttendanceAgent:
             self.logger.error('Hikvision user sync failed: %s: %s', type(error).__name__, error)
             return False
 
+    def persist_observed_biometric_events(self, events: list[dict], resolution: dict, target_date) -> None:
+        """Persist positive observations only; never affects attendance planning."""
+        rows = resolved_biometric_event_rows(events, resolution, target_date)
+        if not rows:
+            return
+        try:
+            self.client.insert_biometric_attendance_events(rows)
+            self.logger.info(
+                'Biometric monitoring observations persisted: date=%s resolved_events=%s',
+                target_date.isoformat(), len(rows),
+            )
+        except (RuntimeError, requests.RequestException, ValueError) as error:
+            # Monitoring is deliberately isolated: a failure here must never
+            # block or alter the established attendance workflow.
+            self.logger.error('Biometric monitoring event persistence failed: %s: %s', type(error).__name__, error)
+
     def process_today_attendance(self) -> tuple[bool, str | None]:
         target_date = local_now().date()
         if target_date == TEST_ONLY_DATE:
@@ -184,6 +201,7 @@ class AttendanceAgent:
                     self.device_statuses[device_id].update(reachable=False, last_error=result.get('error'))
             self.client = self.client or SupabaseReadClient(diagnostics)
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
+            self.persist_observed_biometric_events(events, resolution, target_date)
             plans, counters = plan_attendance(events, resolution, target_date)
             summary = write_summary(plans, resolution['existing_attendance'], counters)
             apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
@@ -233,6 +251,7 @@ class AttendanceAgent:
                     self.device_statuses[device_id].update(reachable=False, last_error=result.get('error'))
             self.client = self.client or SupabaseReadClient(diagnostics)
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
+            self.persist_observed_biometric_events(events, resolution, target_date)
             plans, counters = plan_attendance(events, resolution, target_date)
             existing = resolution['existing_attendance']
             recovery_plans = completion_plans(plans, existing)

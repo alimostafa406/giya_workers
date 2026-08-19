@@ -129,6 +129,54 @@ def deduplicate_hikvision_events(events: list[dict]) -> list[dict]:
     return list(unique.values())
 
 
+def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_date: date_type) -> list[dict]:
+    """Build append-only monitoring rows without changing attendance planning.
+
+    Events are retained only after the existing confirmed, active mapping lookup
+    resolves them to an active worker.  Midday events are deliberately included:
+    this data is observation-only and is not used by ``plan_attendance``.
+    """
+    rows: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    ignored = resolution.get('ignored', set())
+    confirmed = resolution.get('confirmed', {})
+    workers = resolution.get('workers', {})
+
+    for event in deduplicate_hikvision_events(events):
+        employee_no = str(event.get('employeeNoString') or '').strip()
+        if not employee_no or employee_no in ignored:
+            continue
+        mapping = confirmed.get(employee_no)
+        if not mapping:
+            continue
+        worker = workers.get(str(mapping.get('worker_id') or ''))
+        if not worker or worker.get('is_active') is False:
+            continue
+        try:
+            event_timestamp = parse_event_time(str(event.get('time') or ''))
+        except ValueError:
+            continue
+        if event_timestamp.date() != target_date:
+            continue
+        device_id = str(event.get('_device_id') or event.get('device_id') or '').strip()
+        if not device_id:
+            continue
+        event_identity = json.dumps(hikvision_event_identity(event), separators=(',', ':'), default=str)
+        unique_key = (device_id, event_identity)
+        if unique_key in seen:
+            continue
+        seen.add(unique_key)
+        rows.append({
+            'worker_id': str(worker['id']),
+            'attendance_date': target_date.isoformat(),
+            'event_timestamp': event_timestamp.isoformat(),
+            'device_id': device_id,
+            'event_identity': event_identity,
+        })
+
+    return sorted(rows, key=lambda row: (row['event_timestamp'], row['device_id'], row['event_identity']))
+
+
 def hikvision_events_for_device(
     target_date: date_type,
     diagnostics: RequestDiagnostics,
@@ -445,6 +493,26 @@ class SupabaseReadClient:
         response = requests.post(f'{self.base_url}/rest/v1/{table}', headers={**self.headers, 'Prefer': 'resolution=merge-duplicates,return=representation'}, params={'on_conflict': conflict}, json=payload, timeout=30)
         response.raise_for_status()
         return response.json()
+
+    def insert_biometric_attendance_events(self, rows: list[dict]) -> None:
+        """Append observed events once; duplicate device events are ignored."""
+        if not rows:
+            return
+        target = f'inserting observed biometric events ({len(rows)})'
+        self.diagnostics.start('SUPABASE', target, 'POST', self.host)
+        try:
+            response = requests.post(
+                f'{self.base_url}/rest/v1/biometric_attendance_events',
+                headers={**self.headers, 'Prefer': 'resolution=ignore-duplicates,return=minimal'},
+                params={'on_conflict': 'device_id,event_identity'},
+                json=rows,
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            self.diagnostics.failure('SUPABASE', target, 'POST', self.host, error)
+            raise
+        self.diagnostics.success('SUPABASE', response.status_code)
 
 
 def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for_apply: bool = False) -> dict:

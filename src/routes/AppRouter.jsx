@@ -21,6 +21,7 @@ import Supervisors from '../pages/Supervisors'
 import Workers from '../pages/Workers'
 import AdvancedSettings from '../pages/AdvancedSettings'
 import Payroll from '../pages/Payroll'
+import ForeignAttendance from '../pages/ForeignAttendance'
 import { useAuthStore } from '../store/authStore'
 
 function ProtectedRoute() {
@@ -107,6 +108,7 @@ function AppRouter() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
+        <Route path="/foreign-attendance" element={<ForeignAttendance />} />
 
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
