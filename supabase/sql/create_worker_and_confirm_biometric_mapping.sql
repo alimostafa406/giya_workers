@@ -30,51 +30,51 @@ begin
   if v_full_name = '' or v_employee_code = '' or v_device_employee_no = '' or p_team_id is null then
     raise exception 'Name, employee code, team, and device identity are required.' using errcode = '22023';
   end if;
-  if not exists (select 1 from public.teams where id = p_team_id and is_active) then
+  if not exists (select 1 from public.teams as t where t.id = p_team_id and t.is_active) then
     raise exception 'Selected team is not active or does not exist.' using errcode = '23503';
   end if;
-  if exists (select 1 from public.workers where lower(btrim(employee_code)) = lower(v_employee_code)) then
+  if exists (select 1 from public.workers as w where lower(btrim(w.employee_code)) = lower(v_employee_code)) then
     raise exception 'Employee code already exists.' using errcode = '23505';
   end if;
 
-  select id, is_active into v_existing_mapping_id, v_existing_mapping_active
-  from public.biometric_worker_mapping
-  where device_employee_no = v_device_employee_no
+  select m.id, m.is_active into v_existing_mapping_id, v_existing_mapping_active
+  from public.biometric_worker_mapping as m
+  where m.device_employee_no = v_device_employee_no
   for update;
   if v_existing_mapping_id is not null and v_existing_mapping_active then
     raise exception 'This device identity is already actively mapped.' using errcode = '23505';
   end if;
 
-  insert into public.workers (full_name, employee_code, phone, team_id, is_active)
+  insert into public.workers as w (full_name, employee_code, phone, team_id, is_active)
   values (v_full_name, v_employee_code, null, p_team_id, true)
-  returning id into v_worker_id;
+  returning w.id into v_worker_id;
 
   -- New normal workers follow the established default without changing staff classification.
-  insert into public.worker_payroll_profile (worker_id, payment_type)
+  insert into public.worker_payroll_profile as profile ("worker_id", payment_type)
   values (v_worker_id, 'weekly');
-  insert into public.worker_staff_classification (worker_id, classification)
+  insert into public.worker_staff_classification as classification ("worker_id", classification)
   values (v_worker_id, 'normal')
-  on conflict (worker_id) do nothing;
+  on conflict ("worker_id") do nothing;
 
   if v_existing_mapping_id is null then
-    insert into public.biometric_worker_mapping (
-      worker_id, device_employee_no, device_name, device_picture_url, is_active, mapping_review_state
+    insert into public.biometric_worker_mapping as m (
+      "worker_id", device_employee_no, device_name, device_picture_url, is_active, mapping_review_state
     ) values (
       v_worker_id, v_device_employee_no, nullif(btrim(coalesce(p_device_name, '')), ''),
       nullif(btrim(coalesce(p_device_picture_url, '')), ''), true, 'confirmed'
-    ) returning id into v_mapping_id;
+    ) returning m.id into v_mapping_id;
   else
-    update public.biometric_worker_mapping
-    set worker_id = v_worker_id,
+    update public.biometric_worker_mapping as m
+    set "worker_id" = v_worker_id,
         device_name = nullif(btrim(coalesce(p_device_name, '')), ''),
         device_picture_url = nullif(btrim(coalesce(p_device_picture_url, '')), ''),
         is_active = true,
         mapping_review_state = 'confirmed'
-    where id = v_existing_mapping_id
-    returning id into v_mapping_id;
+    where m.id = v_existing_mapping_id
+    returning m.id into v_mapping_id;
   end if;
 
-  return query select v_worker_id, v_mapping_id;
+  return query select v_worker_id as "worker_id", v_mapping_id as "mapping_id";
 end;
 $$;
 
