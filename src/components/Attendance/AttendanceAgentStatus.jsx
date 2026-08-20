@@ -1,9 +1,24 @@
 import { useEffect, useState } from 'react'
 import { getAttendanceAgentDeviceStatusesRequest, getAttendanceAgentStatusRequest, isAttendanceAgentOnline, isAttendanceProcessingRecent } from '../../api/attendanceAgentApi'
 
-const formatDateTime = (value) => value
-  ? new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value))
-  : '—'
+const formatDateTime = (value) => {
+  if (!value) return '—'
+  const timestamp = new Date(value)
+  if (!Number.isFinite(timestamp.getTime())) return '—'
+
+  const date = new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(timestamp)
+  const time = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(timestamp)
+  return `${date} ${time}`
+}
 
 function AttendanceAgentStatus() {
   const [status, setStatus] = useState(null)
