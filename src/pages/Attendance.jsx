@@ -27,6 +27,10 @@ const normalizeFilters = (filters) => {
   }, {})
 }
 
+const currentBusinessDate = () => new Date().toLocaleDateString('en-CA', {
+  timeZone: 'Africa/Kinshasa',
+})
+
 const renderAttendanceStatus = (row, t) => {
   const checkoutOnly = getCheckoutOnlyInfo(row)
   const labels = { present: t('attendance.present'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), pending: t('attendance.pending'), in_progress: t('attendance.inProgress') }
@@ -44,7 +48,7 @@ function Attendance() {
   const [editingRow, setEditingRow] = useState(null)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [filters, setFilters] = useState({
-    date: '',
+    date: currentBusinessDate(),
     team_id: '',
     worker_id: '',
     search: '',
@@ -63,12 +67,13 @@ function Attendance() {
     }
   }
 
-  const loadAttendance = async () => {
+  const loadAttendance = async (nextFilters = filters) => {
     setLoading(true)
     setError('')
     try {
+      const selectedDate = nextFilters.date || currentBusinessDate()
       const { data } = await getAttendanceRequest({
-        ...normalizeFilters(filters),
+        ...normalizeFilters({ ...nextFilters, date: selectedDate }),
         staff_classification: 'normal',
       })
       setAttendance(asArray(data))
@@ -96,6 +101,18 @@ function Attendance() {
       setError(getErrorMessage(err))
     } finally {
       setIsSavingEdit(false)
+    }
+  }
+
+  const handleFilterChange = (key, value) => {
+    const nextFilters = {
+      ...filters,
+      [key]: key === 'date' ? (value || currentBusinessDate()) : value,
+    }
+    setFilters(nextFilters)
+
+    if (key === 'date') {
+      loadAttendance(nextFilters)
     }
   }
 
@@ -150,11 +167,16 @@ function Attendance() {
 
   return (
     <section>
-      <h2 className="mb-4 text-xl font-extrabold">{t('attendance.title')}</h2>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+        <h2 className="text-xl font-extrabold">{t('attendance.title')}</h2>
+        <p className="text-sm font-semibold text-(--muted)">
+          {t('attendance.date')}: <span dir="ltr">{filters.date}</span>
+        </p>
+      </div>
 
       <AttendanceFilters
         filters={filters}
-        onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+        onChange={handleFilterChange}
         teams={teams}
         workers={workers}
         onApply={loadAttendance}
