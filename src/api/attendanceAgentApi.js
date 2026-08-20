@@ -1,5 +1,9 @@
 import { getSupabaseClient } from '../lib/supabase'
 
+// The Agent processes attendance every five minutes.  Two intervals plus a
+// one-minute tolerance distinguish a healthy heartbeat from delayed work.
+export const ATTENDANCE_PROCESSING_STALE_AFTER_MS = (2 * 300 + 60) * 1000
+
 export const getAttendanceAgentStatusRequest = async () => {
   const { data, error } = await getSupabaseClient()
     .from('attendance_agent_status')
@@ -26,4 +30,10 @@ export const isAttendanceAgentOnline = (status, maxAgeMs = 3 * 60 * 1000) => {
   if (!status?.last_seen_at) return false
   const heartbeat = new Date(status.last_seen_at).getTime()
   return Number.isFinite(heartbeat) && Date.now() - heartbeat <= maxAgeMs
+}
+
+export const isAttendanceProcessingRecent = (status, maxAgeMs = ATTENDANCE_PROCESSING_STALE_AFTER_MS) => {
+  if (!status?.last_attendance_sync_at) return false
+  const processedAt = new Date(status.last_attendance_sync_at).getTime()
+  return Number.isFinite(processedAt) && Date.now() - processedAt <= maxAgeMs
 }

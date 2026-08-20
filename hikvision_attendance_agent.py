@@ -107,6 +107,10 @@ class AttendanceAgent:
             'last_error': self.last_error,
         }
 
+    def mark_attendance_sync_success(self) -> None:
+        """Record only a completed write cycle; heartbeat remains independent."""
+        self.last_attendance_sync_at = local_now().isoformat()
+
     def probe_hikvision(self) -> tuple[bool, str | None]:
         return check_hikvision_reachable()
 
@@ -126,6 +130,11 @@ class AttendanceAgent:
         elif self.last_error and self.last_error.startswith('Hikvision '):
             self.last_error = None
         payload = self.status_payload(True)
+        # A restarted Agent has no in-memory processing timestamp yet.  Do not
+        # erase the last known successful processing time from Supabase merely
+        # because a heartbeat happens before the next successful apply cycle.
+        if payload['last_attendance_sync_at'] is None:
+            payload.pop('last_attendance_sync_at')
         try:
             if self.client is None:
                 self.client = SupabaseReadClient(RequestDiagnostics(False))
@@ -217,8 +226,9 @@ class AttendanceAgent:
                 result_counts['needs_review'] = counters.get('needs_review', 0)
                 if results.get('aborted_structural_error'):
                     self.logger.error('Attendance write cycle aborted after structural Supabase error.')
-                self.logger.info('Attendance apply complete: events=%s %s', len(events), result_counts)
-            self.last_attendance_sync_at = local_now().isoformat()
+                else:
+                    self.logger.info('Attendance apply complete: events=%s %s', len(events), result_counts)
+                    self.mark_attendance_sync_success()
             self.hikvision_reachable = True
             self.hikvision_probe_failures = 0
             return True, 'partial_device_failure' if apply_blocked_reason else None
@@ -267,6 +277,10 @@ class AttendanceAgent:
                 results = apply_biometric_attendance(self.client, recovery_plans, existing)
                 updated = results.get('updated', 0)
                 unchanged = results.get('unchanged', 0) + results.get('skipped_manual_protected', 0)
+                if results.get('aborted_structural_error'):
+                    self.logger.error('Previous-workday attendance write cycle aborted after structural Supabase error.')
+                else:
+                    self.mark_attendance_sync_success()
             self.logger.info(
                 'Previous workday completion: date=%s events=%s updated=%s unchanged=%s',
                 target_date.isoformat(), len(events), updated, unchanged,

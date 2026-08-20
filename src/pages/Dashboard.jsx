@@ -3,6 +3,7 @@ import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
+import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatus'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
 
@@ -135,7 +136,6 @@ function Dashboard() {
     { label: t('dashboard.absentToday'), value: absentCount },
     { label: t('dashboard.notRecorded'), value: notRecordedCount },
     { label: t('dashboard.totalWorkers'), value: activeWorkers.length },
-    { label: t('dashboard.lastUpdate'), value: latestAttendance[0]?.updated_at ? new Date(latestAttendance[0].updated_at).toLocaleTimeString() : '—' },
   ]
 
   const columns = [
@@ -196,6 +196,8 @@ function Dashboard() {
           </div>
         ))}
       </div>
+
+      <AttendanceAgentStatus />
 
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-lg font-bold">{t('dashboard.recentAttendance')}</h3>

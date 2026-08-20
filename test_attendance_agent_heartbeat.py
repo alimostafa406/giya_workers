@@ -30,14 +30,14 @@ class CapturingStatusClient:
 
 
 class AttendanceAgentHeartbeatTests(unittest.TestCase):
-    def make_agent(self):
+    def make_agent(self, dry_run=True):
         logger = logging.getLogger('attendance-agent-test')
         logger.handlers = [logging.NullHandler()]
         # The production entry point loads the local device configuration before
         # constructing the agent. This unit test exercises heartbeat state only,
         # so it deliberately supplies no real-device configuration.
         with patch('hikvision_attendance_agent.configured_devices', return_value=[]):
-            agent = AttendanceAgent(dry_run=True, logger=logger)
+            agent = AttendanceAgent(dry_run=dry_run, logger=logger)
         agent.agent_id = 'test-agent'
         agent.machine_name = 'test-machine'
         agent.client = CapturingStatusClient()
@@ -55,16 +55,99 @@ class AttendanceAgentHeartbeatTests(unittest.TestCase):
         payload = agent.client.payloads[-1]
         self.assertEqual(set(payload), {
             'agent_id', 'machine_name', 'last_seen_at', 'hikvision_reachable',
-            'supabase_reachable', 'last_user_sync_at', 'last_attendance_sync_at',
-            'last_error',
+            'supabase_reachable', 'last_user_sync_at', 'last_error',
         })
         self.assertEqual(payload['agent_id'], 'test-agent')
         self.assertEqual(payload['machine_name'], 'test-machine')
         self.assertTrue(payload['hikvision_reachable'])
         self.assertTrue(payload['supabase_reachable'])
         self.assertIsNone(payload['last_user_sync_at'])
-        self.assertIsNone(payload['last_attendance_sync_at'])
+        self.assertNotIn('last_attendance_sync_at', payload)
         self.assertIsNone(payload['last_error'])
+
+    def test_heartbeat_keeps_the_last_successful_processing_timestamp_independent(self):
+        agent = self.make_agent()
+        agent.last_attendance_sync_at = '2026-08-11T10:14:26+00:00'
+
+        agent.heartbeat()
+
+        self.assertEqual(
+            agent.client.payloads[-1]['last_attendance_sync_at'],
+            '2026-08-11T10:14:26+00:00',
+        )
+
+    def test_successful_attendance_apply_updates_processing_timestamp(self):
+        agent = self.make_agent(dry_run=False)
+        agent.device_statuses['office-main'] = {
+            'reachable': False,
+            'last_successful_read_at': None,
+            'last_error': None,
+        }
+        processing_time = datetime(2026, 8, 11, 10, 14, 26, tzinfo=timezone.utc)
+        complete_read = {'office-main': {'state': 'complete', 'event_count': 7, 'error': None}}
+        resolution = {'existing_attendance': {}}
+
+        with patch('hikvision_attendance_agent.local_now', return_value=processing_time), patch(
+            'hikvision_attendance_agent.hikvision_events_with_devices', return_value=([], complete_read),
+        ), patch('hikvision_attendance_agent.load_resolution_data', return_value=resolution), patch(
+            'hikvision_attendance_agent.plan_attendance', return_value=([], Counter()),
+        ), patch('hikvision_attendance_agent.write_summary', return_value=Counter()), patch.object(
+            agent, 'persist_observed_biometric_events'
+        ), patch('hikvision_attendance_agent.apply_biometric_attendance', return_value=Counter(updated=1)):
+            ok, error = agent.process_today_attendance()
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(agent.last_attendance_sync_at, processing_time.isoformat())
+
+    def test_partial_or_blocked_attendance_cycle_does_not_advance_processing_timestamp(self):
+        agent = self.make_agent(dry_run=False)
+        agent.last_attendance_sync_at = '2026-08-11T09:00:00+00:00'
+        agent.device_statuses['office-main'] = {
+            'reachable': True,
+            'last_successful_read_at': None,
+            'last_error': None,
+        }
+        processing_time = datetime(2026, 8, 11, 10, 14, 26, tzinfo=timezone.utc)
+        partial_read = {'office-main': {'state': 'partial', 'event_count': 7, 'error': 'connection lost'}}
+        resolution = {'existing_attendance': {}}
+
+        with patch('hikvision_attendance_agent.local_now', return_value=processing_time), patch(
+            'hikvision_attendance_agent.hikvision_events_with_devices', return_value=([], partial_read),
+        ), patch('hikvision_attendance_agent.load_resolution_data', return_value=resolution), patch(
+            'hikvision_attendance_agent.plan_attendance', return_value=([], Counter()),
+        ), patch('hikvision_attendance_agent.write_summary', return_value=Counter()), patch.object(
+            agent, 'persist_observed_biometric_events'
+        ), patch('hikvision_attendance_agent.apply_biometric_attendance') as apply:
+            ok, error = agent.process_today_attendance()
+
+        self.assertFalse(ok)
+        self.assertTrue(error)
+        apply.assert_not_called()
+        self.assertEqual(agent.last_attendance_sync_at, '2026-08-11T09:00:00+00:00')
+
+    def test_failed_attendance_apply_does_not_advance_processing_timestamp(self):
+        agent = self.make_agent(dry_run=False)
+        agent.last_attendance_sync_at = '2026-08-11T09:00:00+00:00'
+        agent.device_statuses['office-main'] = {
+            'reachable': False,
+            'last_successful_read_at': None,
+            'last_error': None,
+        }
+        processing_time = datetime(2026, 8, 11, 10, 14, 26, tzinfo=timezone.utc)
+        complete_read = {'office-main': {'state': 'complete', 'event_count': 7, 'error': None}}
+        resolution = {'existing_attendance': {}}
+
+        with patch('hikvision_attendance_agent.local_now', return_value=processing_time), patch(
+            'hikvision_attendance_agent.hikvision_events_with_devices', return_value=([], complete_read),
+        ), patch('hikvision_attendance_agent.load_resolution_data', return_value=resolution), patch(
+            'hikvision_attendance_agent.plan_attendance', return_value=([], Counter()),
+        ), patch('hikvision_attendance_agent.write_summary', return_value=Counter()), patch.object(
+            agent, 'persist_observed_biometric_events'
+        ), patch('hikvision_attendance_agent.apply_biometric_attendance', return_value=Counter(aborted_structural_error=1)):
+            agent.process_today_attendance()
+
+        self.assertEqual(agent.last_attendance_sync_at, '2026-08-11T09:00:00+00:00')
 
     def test_user_sync_success_or_failure_keeps_heartbeat_payload_valid(self):
         for sync_result, expected_reachable in ((True, True), (False, False)):
