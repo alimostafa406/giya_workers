@@ -32,7 +32,7 @@ export default function SundayPaymentsPanel() {
   const payments = useMemo(() => (data?.sundayPayments || []).map((payment) => ({ ...payment, worker: workerById.get(String(payment.worker_id)) || null })), [data, workerById])
   const summaries = useMemo(() => {
     const groups = new Map()
-    payments.forEach((payment) => {
+    payments.filter((payment) => payment.payment_status !== 'cancelled').forEach((payment) => {
       const group = groups.get(payment.currency_code) || { currency: payment.currency_code, count: 0, total: 0, paid: 0, unpaid: 0 }
       const amount = Number(payment.amount || 0)
       group.count += 1; group.total += amount
@@ -70,7 +70,7 @@ export default function SundayPaymentsPanel() {
     { key: 'daily', header: t('payroll.dailyValue'), render: (row) => money(row.daily_value, row.currency_code, row.payment_type_snapshot) },
     { key: 'multiplier', header: t('payroll.sundayMultiplier'), render: (row) => `×${row.multiplier}` },
     { key: 'amount', header: t('payroll.amount'), render: (row) => money(row.amount, row.currency_code, row.payment_type_snapshot) },
-    { key: 'status', header: t('common.status'), render: (row) => row.payment_status === 'paid' ? t('payroll.sundayPaid') : row.settled_payroll_run_id ? t('payroll.sundayIncludedInPayroll') : t('payroll.sundayUnpaid') },
+    { key: 'status', header: t('common.status'), render: (row) => row.payment_status === 'paid' ? t('payroll.sundayPaid') : row.payment_status === 'cancelled' ? t('payroll.sundayCancelled') : row.settled_payroll_run_id ? t('payroll.sundayIncludedInPayroll') : t('payroll.sundayUnpaid') },
     { key: 'paidAt', header: t('payroll.paidDate'), render: (row) => row.paid_at ? new Date(row.paid_at).toLocaleDateString() : '—' },
     { key: 'note', header: t('attendance.notes'), render: (row) => row.note || '—' },
     { key: 'action', header: t('common.actions'), render: (row) => row.payment_status === 'unpaid' && !row.settled_payroll_run_id ? <button className="btn-primary px-3 py-1" disabled={saving} onClick={() => markPaid(row)}>{t('payroll.sundayMarkPaid')}</button> : null },

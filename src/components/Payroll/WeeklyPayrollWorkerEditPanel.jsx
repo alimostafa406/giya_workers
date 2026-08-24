@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Modal from '../Modal/Modal'
 import { useTranslation } from '../../i18n/LanguageContext'
 import { localIsoDate } from '../../api/payrollSettingsApi'
+import { currentBusinessDate } from '../../utils/payrollCalculations'
 
 const adjustmentTypes = ['bonus', 'deduction', 'advance', 'other']
 
@@ -20,6 +21,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
   const [overtimeRate, setOvertimeRate] = useState('')
   const [overtimeStartTime, setOvertimeStartTime] = useState('')
   const [effectiveFrom, setEffectiveFrom] = useState(localIsoDate())
+  const [sundayWorked, setSundayWorked] = useState(false)
 
   useEffect(() => {
     setStatuses(initialStatuses)
@@ -34,6 +36,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
     setOvertimeRate(line?.term?.overtime_rate_per_hour ?? '')
     setOvertimeStartTime(line?.term?.overtime_start_time || '')
     setEffectiveFrom(localIsoDate())
+    setSundayWorked(Boolean(line?.sundayPayment && line.sundayPayment.payment_status !== 'cancelled'))
   }, [initialStatuses, line])
 
   const locale = language === 'ar' ? 'ar' : language === 'fr' ? 'fr-FR' : 'en-US'
@@ -42,7 +45,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
     event.preventDefault()
     onSave(line, {
       statuses, checkIns, overtimeHours, transportAmount, adjustmentType, adjustmentAmount, reason,
-      compensation: { dailyRate, dailyTransportAllowance, overtimeRate, overtimeStartTime, effectiveFrom },
+      sundayWorked, compensation: { dailyRate, dailyTransportAllowance, overtimeRate, overtimeStartTime, effectiveFrom },
     })
   }
 
@@ -50,15 +53,17 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
     {line ? <form className="space-y-4" onSubmit={save}>
       <div><p className="text-lg font-extrabold">{line.worker.full_name}</p><p className="text-sm text-(--muted)">{line.worker.employee_code || '—'}</p></div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {(() => {
+          const payment = line.sundayPayment
+          const isFuture = line.sundayDate > currentBusinessDate()
+          const financiallyProcessed = payment?.payment_status === 'paid' || Boolean(payment?.settled_payroll_run_id)
+          return <label className="rounded-lg border border-(--border) p-3 text-sm font-bold"><span>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${line.sundayDate}T12:00:00`))} · {line.sundayDate}</span>{isFuture ? <span className="input-base mt-1 block text-(--muted)">—</span> : <select className="input-base mt-1" value={sundayWorked ? 'present' : 'absent'} disabled={financiallyProcessed} onChange={(event) => setSundayWorked(event.target.value === 'present')}><option value="present">{t('attendance.present')}</option><option value="absent">{t('attendance.absent')}</option></select>}{payment && payment.payment_status !== 'cancelled' ? <div className="mt-2 space-y-1 font-normal"><p>{t('payroll.sundayValue')}: {payment.amount} {payment.currency_code}</p><p>{t('payroll.sundayPaymentStatus')}: {payment.payment_status === 'paid' ? t('payroll.sundayPaid') : payment.settled_payroll_run_id ? t('payroll.sundayIncludedInPayroll') : t('payroll.sundayUnpaid')}</p>{payment.paid_at ? <p>{t('payroll.paidDate')}: {new Date(payment.paid_at).toLocaleDateString()}</p> : null}{financiallyProcessed ? <p className="text-amber-700">{t('payroll.sundayProcessedCannotReverse')}</p> : null}</div> : null}</label>
+        })()}
         {dates.map((date) => {
           const isFuture = line.details.find((detail) => detail.date === date)?.isFuture
           return <label key={date} className="text-sm font-bold"><span>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</span>{isFuture ? <span className="input-base mt-1 block text-(--muted)">—</span> : <><select className="input-base mt-1" value={statuses[date] || 'absent'} onChange={(event) => setStatuses((current) => ({ ...current, [date]: event.target.value }))}>{statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{statuses[date] === 'half_day' ? <input className="input-base mt-1" type="time" required value={checkIns[date] || ''} onChange={(event) => setCheckIns((current) => ({ ...current, [date]: event.target.value }))} /> : null}</>}</label>
         })}
       </div>
-      <section className="border-t border-(--border) pt-4">
-        <h3 className="font-extrabold">{t('payroll.sundayWork')}</h3>
-        {(line.sundayPayments || []).length ? <div className="mt-2 space-y-2">{line.sundayPayments.map((payment) => <div className="rounded-lg bg-slate-50 p-3 text-sm" key={payment.id}><p className="font-bold">{payment.work_date}</p><p>{t('payroll.dailyValue')}: {payment.daily_value} · {t('payroll.sundayMultiplier')}: ×{payment.multiplier} · {t('payroll.amount')}: {payment.amount} {payment.currency_code}</p><p>{t('common.status')}: {payment.payment_status === 'paid' ? t('payroll.sundayPaid') : t('payroll.sundayUnpaid')}</p></div>)}</div> : <p className="mt-2 text-sm text-(--muted)">—</p>}
-      </section>
       <section className="border-t border-(--border) pt-4">
         <h3 className="font-extrabold">{t('payroll.settingsTitle')}</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">

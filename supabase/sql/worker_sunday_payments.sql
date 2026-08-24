@@ -14,12 +14,15 @@ create table if not exists public.worker_sunday_payment (
   daily_value numeric(14,2) not null check (daily_value >= 0),
   multiplier numeric(8,4) not null default 2 check (multiplier = 2),
   amount numeric(14,2) not null check (amount >= 0),
-  payment_status text not null default 'unpaid' check (payment_status in ('unpaid', 'paid')),
+  payment_status text not null default 'unpaid' check (payment_status in ('unpaid', 'paid', 'cancelled')),
   settlement_method text check (settlement_method in ('separate', 'payroll')),
   settled_payroll_run_id uuid references public.payroll_run(id) on delete restrict,
   settled_payroll_line_id uuid references public.payroll_line(id) on delete restrict,
   paid_at timestamptz,
   paid_by uuid references public.admins(id) on delete restrict,
+  cancelled_at timestamptz,
+  cancelled_by uuid references public.admins(id) on delete restrict,
+  cancellation_reason text,
   confirmed_by uuid not null references public.admins(id) on delete restrict,
   note text,
   created_at timestamptz not null default now(),
@@ -28,9 +31,11 @@ create table if not exists public.worker_sunday_payment (
   constraint worker_sunday_payment_date_is_sunday check (extract(isodow from work_date) = 7),
   constraint worker_sunday_payment_amount_valid check (amount = round(daily_value * multiplier, 2)),
   constraint worker_sunday_payment_audit_valid check (
-    (payment_status = 'unpaid' and paid_at is null and paid_by is null and settlement_method is distinct from 'separate')
+    (payment_status = 'unpaid' and paid_at is null and paid_by is null and cancelled_at is null and cancelled_by is null and settlement_method is distinct from 'separate')
     or
-    (payment_status = 'paid' and paid_at is not null and paid_by is not null and settlement_method is not null)
+    (payment_status = 'paid' and paid_at is not null and paid_by is not null and cancelled_at is null and cancelled_by is null and settlement_method is not null)
+    or
+    (payment_status = 'cancelled' and paid_at is null and paid_by is null and cancelled_at is not null and cancelled_by is not null and settlement_method is null and settled_payroll_run_id is null and settled_payroll_line_id is null)
   ),
   constraint worker_sunday_payment_payroll_assignment_valid check (
     (settled_payroll_run_id is null and settled_payroll_line_id is null)
@@ -38,6 +43,25 @@ create table if not exists public.worker_sunday_payment (
     (settled_payroll_run_id is not null and settled_payroll_line_id is not null and settlement_method = 'payroll')
   )
 );
+
+-- Idempotent upgrade path when the first version of this reviewed migration was
+-- already applied before audited Sunday reversal was added.
+alter table public.worker_sunday_payment
+  add column if not exists cancelled_at timestamptz,
+  add column if not exists cancelled_by uuid references public.admins(id) on delete restrict,
+  add column if not exists cancellation_reason text;
+alter table public.worker_sunday_payment drop constraint if exists worker_sunday_payment_payment_status_check;
+alter table public.worker_sunday_payment
+  add constraint worker_sunday_payment_payment_status_check check (payment_status in ('unpaid', 'paid', 'cancelled'));
+alter table public.worker_sunday_payment drop constraint if exists worker_sunday_payment_audit_valid;
+alter table public.worker_sunday_payment
+  add constraint worker_sunday_payment_audit_valid check (
+    (payment_status = 'unpaid' and paid_at is null and paid_by is null and cancelled_at is null and cancelled_by is null and settlement_method is distinct from 'separate')
+    or
+    (payment_status = 'paid' and paid_at is not null and paid_by is not null and cancelled_at is null and cancelled_by is null and settlement_method is not null)
+    or
+    (payment_status = 'cancelled' and paid_at is null and paid_by is null and cancelled_at is not null and cancelled_by is not null and settlement_method is null and settled_payroll_run_id is null and settled_payroll_line_id is null)
+  );
 
 create index if not exists worker_sunday_payment_worker_status_date_idx
   on public.worker_sunday_payment (worker_id, payment_status, work_date);
@@ -109,6 +133,28 @@ begin
     v_daily_value := round(v_term.monthly_salary / v_rule.monthly_working_day_divisor, 2);
   end if;
 
+  select * into v_payment from public.worker_sunday_payment
+  where worker_id = p_worker_id and work_date = p_work_date for update;
+  if found then
+    if v_payment.payment_status <> 'cancelled' then return v_payment; end if;
+    update public.worker_sunday_payment set
+      payment_type_snapshot = v_profile.payment_type,
+      compensation_term_id = v_term.id,
+      rule_set_id = v_rule.id,
+      currency_code = v_term.currency_code,
+      daily_value = v_daily_value,
+      multiplier = 2,
+      amount = round(v_daily_value * 2, 2),
+      payment_status = 'unpaid',
+      cancelled_at = null,
+      cancelled_by = null,
+      cancellation_reason = null,
+      confirmed_by = auth.uid(),
+      note = nullif(btrim(p_note), '')
+    where id = v_payment.id returning * into v_payment;
+    return v_payment;
+  end if;
+
   insert into public.worker_sunday_payment (
     worker_id, work_date, payment_type_snapshot, compensation_term_id, rule_set_id,
     currency_code, daily_value, multiplier, amount, confirmed_by, note
@@ -116,6 +162,35 @@ begin
     p_worker_id, p_work_date, v_profile.payment_type, v_term.id, v_rule.id,
     v_term.currency_code, v_daily_value, 2, round(v_daily_value * 2, 2), auth.uid(), nullif(btrim(p_note), '')
   ) returning * into v_payment;
+  return v_payment;
+end;
+$$;
+
+create or replace function public.cancel_sunday_work(
+  p_sunday_payment_id uuid,
+  p_reason text default 'Marked absent in payroll review'
+)
+returns public.worker_sunday_payment
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare v_payment public.worker_sunday_payment%rowtype;
+begin
+  if not public.is_admin() then raise exception 'Active admin access is required'; end if;
+  update public.worker_sunday_payment set
+    payment_status = 'cancelled',
+    cancelled_at = now(),
+    cancelled_by = auth.uid(),
+    cancellation_reason = coalesce(nullif(btrim(p_reason), ''), 'Marked absent in payroll review')
+  where id = p_sunday_payment_id
+    and payment_status = 'unpaid'
+    and settled_payroll_run_id is null
+    and settled_payroll_line_id is null
+  returning * into v_payment;
+  if v_payment.id is null then
+    raise exception 'Sunday payment has already been financially processed and cannot be reversed';
+  end if;
   return v_payment;
 end;
 $$;
@@ -192,10 +267,12 @@ end;
 $$;
 
 revoke all on function public.confirm_worker_sunday_work(uuid, date, text) from public;
+revoke all on function public.cancel_sunday_work(uuid, text) from public;
 revoke all on function public.assign_sunday_payment_to_payroll_line(uuid, uuid) from public;
 revoke all on function public.mark_sunday_payment_paid(uuid) from public;
 revoke all on function public.mark_payroll_run_paid_with_sundays(uuid) from public;
 grant execute on function public.confirm_worker_sunday_work(uuid, date, text) to authenticated;
+grant execute on function public.cancel_sunday_work(uuid, text) to authenticated;
 grant execute on function public.assign_sunday_payment_to_payroll_line(uuid, uuid) to authenticated;
 grant execute on function public.mark_sunday_payment_paid(uuid) to authenticated;
 grant execute on function public.mark_payroll_run_paid_with_sundays(uuid) to authenticated;

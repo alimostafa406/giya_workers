@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getErrorMessage } from '../../api/axios'
 import { saveAttendanceManuallyRequest, updateAttendanceManuallyRequest } from '../../api/attendanceApi'
-import { createPayrollAdjustmentRequest, getPayrollOperationsDataRequest, persistPayrollDraftRequest, setWeeklyPayrollRunStatusRequest } from '../../api/payrollOperationsApi'
+import { cancelSundayWorkRequest, confirmSundayWorkRequest, createPayrollAdjustmentRequest, getPayrollOperationsDataRequest, persistPayrollDraftRequest, setWeeklyPayrollRunStatusRequest } from '../../api/payrollOperationsApi'
 import { saveWorkerPayrollSettingsRequest } from '../../api/payrollSettingsApi'
-import { applyPayrollAdjustments, applySundayCarry, calculatePayrollLine, mondayFor, totalLines, weeklyDates } from '../../utils/payrollCalculations'
+import { applyPayrollAdjustments, applySundayCarry, calculatePayrollLine, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { useTranslation } from '../../i18n/LanguageContext'
@@ -18,10 +18,13 @@ const weeklyLinesFor = (data, monday) => {
   const attendance = new Map((data?.attendance || []).map((row) => [`${row.worker_id}|${row.attendance_date}`, row]))
   const holidays = new Set((data?.holidays || []).map((item) => item.holiday_date))
   const saturday = weeklyDates(monday).at(-1)
+  const sundayDate = sundayBefore(monday)
   const run = (data?.runs || []).find((item) => item.payment_type === 'weekly' && item.weekly_period_start === monday && item.weekly_period_end === saturday)
   return (data?.workers || [])
     .filter((worker) => worker.is_active !== false && worker.payment_type === 'weekly')
-    .map((worker) => applySundayCarry(calculatePayrollLine({
+    .map((worker) => {
+      const sundayPayment = (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(worker.id) && payment.work_date === sundayDate) || null
+      return { ...applySundayCarry(calculatePayrollLine({
       worker,
       term: worker.payroll_compensation,
       attendanceByDate: attendance,
@@ -30,7 +33,8 @@ const weeklyLinesFor = (data, monday) => {
       holidayDates: holidays,
       paymentType: 'weekly',
       futureDatesAreNeutral: true,
-    }), data?.sundayPayments, run?.id, saturday))
+      }), data?.sundayPayments, run?.id, saturday), sundayDate, sundayPayment }
+    })
 }
 
 const numeric = (value) => Math.round((Number(value) || 0) * 100) / 100
@@ -185,6 +189,8 @@ export default function PayrollOperations() {
       || String(compensation.dailyTransportAllowance ?? '') !== String(term.daily_transport_allowance ?? 0)
       || String(compensation.overtimeRate ?? '') !== String(term.overtime_rate_per_hour ?? '')
       || String(compensation.overtimeStartTime ?? '') !== String(term.overtime_start_time ?? '')
+    const sundayWasWorked = Boolean(line.sundayPayment && line.sundayPayment.payment_status !== 'cancelled')
+    const sundayChanged = Boolean(values.sundayWorked) !== sundayWasWorked
     const targetOvertimeHours = Number(values.overtimeHours)
     const targetTransportAmount = Number(values.transportAmount)
     const adjustmentAmount = Number(values.adjustmentAmount || 0)
@@ -200,7 +206,7 @@ export default function PayrollOperations() {
       ['transport_correction', transportDifference],
       [values.adjustmentType, adjustmentAmount],
     ].filter(([, amount]) => amount !== 0)
-    if (!changedDetails.length && !changes.length && !compensationChanged) { setEditingWorkerId(''); return }
+    if (!changedDetails.length && !changes.length && !compensationChanged && !sundayChanged) { setEditingWorkerId(''); return }
     if (changes.length && (!draftRun || !payrollLineByWorkerId.get(String(line.worker.id)))) { setError(t('payroll.adjustmentDraftRequired')); return }
     if (changes.length && !String(values.reason || '').trim()) { setError(t('payroll.adjustmentRequired')); return }
     setSavingSheetWorkerId(String(line.worker.id))
@@ -217,6 +223,10 @@ export default function PayrollOperations() {
           effective_from: compensation.effectiveFrom,
         })
       }
+      if (sundayChanged) {
+        if (values.sundayWorked) await confirmSundayWorkRequest({ workerId: line.worker.id, workDate: line.sundayDate })
+        else await cancelSundayWorkRequest(line.sundayPayment.id)
+      }
       await Promise.all(changedDetails.map((detail) => saveAttendanceManuallyRequest({
         row: detail.row || null,
         workerId: line.worker.id,
@@ -228,9 +238,17 @@ export default function PayrollOperations() {
         await Promise.all(changes.map(([adjustmentType, amount]) => createPayrollAdjustmentRequest({ payrollLineId: payrollLine.id, adjustmentType, amount: ['bonus', 'deduction', 'advance'].includes(adjustmentType) ? Math.abs(amount) : amount, reason: String(values.reason).trim() })))
       }
       await refreshExistingDraft()
-      setMessage(changes.length ? t('payroll.adjustmentSaved') : compensationChanged ? t('payroll.configured') : t('attendance.correctionSaved'))
+      setMessage(
+        changes.length
+          ? t('payroll.adjustmentSaved')
+          : compensationChanged
+            ? t('payroll.configured')
+            : sundayChanged
+              ? (values.sundayWorked ? t('payroll.sundayConfirmed') : t('payroll.sundayCancelled'))
+              : t('attendance.correctionSaved'),
+      )
       setEditingWorkerId('')
-    } catch (e) { setError(getErrorMessage(e)) } finally { setSavingSheetWorkerId('') }
+    } catch (e) { setError(/financially processed/i.test(String(e?.message || '')) ? t('payroll.sundayProcessedCannotReverse') : getErrorMessage(e)) } finally { setSavingSheetWorkerId('') }
   }
   const teamColumns = [{ key: 'name', header: t('common.team'), render: (group) => group.name }, { key: 'workers', header: t('payroll.workers'), render: (group) => group.totals.workers }, { key: 'days', header: `${t('payroll.presentDays')} / ${t('payroll.halfDays')} / ${t('payroll.absentDays')}`, render: (group) => `${group.totals.presentDays} / ${group.totals.halfDays} / ${group.totals.absentDays}` }, { key: 'total', header: t('payroll.teamTotal'), render: (group) => money(group.totals.finalAmount, 'CDF') }, { key: 'open', header: '', render: (group) => <button className="btn-secondary" onClick={() => setSelectedTeamId(group.id)}>{t('payroll.open')}</button> }]
   const exportButtons = (onExport) => <div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('print')}>{t('reports.print')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('pdf')}>{t('reports.pdf')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('excel')}>{t('reports.excel')}</button></div>

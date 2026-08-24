@@ -22,6 +22,12 @@ export const weeklyDates = (monday) => Array.from({ length: 6 }, (_, index) => {
   return iso(date)
 })
 
+export const sundayBefore = (monday) => {
+  const date = atNoon(monday)
+  date.setDate(date.getDate() - 1)
+  return iso(date)
+}
+
 export const datesForRange = (start, end) => {
   if (!start || !end || start > end) return []
   const dates = []

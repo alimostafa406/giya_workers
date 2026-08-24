@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { applyPayrollAdjustments, applySundayCarry, calculatePayrollLine, currentBusinessDate } from './src/utils/payrollCalculations.js'
+import { applyPayrollAdjustments, applySundayCarry, calculatePayrollLine, currentBusinessDate, sundayBefore, weeklyDates } from './src/utils/payrollCalculations.js'
 
 test('current week future days are neutral and contribute zero', () => {
   const worker = { id: 'worker-1' }
@@ -110,4 +110,31 @@ test('Sunday migration enforces auditability, uniqueness, and atomic settlement'
   assert.match(sql, /mark_payroll_run_paid_with_sundays/)
   assert.match(sql, /update public\.worker_sunday_payment set payment_status = 'paid'/)
   assert.doesNotMatch(sql, /delete from public\.worker_sunday_payment/i)
+})
+
+test('worker editor week starts with the preceding Sunday and keeps Monday through Saturday unchanged', () => {
+  assert.equal(sundayBefore('2026-08-24'), '2026-08-23')
+  assert.deepEqual(weeklyDates('2026-08-24'), ['2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28', '2026-08-29'])
+  const editor = readFileSync('./src/components/Payroll/WeeklyPayrollWorkerEditPanel.jsx', 'utf8')
+  assert.ok(editor.indexOf('line.sundayDate') < editor.indexOf('dates.map((date)'))
+  assert.match(editor, /value=\{sundayWorked \? 'present' : 'absent'\}/)
+})
+
+test('Sunday present and absent use the shared auditable payment record workflow', () => {
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  const sql = readFileSync('./supabase/sql/worker_sunday_payments.sql', 'utf8')
+  assert.match(operations, /confirmSundayWorkRequest\(\{ workerId: line\.worker\.id, workDate: line\.sundayDate \}\)/)
+  assert.match(operations, /cancelSundayWorkRequest\(line\.sundayPayment\.id\)/)
+  assert.match(sql, /payment_status in \('unpaid', 'paid', 'cancelled'\)/)
+  assert.match(sql, /payment_status = 'cancelled'/)
+  assert.match(sql, /payment_status = 'unpaid'[\s\S]*settled_payroll_run_id is null[\s\S]*settled_payroll_line_id is null/)
+  assert.match(sql, /already been financially processed and cannot be reversed/)
+  assert.match(sql, /if v_payment\.payment_status <> 'cancelled' then return v_payment/)
+  assert.match(sql, /payment_status = 'unpaid',[\s\S]*cancelled_at = null/)
+})
+
+test('future Sunday is shown neutral and cannot be edited', () => {
+  const editor = readFileSync('./src/components/Payroll/WeeklyPayrollWorkerEditPanel.jsx', 'utf8')
+  assert.match(editor, /const isFuture = line\.sundayDate > currentBusinessDate\(\)/)
+  assert.match(editor, /isFuture \? <span[^>]*>—<\/span> : <select/)
 })

@@ -9,12 +9,26 @@ const isMissingSundayPaymentsError = (error) => (
   || /worker_sunday_payment/i.test(String(error?.message || ''))
 )
 
+const isMissingSundayCancellationColumnError = (error) => (
+  error?.code === '42703'
+  || error?.code === 'PGRST204'
+  || /cancelled_at|cancelled_by|cancellation_reason/i.test(String(error?.message || ''))
+)
+
 const readSundayPayments = async (client) => {
   const result = await client
     .from('worker_sunday_payment')
-    .select('id,worker_id,work_date,payment_type_snapshot,currency_code,daily_value,multiplier,amount,payment_status,settlement_method,settled_payroll_run_id,settled_payroll_line_id,paid_at,paid_by,confirmed_by,note,created_at,updated_at')
+    .select('id,worker_id,work_date,payment_type_snapshot,currency_code,daily_value,multiplier,amount,payment_status,settlement_method,settled_payroll_run_id,settled_payroll_line_id,paid_at,paid_by,cancelled_at,cancelled_by,cancellation_reason,confirmed_by,note,created_at,updated_at')
     .order('work_date', { ascending: false })
   if (result.error && isMissingSundayPaymentsError(result.error)) return { data: [], available: false }
+  if (result.error && isMissingSundayCancellationColumnError(result.error)) {
+    const fallback = await client
+      .from('worker_sunday_payment')
+      .select('id,worker_id,work_date,payment_type_snapshot,currency_code,daily_value,multiplier,amount,payment_status,settlement_method,settled_payroll_run_id,settled_payroll_line_id,paid_at,paid_by,confirmed_by,note,created_at,updated_at')
+      .order('work_date', { ascending: false })
+    if (fallback.error) throw fallback.error
+    return { data: (fallback.data || []).map((payment) => ({ ...payment, cancelled_at: null, cancelled_by: null, cancellation_reason: null })), available: true }
+  }
   if (result.error) throw result.error
   return { data: result.data || [], available: true }
 }
@@ -125,6 +139,16 @@ export const confirmSundayWorkRequest = async ({ workerId, workDate, note = null
 export const markSundayPaymentPaidRequest = async (sundayPaymentId) => {
   const client = getSupabaseClient()
   const { data, error } = await client.rpc('mark_sunday_payment_paid', { p_sunday_payment_id: sundayPaymentId })
+  if (error) throw error
+  return data
+}
+
+export const cancelSundayWorkRequest = async (sundayPaymentId) => {
+  const client = getSupabaseClient()
+  const { data, error } = await client.rpc('cancel_sunday_work', {
+    p_sunday_payment_id: sundayPaymentId,
+    p_reason: 'Marked absent in payroll review',
+  })
   if (error) throw error
   return data
 }
