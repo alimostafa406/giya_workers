@@ -85,17 +85,23 @@ export const buildManualAttendancePayload = (row, values) => {
   throw new Error('حالة الحضور المختارة غير مدعومة.')
 }
 
-const readAttendance = async (client) => {
-  const { data, error } = await client
+const readAttendance = async (client, params = {}) => {
+  let query = client
     .from('attendance')
     .select(`${attendanceFields},biometric_sync_metadata,manual_override,attendance_source`)
     .order('attendance_date', { ascending: false })
+  if (params.date) query = query.eq('attendance_date', params.date)
+  if (params.worker_id) query = query.eq('worker_id', params.worker_id)
+  const { data, error } = await query
 
   if (error && isMissingManualSyncColumnError(error)) {
-    const fallback = await client
+    let fallbackQuery = client
       .from('attendance')
       .select(attendanceFields)
       .order('attendance_date', { ascending: false })
+    if (params.date) fallbackQuery = fallbackQuery.eq('attendance_date', params.date)
+    if (params.worker_id) fallbackQuery = fallbackQuery.eq('worker_id', params.worker_id)
+    const fallback = await fallbackQuery
     if (fallback.error) throw fallback.error
     return toArray(fallback.data)
   }
@@ -150,7 +156,7 @@ const readConfirmedBiometricMappings = async (client) => {
 export const getAttendanceRequest = async (params = {}) => {
   const client = getSupabaseClient()
   const [attendance, workers, teams, classifications, confirmedMappings] = await Promise.all([
-    readAttendance(client),
+    readAttendance(client, params),
     readWorkers(client),
     readTeams(client),
     readWorkerClassifications(client),
@@ -211,7 +217,7 @@ export const getSpecialStaffAttendanceRequest = async (params = {}) => getAttend
 export const getForeignAttendanceRequest = async (params = {}) => {
   const client = getSupabaseClient()
   const [attendance, workers, teams, classifications] = await Promise.all([
-    readAttendance(client),
+    readAttendance(client, { date: params.date }),
     readWorkers(client),
     readTeams(client),
     readWorkerClassifications(client),

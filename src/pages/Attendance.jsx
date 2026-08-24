@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { getAttendanceRequest, getCheckoutOnlyInfo, updateAttendanceManuallyRequest } from '../api/attendanceApi'
+import { useEffect, useMemo, useState } from 'react'
+import { getAttendanceRequest, getCheckoutOnlyInfo, saveAttendanceManuallyRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
@@ -7,6 +7,7 @@ import AttendanceFilters from '../components/Forms/AttendanceFilters'
 import AttendanceEditModal from '../components/Forms/AttendanceEditModal'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
+import { attendanceRosterCategory, mergeAttendanceRoster, summarizeAttendanceRoster } from '../utils/attendanceRoster'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -32,6 +33,8 @@ const currentBusinessDate = () => new Date().toLocaleDateString('en-CA', {
 })
 
 const renderAttendanceStatus = (row, t) => {
+  if (row.roster_state === 'not_recorded') return <span className="status-badge status-badge--neutral">{t('attendance.notRecorded')}</span>
+  if (row.roster_state === 'not_applicable') return '—'
   const checkoutOnly = getCheckoutOnlyInfo(row)
   const labels = { present: t('attendance.present'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), pending: t('attendance.pending'), in_progress: t('attendance.inProgress') }
   if (!checkoutOnly) return labels[row.status] || row.status || '-'
@@ -52,6 +55,7 @@ function Attendance() {
     team_id: '',
     worker_id: '',
     search: '',
+    roster_status: 'all',
   })
 
   const loadMeta = async () => {
@@ -94,7 +98,12 @@ function Attendance() {
     setIsSavingEdit(true)
     setError('')
     try {
-      await updateAttendanceManuallyRequest(editingRow, values)
+      await saveAttendanceManuallyRequest({
+        row: editingRow.is_virtual ? null : editingRow,
+        workerId: editingRow.worker_id,
+        attendanceDate: editingRow.attendance_date || editingRow.date,
+        values,
+      })
       setEditingRow(null)
       await loadAttendance()
     } catch (err) {
@@ -111,7 +120,7 @@ function Attendance() {
     }
     setFilters(nextFilters)
 
-    if (key === 'date') {
+    if (key === 'date' || key === 'team_id' || key === 'worker_id') {
       loadAttendance(nextFilters)
     }
   }
@@ -154,15 +163,23 @@ function Attendance() {
     },
   ]
 
-  const visibleAttendance = attendance.filter((row) => {
+  const rosterRows = useMemo(() => mergeAttendanceRoster({
+    workers,
+    attendance,
+    date: filters.date,
+    teamId: filters.team_id,
+    workerId: filters.worker_id,
+    businessDate: currentBusinessDate(),
+  }), [attendance, filters.date, filters.team_id, filters.worker_id, workers])
+
+  const summary = useMemo(() => summarizeAttendanceRoster(rosterRows), [rosterRows])
+
+  const visibleAttendance = rosterRows.filter((row) => {
     const workerName = String(row.worker?.full_name || row.worker_name || '').toLowerCase()
     const searchValue = String(filters.search || '').trim().toLowerCase()
-
-    if (!searchValue) {
-      return true
-    }
-
-    return workerName.includes(searchValue)
+    const matchesSearch = !searchValue || workerName.includes(searchValue)
+    const matchesRosterStatus = filters.roster_status === 'all' || attendanceRosterCategory(row) === filters.roster_status
+    return matchesSearch && matchesRosterStatus
   })
 
   return (
@@ -188,6 +205,16 @@ function Attendance() {
           {error}
         </p>
       ) : null}
+
+      {filters.team_id ? <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {[
+          ['teamTotal', summary.total],
+          ['presentCount', summary.present],
+          ['notRecordedCount', summary.not_recorded],
+          ['absentCount', summary.absent],
+          ['needsReviewCount', summary.review],
+        ].map(([label, count]) => <div key={label} className="surface-card p-3"><p className="text-xs font-bold text-(--muted)">{t(`attendance.${label}`)}</p><p className="mt-1 text-xl font-extrabold">{count}</p></div>)}
+      </div> : null}
 
       <Table
         columns={columns}

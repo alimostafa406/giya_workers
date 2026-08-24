@@ -4,7 +4,7 @@ function AttendanceFilters({ filters, onChange, teams, workers, onApply }) {
   const { t } = useTranslation()
   return (
     <form
-      className="surface-card mb-4 grid gap-3 p-4 md:grid-cols-5"
+      className="surface-card mb-4 grid gap-3 p-4 md:grid-cols-6"
       onSubmit={(e) => {
         e.preventDefault()
         onApply()
@@ -60,6 +60,17 @@ function AttendanceFilters({ filters, onChange, teams, workers, onApply }) {
           className="input-base"
           placeholder={t('attendance.searchWorker')}
         />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-semibold">{t('attendance.rosterFilter')}</label>
+        <select value={filters.roster_status} onChange={(e) => onChange('roster_status', e.target.value)} className="input-base">
+          <option value="all">{t('attendance.filterAll')}</option>
+          <option value="present">{t('attendance.filterPresent')}</option>
+          <option value="not_recorded">{t('attendance.filterNotRecorded')}</option>
+          <option value="absent">{t('attendance.filterAbsent')}</option>
+          <option value="review">{t('attendance.filterNeedsReview')}</option>
+        </select>
       </div>
 
       <div className="flex items-end">
