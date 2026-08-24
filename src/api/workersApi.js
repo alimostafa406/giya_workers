@@ -112,7 +112,9 @@ export const getWorkersRequest = async () => {
 			team_name: team?.name || '-',
 			staff_classification: staffClassification,
 			payroll_profile: payrollProfile,
-			payment_type: payrollProfile?.payment_type || (staffClassification === 'special_staff' ? 'monthly' : 'weekly'),
+			// Payroll frequency is an explicit per-worker profile setting. Missing
+			// profiles stay unconfigured instead of being inferred from classification.
+			payment_type: payrollProfile?.payment_type || null,
 			monthly_salary: payrollProfile?.monthly_salary ?? null,
 		}
 	})

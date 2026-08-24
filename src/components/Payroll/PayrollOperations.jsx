@@ -27,6 +27,7 @@ const weeklyLinesFor = (data, monday) => {
       rules: data?.rules,
       holidayDates: holidays,
       paymentType: 'weekly',
+      futureDatesAreNeutral: true,
     }))
 }
 

@@ -2,6 +2,13 @@ const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padSt
 const atNoon = (value) => new Date(`${value}T12:00:00`)
 const money = (value) => Math.round((Number(value) || 0) * 100) / 100
 
+export const currentBusinessDate = (value = new Date()) => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Africa/Lagos',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+}).format(value)
+
 export const mondayFor = (value = new Date()) => {
   const date = new Date(value)
   date.setHours(12, 0, 0, 0)
@@ -55,7 +62,7 @@ const roundOvertime = (hours, rules) => {
   return money(rounded * minutes / 60)
 }
 
-export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, rules, holidayDates, paymentType }) => {
+export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, rules, holidayDates, paymentType, futureDatesAreNeutral = false, businessDate = currentBusinessDate() }) => {
   const dailyRate = Number(term?.daily_rate || 0)
   const monthlySalary = Number(term?.monthly_salary ?? worker.monthly_salary ?? 0)
   const halfMultiplier = Number(rules?.half_day_multiplier ?? 0.5)
@@ -65,13 +72,17 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
   let presentDays = 0; let halfDays = 0; let absentDays = 0; let unresolvedDays = 0
   let transportDays = 0; let overtimeHours = 0; let holidayAmount = 0; let attendanceWage = 0
   const details = dates.map((date) => {
-    const row = attendanceByDate.get(`${worker.id}|${date}`) || null
-    const status = row?.status || (date > iso(new Date()) ? 'pending' : 'absent')
+    const isFuture = futureDatesAreNeutral && date > businessDate
+    // A future day is not an attendance fact yet. Ignore even an accidental
+    // future row so it cannot become payable, deductible, or manually editable.
+    const row = isFuture ? null : attendanceByDate.get(`${worker.id}|${date}`) || null
+    const status = isFuture ? 'future' : row?.status || 'absent'
     const factor = status === 'present' ? 1 : status === 'half_day' ? halfMultiplier : 0
     const isHoliday = holidayDates.has(date)
     if (status === 'present') presentDays += 1
     else if (status === 'half_day') halfDays += 1
     else if (status === 'pending' || status === 'in_progress') unresolvedDays += 1
+    else if (status === 'future') { /* Neutral until the business date arrives. */ }
     else absentDays += 1
     const eligibleTransport = status === 'present' || (status === 'half_day' && rules?.transport_eligibility === 'present_and_half_day')
     if (eligibleTransport) transportDays += 1
@@ -80,7 +91,7 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
     attendanceWage += baseEffect; holidayAmount += holidayEffect
     const candidate = row?.check_out && term?.overtime_start_time ? roundOvertime(durationHours(term.overtime_start_time, row.check_out), rules) : 0
     overtimeHours += candidate
-    return { date, row, status, isHoliday, baseEffect: money(baseEffect), holidayEffect: money(holidayEffect), candidateOvertimeHours: candidate, transportEffect: eligibleTransport ? transportRate : 0 }
+    return { date, row, status, isFuture, isHoliday, baseEffect: money(baseEffect), holidayEffect: money(holidayEffect), candidateOvertimeHours: candidate, transportEffect: eligibleTransport ? transportRate : 0 }
   })
   const transportAmount = money(transportDays * transportRate)
   const overtimeAmount = money(overtimeHours * overtimeRate)
