@@ -87,10 +87,14 @@ drop policy if exists worker_sunday_payment_admin_select on public.worker_sunday
 create policy worker_sunday_payment_admin_select on public.worker_sunday_payment
 for select to authenticated using (public.is_admin());
 
+-- Replace the original three-argument RPC so callers can bind Sunday work to
+-- the exact effective-dated term already selected by normal payroll.
+drop function if exists public.confirm_worker_sunday_work(uuid, date, text);
 create or replace function public.confirm_worker_sunday_work(
   p_worker_id uuid,
   p_work_date date,
-  p_note text default null
+  p_note text default null,
+  p_compensation_term_id uuid default null
 )
 returns public.worker_sunday_payment
 language plpgsql
@@ -111,14 +115,39 @@ begin
   select * into v_profile from public.worker_payroll_profile where worker_id = p_worker_id;
   if not found then raise exception 'Worker payroll profile is required'; end if;
 
-  select * into v_term
-  from public.worker_payroll_compensation
-  where worker_id = p_worker_id
-    and payment_type = v_profile.payment_type
-    and effective_from <= p_work_date
-    and (effective_to is null or effective_to >= p_work_date)
-  order by effective_from desc limit 1;
-  if not found then raise exception 'Payroll compensation is not configured for this Sunday'; end if;
+  if p_compensation_term_id is not null then
+    select * into v_term
+    from public.worker_payroll_compensation
+    where id = p_compensation_term_id
+      and worker_id = p_worker_id
+      and payment_type = v_profile.payment_type;
+    if not found then raise exception 'Selected payroll compensation does not belong to this worker and payment type'; end if;
+  else
+    select * into v_term
+    from public.worker_payroll_compensation
+    where worker_id = p_worker_id
+      and payment_type = v_profile.payment_type
+      and effective_from <= p_work_date
+      and (effective_to is null or effective_to >= p_work_date)
+    order by effective_from desc limit 1;
+
+    -- The payroll editor calculates with the term active today. When a worker
+    -- is configured on Monday, the immediately preceding Sunday must reuse
+    -- that same term instead of requiring a duplicate Sunday-dated term.
+    if not found then
+      select * into v_term
+      from public.worker_payroll_compensation
+      where worker_id = p_worker_id
+        and payment_type = v_profile.payment_type
+        and effective_from <= (now() at time zone 'Africa/Lagos')::date
+        and (effective_to is null or effective_to >= (now() at time zone 'Africa/Lagos')::date)
+      order by effective_from desc limit 1;
+    end if;
+  end if;
+  if v_term.id is null then
+    if v_profile.payment_type = 'weekly' then raise exception 'Worker weekly daily rate is not configured; configure payroll compensation before recording Sunday work'; end if;
+    raise exception 'Worker monthly salary is not configured; configure payroll compensation before recording Sunday work';
+  end if;
 
   select * into v_rule from public.payroll_rule_set
   where is_active and effective_from <= p_work_date
@@ -126,10 +155,10 @@ begin
   if not found then raise exception 'An active payroll rule set is required'; end if;
 
   if v_profile.payment_type = 'weekly' then
-    if v_term.daily_rate is null then raise exception 'Weekly daily rate is required'; end if;
+    if v_term.daily_rate is null then raise exception 'Worker weekly daily rate is not configured; configure payroll compensation before recording Sunday work'; end if;
     v_daily_value := round(v_term.daily_rate, 2);
   else
-    if v_term.monthly_salary is null then raise exception 'Monthly salary is required'; end if;
+    if v_term.monthly_salary is null then raise exception 'Worker monthly salary is not configured; configure payroll compensation before recording Sunday work'; end if;
     v_daily_value := round(v_term.monthly_salary / v_rule.monthly_working_day_divisor, 2);
   end if;
 
@@ -266,12 +295,12 @@ begin
 end;
 $$;
 
-revoke all on function public.confirm_worker_sunday_work(uuid, date, text) from public;
+revoke all on function public.confirm_worker_sunday_work(uuid, date, text, uuid) from public;
 revoke all on function public.cancel_sunday_work(uuid, text) from public;
 revoke all on function public.assign_sunday_payment_to_payroll_line(uuid, uuid) from public;
 revoke all on function public.mark_sunday_payment_paid(uuid) from public;
 revoke all on function public.mark_payroll_run_paid_with_sundays(uuid) from public;
-grant execute on function public.confirm_worker_sunday_work(uuid, date, text) to authenticated;
+grant execute on function public.confirm_worker_sunday_work(uuid, date, text, uuid) to authenticated;
 grant execute on function public.cancel_sunday_work(uuid, text) to authenticated;
 grant execute on function public.assign_sunday_payment_to_payroll_line(uuid, uuid) to authenticated;
 grant execute on function public.mark_sunday_payment_paid(uuid) to authenticated;

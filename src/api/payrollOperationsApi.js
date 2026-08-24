@@ -125,12 +125,13 @@ export const persistPayrollDraftRequest = async ({ paymentType, periodStart = nu
   return run
 }
 
-export const confirmSundayWorkRequest = async ({ workerId, workDate, note = null }) => {
+export const confirmSundayWorkRequest = async ({ workerId, workDate, note = null, compensationTermId = null }) => {
   const client = getSupabaseClient()
   const { data, error } = await client.rpc('confirm_worker_sunday_work', {
     p_worker_id: workerId,
     p_work_date: workDate,
     p_note: String(note || '').trim() || null,
+    p_compensation_term_id: compensationTermId || null,
   })
   if (error) throw error
   return data

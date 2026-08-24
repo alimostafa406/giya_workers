@@ -100,6 +100,33 @@ test('monthly approved daily value is salary divided by 26', () => {
   assert.equal(line.dailyValue * 2, 20000)
 })
 
+test('configured weekly rate produces exact Sunday double pay without changing normal wages', () => {
+  const attendance = new Map([['weekly-1|2026-08-24', { status: 'present' }]])
+  const line = calculatePayrollLine({
+    worker: { id: 'weekly-1' }, term: { daily_rate: 20000 }, attendanceByDate: attendance,
+    dates: weeklyDates('2026-08-24'), rules: {}, holidayDates: new Set(), paymentType: 'weekly',
+    businessDate: '2026-08-29',
+  })
+  assert.equal(line.attendanceWage, 20000)
+  assert.equal(20000 * 2, 40000)
+  assert.equal(line.presentDays, 1)
+})
+
+test('Sunday RPC reuses the payroll-selected term and blocks genuinely missing compensation', () => {
+  const sql = readFileSync('./supabase/sql/worker_sunday_payments.sql', 'utf8')
+  const api = readFileSync('./src/api/payrollOperationsApi.js', 'utf8')
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  assert.match(sql, /p_compensation_term_id uuid default null/)
+  assert.match(sql, /where id = p_compensation_term_id[\s\S]*worker_id = p_worker_id[\s\S]*payment_type = v_profile\.payment_type/)
+  assert.match(sql, /v_daily_value := round\(v_term\.daily_rate, 2\)/)
+  assert.match(sql, /round\(v_daily_value \* 2, 2\)/)
+  assert.match(sql, /v_term\.monthly_salary \/ v_rule\.monthly_working_day_divisor/)
+  assert.match(sql, /Worker weekly daily rate is not configured; configure payroll compensation before recording Sunday work/)
+  assert.doesNotMatch(sql, /coalesce\(v_term\.daily_rate,\s*0\)|coalesce\(v_term\.monthly_salary,\s*0\)/i)
+  assert.match(api, /p_compensation_term_id: compensationTermId \|\| null/)
+  assert.match(operations, /compensationTermId: compensationChanged \? null : line\.term\?\.id/)
+})
+
 test('Sunday migration enforces auditability, uniqueness, and atomic settlement', () => {
   const sql = readFileSync('./supabase/sql/worker_sunday_payments.sql', 'utf8')
   assert.match(sql, /unique \(worker_id, work_date\)/i)
@@ -142,7 +169,7 @@ test('Sunday work state stays outside normal weekly attendance wage calculation'
 test('Sunday present and absent use the shared auditable payment record workflow', () => {
   const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
   const sql = readFileSync('./supabase/sql/worker_sunday_payments.sql', 'utf8')
-  assert.match(operations, /confirmSundayWorkRequest\(\{ workerId: line\.worker\.id, workDate: line\.sundayDate \}\)/)
+  assert.match(operations, /confirmSundayWorkRequest\(\{[\s\S]*workerId: line\.worker\.id,[\s\S]*workDate: line\.sundayDate,[\s\S]*compensationTermId:/)
   assert.match(operations, /cancelSundayWorkRequest\(line\.sundayPayment\.id\)/)
   assert.match(sql, /payment_status in \('unpaid', 'paid', 'cancelled'\)/)
   assert.match(sql, /payment_status = 'cancelled'/)

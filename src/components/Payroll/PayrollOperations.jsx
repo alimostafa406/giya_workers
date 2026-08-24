@@ -224,7 +224,11 @@ export default function PayrollOperations() {
         })
       }
       if (sundayChanged) {
-        if (values.sundayWorked) await confirmSundayWorkRequest({ workerId: line.worker.id, workDate: line.sundayDate })
+        if (values.sundayWorked) await confirmSundayWorkRequest({
+          workerId: line.worker.id,
+          workDate: line.sundayDate,
+          compensationTermId: compensationChanged ? null : line.term?.id,
+        })
         else await cancelSundayWorkRequest(line.sundayPayment.id)
       }
       await Promise.all(changedDetails.map((detail) => saveAttendanceManuallyRequest({
@@ -248,7 +252,14 @@ export default function PayrollOperations() {
               : t('attendance.correctionSaved'),
       )
       setEditingWorkerId('')
-    } catch (e) { setError(/financially processed/i.test(String(e?.message || '')) ? t('payroll.sundayProcessedCannotReverse') : getErrorMessage(e)) } finally { setSavingSheetWorkerId('') }
+    } catch (e) {
+      const message = String(e?.message || '')
+      setError(/financially processed/i.test(message)
+        ? t('payroll.sundayProcessedCannotReverse')
+        : /weekly daily rate|Payroll compensation is not configured/i.test(message)
+          ? t('payroll.sundayWeeklyRateRequired')
+          : getErrorMessage(e))
+    } finally { setSavingSheetWorkerId('') }
   }
   const teamColumns = [{ key: 'name', header: t('common.team'), render: (group) => group.name }, { key: 'workers', header: t('payroll.workers'), render: (group) => group.totals.workers }, { key: 'days', header: `${t('payroll.presentDays')} / ${t('payroll.halfDays')} / ${t('payroll.absentDays')}`, render: (group) => `${group.totals.presentDays} / ${group.totals.halfDays} / ${group.totals.absentDays}` }, { key: 'total', header: t('payroll.teamTotal'), render: (group) => money(group.totals.finalAmount, 'CDF') }, { key: 'open', header: '', render: (group) => <button className="btn-secondary" onClick={() => setSelectedTeamId(group.id)}>{t('payroll.open')}</button> }]
   const exportButtons = (onExport) => <div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('print')}>{t('reports.print')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('pdf')}>{t('reports.pdf')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('excel')}>{t('reports.excel')}</button></div>
