@@ -1,5 +1,6 @@
 import { useTranslation } from '../../i18n/LanguageContext'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
+import { currentBusinessDate } from '../../utils/payrollCalculations'
 import Table from '../Table/Table'
 
 const dayLabel = (date, language) => new Intl.DateTimeFormat(
@@ -16,11 +17,19 @@ const statusLabel = (status, t) => ({
   in_progress: t('attendance.inProgress'),
 }[status] || '—')
 
+const sundayStatusLabel = (line, t) => {
+  if (!line.sundayDate || line.sundayDate > currentBusinessDate()) return '—'
+  return line.sundayPayment && line.sundayPayment.payment_status !== 'cancelled'
+    ? t('attendance.present')
+    : t('attendance.absent')
+}
+
 export default function WeeklyPayrollSheet({ lines, dates, onEdit, editable = true }) {
   const { t, language } = useTranslation()
   const money = (amount, line) => formatPayrollMoney(amount, { currency: line.currency, paymentType: 'weekly' })
   const columns = [
     { key: 'worker', header: t('payroll.worker'), render: (line) => <div><p className="font-bold">{line.worker.full_name}</p><p className="text-xs text-(--muted)">{line.worker.employee_code || '—'}</p></div> },
+    { key: 'sundayAttendance', header: t('payroll.sunday'), render: (line) => sundayStatusLabel(line, t) },
     ...dates.map((date) => ({ key: date, header: dayLabel(date, language), render: (line) => statusLabel(line.details.find((item) => item.date === date)?.status, t) })),
     { key: 'attendance', header: t('payroll.presentDays'), render: (line) => line.presentDays + (line.halfDays * 0.5) },
     { key: 'dailyRate', header: t('payroll.dailyRate'), render: (line) => money(line.term?.daily_rate, line) },

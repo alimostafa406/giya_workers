@@ -120,6 +120,25 @@ test('worker editor week starts with the preceding Sunday and keeps Monday throu
   assert.match(editor, /value=\{sundayWorked \? 'present' : 'absent'\}/)
 })
 
+test('weekly payroll table shows Sunday first from the shared Sunday payment state', () => {
+  const sheet = readFileSync('./src/components/Payroll/WeeklyPayrollSheet.jsx', 'utf8')
+  assert.ok(sheet.indexOf("key: 'sundayAttendance'") < sheet.indexOf('...dates.map((date)'))
+  assert.match(sheet, /line\.sundayPayment && line\.sundayPayment\.payment_status !== 'cancelled'/)
+  assert.match(sheet, /line\.sundayDate > currentBusinessDate\(\)/)
+  assert.match(sheet, /key: 'sunday'[\s\S]*sundayCarryAmount/)
+})
+
+test('Sunday work state stays outside normal weekly attendance wage calculation', () => {
+  const result = calculatePayrollLine({
+    worker: { id: 'w1' }, term: { daily_rate: 100, currency_code: 'CDF' },
+    attendanceByDate: new Map(), dates: weeklyDates('2026-08-24'), rules: {},
+    holidayDates: new Set(), paymentType: 'weekly', businessDate: '2026-08-29',
+  })
+  assert.equal(result.presentDays, 0)
+  assert.equal(result.attendanceWage, 0)
+  assert.equal(applySundayCarry(result, [{ worker_id: 'w1', payment_status: 'unpaid', currency_code: 'CDF', work_date: '2026-08-23', amount: 200 }], null, '2026-08-29').sundayCarryAmount, 200)
+})
+
 test('Sunday present and absent use the shared auditable payment record workflow', () => {
   const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
   const sql = readFileSync('./supabase/sql/worker_sunday_payments.sql', 'utf8')
