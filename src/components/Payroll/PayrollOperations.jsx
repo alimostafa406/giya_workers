@@ -3,7 +3,7 @@ import { getErrorMessage } from '../../api/axios'
 import { saveAttendanceManuallyRequest, updateAttendanceManuallyRequest } from '../../api/attendanceApi'
 import { createPayrollAdjustmentRequest, getPayrollOperationsDataRequest, persistPayrollDraftRequest, setWeeklyPayrollRunStatusRequest } from '../../api/payrollOperationsApi'
 import { saveWorkerPayrollSettingsRequest } from '../../api/payrollSettingsApi'
-import { applyPayrollAdjustments, calculatePayrollLine, mondayFor, totalLines, weeklyDates } from '../../utils/payrollCalculations'
+import { applyPayrollAdjustments, applySundayCarry, calculatePayrollLine, mondayFor, totalLines, weeklyDates } from '../../utils/payrollCalculations'
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { useTranslation } from '../../i18n/LanguageContext'
@@ -17,9 +17,11 @@ const money = (amount, currency) => formatPayrollMoney(amount, { currency, payme
 const weeklyLinesFor = (data, monday) => {
   const attendance = new Map((data?.attendance || []).map((row) => [`${row.worker_id}|${row.attendance_date}`, row]))
   const holidays = new Set((data?.holidays || []).map((item) => item.holiday_date))
+  const saturday = weeklyDates(monday).at(-1)
+  const run = (data?.runs || []).find((item) => item.payment_type === 'weekly' && item.weekly_period_start === monday && item.weekly_period_end === saturday)
   return (data?.workers || [])
     .filter((worker) => worker.is_active !== false && worker.payment_type === 'weekly')
-    .map((worker) => calculatePayrollLine({
+    .map((worker) => applySundayCarry(calculatePayrollLine({
       worker,
       term: worker.payroll_compensation,
       attendanceByDate: attendance,
@@ -28,7 +30,7 @@ const weeklyLinesFor = (data, monday) => {
       holidayDates: holidays,
       paymentType: 'weekly',
       futureDatesAreNeutral: true,
-    }))
+    }), data?.sundayPayments, run?.id, saturday))
 }
 
 const numeric = (value) => Math.round((Number(value) || 0) * 100) / 100
@@ -66,7 +68,7 @@ export default function PayrollOperations() {
       paymentType: stored.payment_type_snapshot,
       currency: stored.currency_code_snapshot,
       presentDays: Number(stored.present_days || 0), halfDays: Number(stored.half_days || 0), absentDays: Number(stored.absent_days || 0), unresolvedDays: Number(summary.unresolved_days || 0),
-      attendanceWage: Number(calculation.attendance_wage ?? stored.base_amount ?? 0), baseAmount: Number(stored.base_amount || 0), transportAmount: Number(stored.transport_amount || 0), overtimeHours: Number(stored.overtime_hours || 0), overtimeAmount: Number(stored.overtime_amount || 0), holidayAmount: Number(stored.holiday_amount || 0), bonusAmount: Number(stored.bonus_amount || 0), deductionAmount: Number(stored.deduction_amount || 0), advanceAmount: Number(stored.advance_amount || 0), manualAdjustmentAmount: Number(stored.manual_adjustment_amount || 0), finalAmount: Number(stored.final_amount || 0),
+      attendanceWage: Number(calculation.attendance_wage ?? stored.base_amount ?? 0), baseAmount: Number(stored.base_amount || 0), transportAmount: Number(stored.transport_amount || 0), overtimeHours: Number(stored.overtime_hours || 0), overtimeAmount: Number(stored.overtime_amount || 0), holidayAmount: Number(stored.holiday_amount || 0), sundayCarryAmount: Number(calculation.sunday_carry_amount || 0), sundayPayments: (data?.sundayPayments || []).filter((payment) => (calculation.sunday_payment_ids || []).includes(payment.id)), bonusAmount: Number(stored.bonus_amount || 0), deductionAmount: Number(stored.deduction_amount || 0), advanceAmount: Number(stored.advance_amount || 0), manualAdjustmentAmount: Number(stored.manual_adjustment_amount || 0), finalAmount: Number(stored.final_amount || 0),
       calculationSnapshotHasAdjustments: Object.prototype.hasOwnProperty.call(calculation, 'adjustment_summary'),
       details: (summary.days || []).map((detail) => ({ ...detail, row: detail.check_in || detail.check_out ? { check_in: detail.check_in, check_out: detail.check_out } : null })),
     }

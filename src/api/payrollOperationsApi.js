@@ -3,22 +3,39 @@ import { getAttendanceRequest } from './attendanceApi'
 import { getPayrollSettingsWorkersRequest } from './payrollSettingsApi'
 import { applyPayrollAdjustments } from '../utils/payrollCalculations'
 
+const isMissingSundayPaymentsError = (error) => (
+  error?.code === '42P01'
+  || error?.code === 'PGRST205'
+  || /worker_sunday_payment/i.test(String(error?.message || ''))
+)
+
+const readSundayPayments = async (client) => {
+  const result = await client
+    .from('worker_sunday_payment')
+    .select('id,worker_id,work_date,payment_type_snapshot,currency_code,daily_value,multiplier,amount,payment_status,settlement_method,settled_payroll_run_id,settled_payroll_line_id,paid_at,paid_by,confirmed_by,note,created_at,updated_at')
+    .order('work_date', { ascending: false })
+  if (result.error && isMissingSundayPaymentsError(result.error)) return { data: [], available: false }
+  if (result.error) throw result.error
+  return { data: result.data || [], available: true }
+}
+
 export const getPayrollOperationsDataRequest = async () => {
   const client = getSupabaseClient()
-  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult] = await Promise.all([
+  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult] = await Promise.all([
     getPayrollSettingsWorkersRequest(), getAttendanceRequest(),
     client.from('payroll_rule_set').select('*').eq('is_active', true).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
     client.from('company_holiday').select('holiday_date,name').eq('is_active', true),
     client.from('payroll_run').select('id,payment_type,status,scheduled_payment_date,weekly_period_start,weekly_period_end,currency_code,created_at,reviewed_by,reviewed_at,finalized_by,finalized_at,paid_by,paid_at').order('created_at', { ascending: false }),
     client.from('payroll_line').select('id,payroll_run_id,worker_id,attendance_period_start,attendance_period_end,payment_due_date,worker_name_snapshot,payment_type_snapshot,currency_code_snapshot,compensation_snapshot,rule_snapshot,attendance_summary_snapshot,calculation_snapshot,present_days,half_days,absent_days,base_amount,transport_amount,overtime_hours,overtime_amount,holiday_amount,bonus_amount,deduction_amount,advance_amount,manual_adjustment_amount,final_amount'),
     client.from('payroll_adjustment').select('id,payroll_line_id,adjustment_type,amount,reason,created_at,created_by,voided_at,voided_by,void_reason').order('created_at', { ascending: false }),
+    readSundayPayments(client),
   ])
   if (rulesResult.error) throw rulesResult.error
   if (holidaysResult.error) throw holidaysResult.error
   if (runsResult.error) throw runsResult.error
   if (linesResult.error) throw linesResult.error
   if (adjustmentsResult.error) throw adjustmentsResult.error
-  return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [] }
+  return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [], sundayPayments: sundayResult.data, sundayPaymentsAvailable: sundayResult.available }
 }
 
 const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
@@ -27,7 +44,7 @@ const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
   monthly_payroll_cycle_start_date_snapshot: line.term?.monthly_payroll_cycle_start_date || null,
   compensation_snapshot: line.term || {}, rule_snapshot: line.rules || {},
   attendance_summary_snapshot: { present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({ date: detail.date, status: detail.status, check_in: detail.row?.check_in || null, check_out: detail.row?.check_out || null })) },
-  calculation_snapshot: { daily_value: line.dailyValue, attendance_wage: line.attendanceWage, absence_deduction: line.absenceDeduction, half_day_deduction: line.halfDayDeduction, transport_days: line.transportDays, adjustment_summary: line.adjustmentSummary || {}, final_amount: line.finalAmount },
+  calculation_snapshot: { daily_value: line.dailyValue, attendance_wage: line.attendanceWage, absence_deduction: line.absenceDeduction, half_day_deduction: line.halfDayDeduction, transport_days: line.transportDays, adjustment_summary: line.adjustmentSummary || {}, sunday_payment_ids: (line.sundayPayments || []).map((payment) => payment.id), sunday_carry_amount: line.sundayCarryAmount || 0, final_amount: line.finalAmount },
   present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, base_amount: line.baseAmount, transport_amount: line.transportAmount,
   overtime_hours: line.overtimeHours, overtime_amount: line.overtimeAmount, holiday_amount: line.holidayAmount,
   // A Draft line is recalculable, but its persisted snapshot must still include
@@ -78,9 +95,38 @@ export const persistPayrollDraftRequest = async ({ paymentType, periodStart = nu
     const adjustedLine = applyPayrollAdjustments(line, existingLineId ? adjustmentsByLineId.get(String(existingLineId)) || [] : [])
     return linePayload(run.id, adjustedLine, line.cycle?.start || periodStart, line.cycle?.end || periodEnd, line.cycle?.due || dueDate)
   })
-  const { error: lineError } = await client.from('payroll_line').upsert(payload, { onConflict: 'payroll_run_id,worker_id' })
+  const { data: savedLines, error: lineError } = await client.from('payroll_line').upsert(payload, { onConflict: 'payroll_run_id,worker_id' }).select('id,worker_id')
   if (lineError) throw lineError
+  const lineIdByWorker = new Map((savedLines || []).map((line) => [String(line.worker_id), line.id]))
+  for (const line of lines) {
+    const payrollLineId = lineIdByWorker.get(String(line.worker.id))
+    for (const payment of line.sundayPayments || []) {
+      const { error } = await client.rpc('assign_sunday_payment_to_payroll_line', {
+        p_sunday_payment_id: payment.id,
+        p_payroll_line_id: payrollLineId,
+      })
+      if (error) throw error
+    }
+  }
   return run
+}
+
+export const confirmSundayWorkRequest = async ({ workerId, workDate, note = null }) => {
+  const client = getSupabaseClient()
+  const { data, error } = await client.rpc('confirm_worker_sunday_work', {
+    p_worker_id: workerId,
+    p_work_date: workDate,
+    p_note: String(note || '').trim() || null,
+  })
+  if (error) throw error
+  return data
+}
+
+export const markSundayPaymentPaidRequest = async (sundayPaymentId) => {
+  const client = getSupabaseClient()
+  const { data, error } = await client.rpc('mark_sunday_payment_paid', { p_sunday_payment_id: sundayPaymentId })
+  if (error) throw error
+  return data
 }
 
 const requireDraftLine = async (client, payrollLineId) => {
@@ -149,6 +195,15 @@ export const setWeeklyPayrollRunStatusRequest = async ({ runId, nextStatus }) =>
     || (run.status === 'reviewed' && ['draft', 'finalized'].includes(nextStatus))
     || (run.status === 'finalized' && nextStatus === 'paid')
   if (!allowed) throw new Error('This payroll status transition is not allowed.')
+
+  if (nextStatus === 'paid') {
+    const sundayStorage = await readSundayPayments(client)
+    if (sundayStorage.available) {
+      const { data, error } = await client.rpc('mark_payroll_run_paid_with_sundays', { p_payroll_run_id: runId })
+      if (error) throw error
+      return data
+    }
+  }
 
   const adminId = await currentAdminId(client)
   const audit = nextStatus === 'reviewed'

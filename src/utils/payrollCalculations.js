@@ -104,8 +104,8 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
 }
 
 export const totalLines = (lines) => lines.reduce((total, line) => ({
-  workers: total.workers + 1, presentDays: total.presentDays + line.presentDays, halfDays: total.halfDays + line.halfDays, absentDays: total.absentDays + line.absentDays, overtimeHours: money(total.overtimeHours + line.overtimeHours), baseAmount: money(total.baseAmount + line.baseAmount), transportAmount: money(total.transportAmount + line.transportAmount), overtimeAmount: money(total.overtimeAmount + line.overtimeAmount), holidayAmount: money(total.holidayAmount + line.holidayAmount), bonusAmount: money(total.bonusAmount + (line.bonusAmount || 0)), deductionAmount: money(total.deductionAmount + (line.deductionAmount || 0)), advanceAmount: money(total.advanceAmount + (line.advanceAmount || 0)), manualAdjustmentAmount: money(total.manualAdjustmentAmount + (line.manualAdjustmentAmount || 0)), finalAmount: money(total.finalAmount + line.finalAmount),
-}), { workers: 0, presentDays: 0, halfDays: 0, absentDays: 0, overtimeHours: 0, baseAmount: 0, transportAmount: 0, overtimeAmount: 0, holidayAmount: 0, bonusAmount: 0, deductionAmount: 0, advanceAmount: 0, manualAdjustmentAmount: 0, finalAmount: 0 })
+  workers: total.workers + 1, presentDays: total.presentDays + line.presentDays, halfDays: total.halfDays + line.halfDays, absentDays: total.absentDays + line.absentDays, overtimeHours: money(total.overtimeHours + line.overtimeHours), baseAmount: money(total.baseAmount + line.baseAmount), transportAmount: money(total.transportAmount + line.transportAmount), overtimeAmount: money(total.overtimeAmount + line.overtimeAmount), holidayAmount: money(total.holidayAmount + line.holidayAmount), sundayCarryAmount: money(total.sundayCarryAmount + (line.sundayCarryAmount || 0)), bonusAmount: money(total.bonusAmount + (line.bonusAmount || 0)), deductionAmount: money(total.deductionAmount + (line.deductionAmount || 0)), advanceAmount: money(total.advanceAmount + (line.advanceAmount || 0)), manualAdjustmentAmount: money(total.manualAdjustmentAmount + (line.manualAdjustmentAmount || 0)), finalAmount: money(total.finalAmount + line.finalAmount),
+}), { workers: 0, presentDays: 0, halfDays: 0, absentDays: 0, overtimeHours: 0, baseAmount: 0, transportAmount: 0, overtimeAmount: 0, holidayAmount: 0, sundayCarryAmount: 0, bonusAmount: 0, deductionAmount: 0, advanceAmount: 0, manualAdjustmentAmount: 0, finalAmount: 0 })
 
 export const summarizePayrollAdjustments = (adjustments = []) => adjustments
   .filter((adjustment) => !adjustment?.voided_at)
@@ -133,7 +133,7 @@ export const applyPayrollAdjustments = (line, adjustments = []) => {
   const deductionAmount = money(adjustmentSummary.deductionAmount)
   const advanceAmount = money(adjustmentSummary.advanceAmount)
   const manualAdjustmentAmount = money(adjustmentSummary.otherAmount)
-  const finalAmount = money(line.baseAmount + transportAmount + overtimeAmount + holidayAmount + bonusAmount - deductionAmount - advanceAmount + manualAdjustmentAmount)
+  const finalAmount = money(line.baseAmount + transportAmount + overtimeAmount + holidayAmount + Number(line.sundayCarryAmount || 0) + bonusAmount - deductionAmount - advanceAmount + manualAdjustmentAmount)
   return {
     ...line,
     transportAmount,
@@ -145,5 +145,22 @@ export const applyPayrollAdjustments = (line, adjustments = []) => {
     manualAdjustmentAmount,
     adjustmentSummary,
     finalAmount,
+  }
+}
+
+export const applySundayCarry = (line, sundayPayments = [], payrollRunId = null, settlementDue = line.cycle?.due || '') => {
+  const eligible = sundayPayments.filter((payment) => (
+    String(payment.worker_id) === String(line.worker.id)
+    && payment.payment_status === 'unpaid'
+    && payment.currency_code === line.currency
+    && payment.work_date <= settlementDue
+    && (!payment.settled_payroll_run_id || String(payment.settled_payroll_run_id) === String(payrollRunId || ''))
+  ))
+  const sundayCarryAmount = money(eligible.reduce((sum, payment) => sum + Number(payment.amount || 0), 0))
+  return {
+    ...line,
+    sundayPayments: eligible,
+    sundayCarryAmount,
+    finalAmount: money(line.finalAmount + sundayCarryAmount),
   }
 }

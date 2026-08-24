@@ -7,6 +7,7 @@ import { useTranslation } from '../i18n/LanguageContext'
 import PayrollOperations from '../components/Payroll/PayrollOperations'
 import PayrollHistory from '../components/Payroll/PayrollHistory'
 import MonthlyPayrollOperations from '../components/Payroll/MonthlyPayrollOperations'
+import SundayPaymentsPanel from '../components/Payroll/SundayPaymentsPanel'
 
 const toDateInput = (value) => value || localIsoDate()
 const displayValue = (value) => value == null || value === '' ? '-' : value
@@ -120,5 +121,5 @@ function PayrollSettings() {
 export default function Payroll() {
   const { t } = useTranslation()
   const [section, setSection] = useState('operations')
-  return <section><div className="mb-4 flex gap-2"><button className={section === 'operations' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('operations')}>{t('payroll.operations')}</button><button className={section === 'monthly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('monthly')}>{t('payroll.monthlyOperations')}</button><button className={section === 'settings' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('settings')}>{t('payroll.settingsTitle')}</button><button className={section === 'history' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('history')}>{t('payroll.payrollHistory')}</button></div>{section === 'operations' ? <PayrollOperations /> : section === 'monthly' ? <MonthlyPayrollOperations /> : section === 'settings' ? <PayrollSettings /> : <PayrollHistory />}</section>
+  return <section><div className="mb-4 flex flex-wrap gap-2"><button className={section === 'operations' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('operations')}>{t('payroll.operations')}</button><button className={section === 'monthly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('monthly')}>{t('payroll.monthlyOperations')}</button><button className={section === 'sundays' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('sundays')}>{t('payroll.sundayWork')}</button><button className={section === 'settings' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('settings')}>{t('payroll.settingsTitle')}</button><button className={section === 'history' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('history')}>{t('payroll.payrollHistory')}</button></div>{section === 'operations' ? <PayrollOperations /> : section === 'monthly' ? <MonthlyPayrollOperations /> : section === 'sundays' ? <SundayPaymentsPanel /> : section === 'settings' ? <PayrollSettings /> : <PayrollHistory />}</section>
 }

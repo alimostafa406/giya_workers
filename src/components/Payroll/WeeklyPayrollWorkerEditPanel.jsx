@@ -56,6 +56,10 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
         })}
       </div>
       <section className="border-t border-(--border) pt-4">
+        <h3 className="font-extrabold">{t('payroll.sundayWork')}</h3>
+        {(line.sundayPayments || []).length ? <div className="mt-2 space-y-2">{line.sundayPayments.map((payment) => <div className="rounded-lg bg-slate-50 p-3 text-sm" key={payment.id}><p className="font-bold">{payment.work_date}</p><p>{t('payroll.dailyValue')}: {payment.daily_value} · {t('payroll.sundayMultiplier')}: ×{payment.multiplier} · {t('payroll.amount')}: {payment.amount} {payment.currency_code}</p><p>{t('common.status')}: {payment.payment_status === 'paid' ? t('payroll.sundayPaid') : t('payroll.sundayUnpaid')}</p></div>)}</div> : <p className="mt-2 text-sm text-(--muted)">—</p>}
+      </section>
+      <section className="border-t border-(--border) pt-4">
         <h3 className="font-extrabold">{t('payroll.settingsTitle')}</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-bold">{t('payroll.dailyRate')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyRate} onChange={(event) => setDailyRate(event.target.value)} required /></label>
