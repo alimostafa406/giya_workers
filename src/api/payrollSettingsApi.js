@@ -59,6 +59,7 @@ export const getPayrollSettingsWorkersRequest = async () => {
 export const saveWorkerPayrollSettingsRequest = async (worker, values) => {
   const effectiveFrom = values.effective_from || localIsoDate()
   const paymentType = values.payment_type
+  const currencyCode = String(values.currency_code || '').trim().toUpperCase()
   const monthlySalary = numberOrNull(values.monthly_salary)
   const dailyRate = numberOrNull(values.daily_rate)
   const dailyTransportAllowance = numberOrNull(values.daily_transport_allowance) ?? 0
@@ -66,6 +67,9 @@ export const saveWorkerPayrollSettingsRequest = async (worker, values) => {
 
   if (!['weekly', 'monthly'].includes(paymentType)) {
     throw new Error('Payment type must be explicitly set to weekly or monthly.')
+  }
+  if (!['CDF', 'USD'].includes(currencyCode)) {
+    throw new Error('Currency must be explicitly set to CDF or USD.')
   }
   if (effectiveFrom < localIsoDate()) {
     throw new Error('Effective date cannot be in the past.')
@@ -91,7 +95,7 @@ export const saveWorkerPayrollSettingsRequest = async (worker, values) => {
     worker_id: worker.id,
     payment_type: paymentType,
     effective_from: effectiveFrom,
-    currency_code: String(values.currency_code || (paymentType === 'monthly' ? 'USD' : 'CDF')).toUpperCase(),
+    currency_code: currencyCode,
     daily_rate: paymentType === 'weekly' ? dailyRate : null,
     daily_transport_allowance: dailyTransportAllowance,
     overtime_rate_per_hour: overtimeRate,

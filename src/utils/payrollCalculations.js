@@ -116,7 +116,7 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
   const halfDayDeduction = paymentType === 'monthly' ? money(halfDays * dailyValue * (1 - halfMultiplier)) : 0
   const baseAmount = paymentType === 'monthly' ? money(monthlySalary - absenceDeduction - halfDayDeduction) : money(attendanceWage)
   const finalAmount = money(baseAmount + transportAmount + overtimeAmount + holidayAmount)
-  return { worker, term, rules, paymentType, currency: term?.currency_code || (paymentType === 'monthly' ? 'USD' : 'CDF'), presentDays, halfDays, absentDays, unresolvedDays, transportDays, transportAmount, overtimeHours: money(overtimeHours), overtimeRate, overtimeAmount, holidayAmount: money(holidayAmount), attendanceWage: money(attendanceWage), monthlySalary, dailyValue, absenceDeduction, halfDayDeduction, baseAmount, finalAmount, details }
+  return { worker, term, rules, paymentType, currency: term?.currency_code || null, presentDays, halfDays, absentDays, unresolvedDays, transportDays, transportAmount, overtimeHours: money(overtimeHours), overtimeRate, overtimeAmount, holidayAmount: money(holidayAmount), attendanceWage: money(attendanceWage), monthlySalary, dailyValue, absenceDeduction, halfDayDeduction, baseAmount, finalAmount, details }
 }
 
 export const totalLines = (lines) => lines.reduce((total, line) => ({

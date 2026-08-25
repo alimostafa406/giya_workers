@@ -39,7 +39,7 @@ function PayrollSettingsForm({ worker, rules, onSave, saving }) {
   const term = worker.payroll_compensation || {}
   const [values, setValues] = useState({
     payment_type: worker.payment_type || '',
-    currency_code: term.currency_code || (worker.payment_type === 'monthly' ? 'USD' : 'CDF'),
+    currency_code: term.currency_code || '',
     daily_rate: term.daily_rate ?? '',
     monthly_salary: worker.monthly_salary ?? term.monthly_salary ?? '',
     daily_transport_allowance: term.daily_transport_allowance ?? 0,
@@ -60,7 +60,7 @@ function PayrollSettingsForm({ worker, rules, onSave, saving }) {
     setValues((current) => ({
       ...current,
       payment_type: paymentType,
-      currency_code: savedTerm?.currency_code || (paymentType === 'monthly' ? 'USD' : 'CDF'),
+      currency_code: current.currency_code,
       daily_rate: paymentType === 'weekly' ? savedTerm?.daily_rate ?? '' : '',
       monthly_salary: paymentType === 'monthly' ? savedTerm?.monthly_salary ?? worker.monthly_salary ?? '' : '',
       monthly_payroll_cycle_start_date: paymentType === 'monthly' ? savedTerm?.monthly_payroll_cycle_start_date || '' : '',
@@ -80,7 +80,7 @@ function PayrollSettingsForm({ worker, rules, onSave, saving }) {
       {!values.payment_type ? <p className="mt-2 text-sm font-bold text-amber-700">{t('payroll.paymentTypeRequired')}</p> : null}
     </fieldset>
     {values.payment_type ? <div className="grid gap-4 sm:grid-cols-2">
-      <label className="text-sm font-semibold">{t('payroll.currency')}<input className="input-base mt-1" maxLength="3" value={values.currency_code} onChange={update('currency_code')} required /></label>
+      <label className="text-sm font-semibold">{t('payroll.currency')}<select className="input-base mt-1" value={values.currency_code} onChange={update('currency_code')} required><option value="">—</option><option value="CDF">CDF</option><option value="USD">USD</option></select></label>
       <label className="text-sm font-semibold">{t('payroll.effectiveFrom')}<input type="date" min={localIsoDate()} max={paymentTypeChanged ? localIsoDate() : undefined} className="input-base mt-1" value={values.effective_from} onChange={update('effective_from')} required />{paymentTypeChanged ? <span className="mt-1 block text-xs text-amber-700">{t('payroll.paymentTypeChangeToday')}</span> : null}</label>
       <label className="text-sm font-semibold">{t('payroll.transport')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.daily_transport_allowance} onChange={update('daily_transport_allowance')} required /></label>
       {isMonthly ? <label className="text-sm font-semibold">{t('payroll.monthlySalary')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.monthly_salary} onChange={update('monthly_salary')} required /></label> : <label className="text-sm font-semibold">{t('payroll.dailyRate')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.daily_rate} onChange={update('daily_rate')} required /></label>}
@@ -114,7 +114,7 @@ function PayrollSettings() {
   const teams = useMemo(() => [...new Map(workers.filter((worker) => worker.team?.id).map((worker) => [worker.team.id, worker.team])).values()], [workers])
   const needsConfiguration = (worker) => {
     const term = worker.payroll_compensation
-    if (!worker.payment_type || !term) return true
+    if (!worker.payment_type || !term || !term.currency_code) return true
     if (worker.payment_type === 'weekly') return term.daily_rate == null
     return worker.monthly_salary == null || !term.monthly_payroll_cycle_start_date
   }

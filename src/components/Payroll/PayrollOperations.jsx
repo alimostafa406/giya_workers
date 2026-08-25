@@ -220,7 +220,7 @@ export default function PayrollOperations() {
       if (compensationChanged) {
         await saveWorkerPayrollSettingsRequest(line.worker, {
           payment_type: selectedPaymentType,
-          currency_code: compensation.currencyCode || (selectedPaymentType === 'monthly' ? 'USD' : 'CDF'),
+          currency_code: compensation.currencyCode,
           daily_rate: compensation.dailyRate,
           monthly_salary: compensation.monthlySalary,
           monthly_payroll_cycle_start_date: compensation.monthlyCycleStart,

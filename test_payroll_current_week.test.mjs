@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { applyPayrollAdjustments, attachSundayEntitlements, calculatePayrollLine, currentBusinessDate, monthlyDailyValue, sundayBefore, weeklyDates } from './src/utils/payrollCalculations.js'
+import { resolvePayrollCurrency } from './src/utils/payrollCurrency.js'
 
 test('current week future days are neutral and contribute zero', () => {
   const worker = { id: 'worker-1' }
@@ -300,4 +301,40 @@ test('both weekly and monthly row editors persist a changed per-worker payment t
   assert.match(monthlyOperations, /\['weekly', 'monthly'\]\.map[\s\S]*selectPaymentType\(paymentType\)/)
   assert.match(monthlyOperations, /values\.paymentType === 'weekly' \?[\s\S]*payroll\.dailyRate[\s\S]*payroll\.monthlySalary/)
   assert.match(monthlyOperations, /saveWorkerPayrollSettingsRequest\(line\.worker, \{ payment_type: values\.paymentType/)
+})
+
+test('monthly and weekly calculations preserve the explicit compensation currency', () => {
+  const monthlyUsd = calculatePayrollLine({ worker: { id: 'm-usd' }, term: { monthly_salary: 260000, currency_code: 'USD' }, attendanceByDate: new Map(), dates: [], rules: { monthly_working_day_divisor: 26 }, holidayDates: new Set(), paymentType: 'monthly' })
+  const monthlyCdf = calculatePayrollLine({ worker: { id: 'm-cdf' }, term: { monthly_salary: 260000, currency_code: 'CDF' }, attendanceByDate: new Map(), dates: [], rules: { monthly_working_day_divisor: 26 }, holidayDates: new Set(), paymentType: 'monthly' })
+  const weeklyCdf = calculatePayrollLine({ worker: { id: 'w-cdf' }, term: { daily_rate: 20000, currency_code: 'CDF' }, attendanceByDate: new Map(), dates: [], rules: {}, holidayDates: new Set(), paymentType: 'weekly' })
+  assert.equal(monthlyUsd.currency, 'USD')
+  assert.equal(monthlyCdf.currency, 'CDF')
+  assert.equal(weeklyCdf.currency, 'CDF')
+})
+
+test('payment-type switches never rewrite currency and unconfigured currency is required', () => {
+  const settingsPage = readFileSync('./src/pages/Payroll.jsx', 'utf8')
+  const weeklyEditor = readFileSync('./src/components/Payroll/WeeklyPayrollWorkerEditPanel.jsx', 'utf8')
+  const monthlyEditor = readFileSync('./src/components/Payroll/MonthlyPayrollOperations.jsx', 'utf8')
+  const api = readFileSync('./src/api/payrollSettingsApi.js', 'utf8')
+  assert.match(settingsPage, /currency_code: term\.currency_code \|\| ''/)
+  assert.match(settingsPage, /currency_code: current\.currency_code/)
+  assert.match(weeklyEditor, /setCurrencyCode\(line\?\.term\?\.currency_code \|\| line\?\.currency \|\| ''\)/)
+  assert.doesNotMatch(weeklyEditor, /setCurrencyCode\([^\n]*(?:paymentType|nextType)/)
+  assert.doesNotMatch(monthlyEditor, /currency:\s*savedTerm|currency:\s*paymentType/)
+  assert.match(api, /Currency must be explicitly set to CDF or USD/)
+  assert.match(api, /currency_code: currencyCode/)
+  assert.doesNotMatch(api, /paymentType === 'monthly' \? 'USD'/)
+  assert.equal(resolvePayrollCurrency({ paymentType: 'monthly' }), null)
+  assert.equal(resolvePayrollCurrency({ paymentType: 'weekly' }), null)
+  assert.equal(resolvePayrollCurrency({ currency: 'CDF', paymentType: 'monthly' }), 'CDF')
+})
+
+test('monthly payroll groups and draft runs use the worker currency instead of USD inference', () => {
+  const monthly = readFileSync('./src/components/Payroll/MonthlyPayrollOperations.jsx', 'utf8')
+  assert.match(monthly, /key = `\$\{line\.cycle\.due\}\|\$\{line\.currency\}`/)
+  assert.match(monthly, /item\.currency_code === group\?\.currency/)
+  assert.match(monthly, /persistPayrollDraftRequest\(\{ paymentType: 'monthly',[\s\S]*currency,/)
+  assert.match(monthly, /line\.cycle\.due === due && line\.currency === currency/)
+  assert.doesNotMatch(monthly, /currency:\s*'USD'|currency_code === 'USD'/)
 })

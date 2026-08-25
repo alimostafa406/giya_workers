@@ -22,7 +22,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
   const [adjustmentAmount, setAdjustmentAmount] = useState('')
   const [reason, setReason] = useState('')
   const [paymentType, setPaymentType] = useState('weekly')
-  const [currencyCode, setCurrencyCode] = useState('CDF')
+  const [currencyCode, setCurrencyCode] = useState('')
   const [dailyRate, setDailyRate] = useState('')
   const [monthlySalary, setMonthlySalary] = useState('')
   const [monthlyCycleStart, setMonthlyCycleStart] = useState('')
@@ -41,7 +41,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
     setAdjustmentAmount('')
     setReason('')
     setPaymentType(line?.worker?.payment_type || line?.paymentType || 'weekly')
-    setCurrencyCode(line?.term?.currency_code || line?.currency || 'CDF')
+    setCurrencyCode(line?.term?.currency_code || line?.currency || '')
     setDailyRate(line?.term?.daily_rate ?? '')
     setMonthlySalary(line?.term?.monthly_salary ?? line?.worker?.monthly_salary ?? '')
     setMonthlyCycleStart(line?.term?.monthly_payroll_cycle_start_date || '')
@@ -59,7 +59,6 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
   const selectPaymentType = (nextType) => {
     const savedTerm = latestTermForType(line, nextType)
     setPaymentType(nextType)
-    setCurrencyCode(savedTerm?.currency_code || (nextType === 'monthly' ? 'USD' : 'CDF'))
     setDailyRate(nextType === 'weekly' ? savedTerm?.daily_rate ?? '' : '')
     setMonthlySalary(nextType === 'monthly' ? savedTerm?.monthly_salary ?? line?.worker?.monthly_salary ?? '' : '')
     setMonthlyCycleStart(nextType === 'monthly' ? savedTerm?.monthly_payroll_cycle_start_date || '' : '')
@@ -99,7 +98,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
       <section className="border-t border-(--border) pt-4">
         <h3 className="font-extrabold">{t('payroll.settingsTitle')}</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="text-sm font-bold">{t('payroll.currency')}<input className="input-base mt-1" maxLength="3" value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)} required /></label>
+          <label className="text-sm font-bold">{t('payroll.currency')}<select className="input-base mt-1" value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)} required><option value="">—</option><option value="CDF">CDF</option><option value="USD">USD</option></select></label>
           {paymentType === 'weekly' ? <label className="text-sm font-bold">{t('payroll.dailyRate')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyRate} onChange={(event) => setDailyRate(event.target.value)} required /></label> : <>
             <label className="text-sm font-bold">{t('payroll.monthlySalary')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={monthlySalary} onChange={(event) => setMonthlySalary(event.target.value)} required /></label>
             <label className="text-sm font-bold">{t('payroll.cycleStart')}<input className="input-base mt-1" type="date" value={monthlyCycleStart} onChange={(event) => setMonthlyCycleStart(event.target.value)} required /></label>

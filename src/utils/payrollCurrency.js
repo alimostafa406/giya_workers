@@ -10,15 +10,12 @@ export const resolvePayrollCurrency = ({
   currencyCode,
   currencyCodeSnapshot,
   compensationCurrency,
-  paymentType,
 } = {}) => {
   const explicit = [currency, currencyCode, currencyCodeSnapshot, compensationCurrency]
     .map(validCurrency)
     .find(Boolean)
 
   if (explicit) return explicit
-  if (paymentType === 'weekly') return 'CDF'
-  if (paymentType === 'monthly') return 'USD'
   return null
 }
 
