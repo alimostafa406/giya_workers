@@ -4,13 +4,12 @@ import { getPayrollSettingsWorkersRequest, localIsoDate, saveWorkerPayrollSettin
 import Modal from '../components/Modal/Modal'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
+import { formatPayrollMoney } from '../utils/payrollCurrency'
+import { monthlyDailyValue } from '../utils/payrollCalculations'
 import PayrollOperations from '../components/Payroll/PayrollOperations'
 import PayrollHistory from '../components/Payroll/PayrollHistory'
 import MonthlyPayrollOperations from '../components/Payroll/MonthlyPayrollOperations'
 import SundayPaymentsPanel from '../components/Payroll/SundayPaymentsPanel'
-
-const toDateInput = (value) => value || localIsoDate()
-const displayValue = (value) => value == null || value === '' ? '-' : value
 
 const lastDayOfMonth = (year, monthIndex) => new Date(year, monthIndex + 1, 0).getDate()
 
@@ -31,11 +30,15 @@ const monthlyCycleSummary = (anchorValue) => {
   return { day, start, end, due }
 }
 
-function PayrollSettingsForm({ worker, onSave, saving }) {
+const latestTermForType = (worker, paymentType) => (worker.payroll_compensation_terms || [])
+  .filter((term) => term.payment_type === paymentType)
+  .sort((left, right) => String(right.effective_from).localeCompare(String(left.effective_from)))[0] || null
+
+function PayrollSettingsForm({ worker, rules, onSave, saving }) {
   const { t } = useTranslation()
   const term = worker.payroll_compensation || {}
   const [values, setValues] = useState({
-    payment_type: worker.payment_type || 'weekly',
+    payment_type: worker.payment_type || '',
     currency_code: term.currency_code || (worker.payment_type === 'monthly' ? 'USD' : 'CDF'),
     daily_rate: term.daily_rate ?? '',
     monthly_salary: worker.monthly_salary ?? term.monthly_salary ?? '',
@@ -48,29 +51,54 @@ function PayrollSettingsForm({ worker, onSave, saving }) {
 
   const isMonthly = values.payment_type === 'monthly'
   const cycle = monthlyCycleSummary(values.monthly_payroll_cycle_start_date)
+  const divisor = Number(rules?.monthly_working_day_divisor || 26)
+  const derivedDailyValue = isMonthly ? monthlyDailyValue(values.monthly_salary, divisor) : null
+  const paymentTypeChanged = Boolean(worker.payment_type && values.payment_type && worker.payment_type !== values.payment_type)
   const update = (name) => (event) => setValues((current) => ({ ...current, [name]: event.target.value }))
+  const selectPaymentType = (paymentType) => {
+    const savedTerm = latestTermForType(worker, paymentType)
+    setValues((current) => ({
+      ...current,
+      payment_type: paymentType,
+      currency_code: savedTerm?.currency_code || (paymentType === 'monthly' ? 'USD' : 'CDF'),
+      daily_rate: paymentType === 'weekly' ? savedTerm?.daily_rate ?? '' : '',
+      monthly_salary: paymentType === 'monthly' ? savedTerm?.monthly_salary ?? worker.monthly_salary ?? '' : '',
+      monthly_payroll_cycle_start_date: paymentType === 'monthly' ? savedTerm?.monthly_payroll_cycle_start_date || '' : '',
+      daily_transport_allowance: savedTerm?.daily_transport_allowance ?? current.daily_transport_allowance ?? 0,
+      overtime_rate_per_hour: savedTerm?.overtime_rate_per_hour ?? current.overtime_rate_per_hour ?? '',
+      overtime_start_time: savedTerm?.overtime_start_time || current.overtime_start_time || '',
+    }))
+  }
 
   return <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); onSave(values) }}>
     <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-(--muted)">{worker.full_name} · {worker.team_name || '-'}</p>
-    <div className="grid gap-4 sm:grid-cols-2">
-      <label className="text-sm font-semibold">{t('payroll.paymentType')}<select className="input-base mt-1" value={values.payment_type} onChange={(event) => setValues((current) => ({ ...current, payment_type: event.target.value, currency_code: event.target.value === 'monthly' ? 'USD' : 'CDF' }))}><option value="weekly">{t('payroll.weekly')}</option><option value="monthly">{t('payroll.monthly')}</option></select></label>
+    <fieldset className="rounded-xl border-2 border-(--primary) bg-blue-50/40 p-4">
+      <legend className="px-2 text-base font-extrabold">{t('payroll.paymentType')}</legend>
+      <div className="grid grid-cols-2 gap-3">
+        {['weekly', 'monthly'].map((paymentType) => <button key={paymentType} type="button" className={values.payment_type === paymentType ? 'btn-primary' : 'btn-secondary'} onClick={() => selectPaymentType(paymentType)}>{t(`payroll.${paymentType}`)}</button>)}
+      </div>
+      {!values.payment_type ? <p className="mt-2 text-sm font-bold text-amber-700">{t('payroll.paymentTypeRequired')}</p> : null}
+    </fieldset>
+    {values.payment_type ? <div className="grid gap-4 sm:grid-cols-2">
       <label className="text-sm font-semibold">{t('payroll.currency')}<input className="input-base mt-1" maxLength="3" value={values.currency_code} onChange={update('currency_code')} required /></label>
-      <label className="text-sm font-semibold">{t('payroll.effectiveFrom')}<input type="date" min={localIsoDate()} className="input-base mt-1" value={values.effective_from} onChange={update('effective_from')} required /></label>
+      <label className="text-sm font-semibold">{t('payroll.effectiveFrom')}<input type="date" min={localIsoDate()} max={paymentTypeChanged ? localIsoDate() : undefined} className="input-base mt-1" value={values.effective_from} onChange={update('effective_from')} required />{paymentTypeChanged ? <span className="mt-1 block text-xs text-amber-700">{t('payroll.paymentTypeChangeToday')}</span> : null}</label>
       <label className="text-sm font-semibold">{t('payroll.transport')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.daily_transport_allowance} onChange={update('daily_transport_allowance')} required /></label>
       {isMonthly ? <label className="text-sm font-semibold">{t('payroll.monthlySalary')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.monthly_salary} onChange={update('monthly_salary')} required /></label> : <label className="text-sm font-semibold">{t('payroll.dailyRate')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.daily_rate} onChange={update('daily_rate')} required /></label>}
       <label className="text-sm font-semibold">{t('payroll.overtimeRate')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.overtime_rate_per_hour} onChange={update('overtime_rate_per_hour')} /></label>
       <label className="text-sm font-semibold">{t('payroll.overtimeStart')}<input type="time" className="input-base mt-1" value={values.overtime_start_time} onChange={update('overtime_start_time')} /></label>
       {isMonthly ? <label className="text-sm font-semibold">{t('payroll.cycleStart')}<input type="date" className="input-base mt-1" value={values.monthly_payroll_cycle_start_date} onChange={update('monthly_payroll_cycle_start_date')} required /></label> : null}
-    </div>
+    </div> : null}
+    {isMonthly && derivedDailyValue != null ? <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm"><p className="font-bold">{t('payroll.derivedDailyValue')}: {formatPayrollMoney(derivedDailyValue, { currency: values.currency_code, paymentType: 'monthly' })}</p><p className="mt-1 text-xs text-(--muted)">{t('payroll.derivedDailyValueHelp', { divisor })}</p></div> : null}
     {isMonthly && cycle ? <div className="rounded-xl border border-(--border) bg-slate-50 p-3 text-sm"><p>{t('payroll.cycleDay')}: {cycle.day}</p><p>{t('payroll.currentPeriod')}: {formatDate(cycle.start)} — {formatDate(cycle.end)}</p><p>{t('payroll.nextDueDate')}: {formatDate(cycle.due)}</p></div> : null}
     <p className="text-xs text-(--muted)">{t('payroll.effectiveHelp')}</p>
-    <button className="btn-primary" disabled={saving}>{saving ? t('common.saving') : t('common.save')}</button>
+    <button className="btn-primary" disabled={saving || !values.payment_type}>{saving ? t('common.saving') : t('common.save')}</button>
   </form>
 }
 
 function PayrollSettings() {
   const { t } = useTranslation()
   const [workers, setWorkers] = useState([])
+  const [rules, setRules] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -80,13 +108,13 @@ function PayrollSettings() {
   const [missingOnly, setMissingOnly] = useState(false)
   const [selectedWorker, setSelectedWorker] = useState(null)
 
-  const load = async () => { setLoading(true); setError(''); try { const result = await getPayrollSettingsWorkersRequest(); setWorkers(result.data) } catch (err) { setError(getErrorMessage(err)) } finally { setLoading(false) } }
+  const load = async () => { setLoading(true); setError(''); try { const result = await getPayrollSettingsWorkersRequest(); setWorkers(result.data); setRules(result.rules) } catch (err) { setError(getErrorMessage(err)) } finally { setLoading(false) } }
   useEffect(() => { load() }, [])
 
   const teams = useMemo(() => [...new Map(workers.filter((worker) => worker.team?.id).map((worker) => [worker.team.id, worker.team])).values()], [workers])
   const needsConfiguration = (worker) => {
     const term = worker.payroll_compensation
-    if (!term) return true
+    if (!worker.payment_type || !term) return true
     if (worker.payment_type === 'weekly') return term.daily_rate == null
     return worker.monthly_salary == null || !term.monthly_payroll_cycle_start_date
   }
@@ -101,7 +129,7 @@ function PayrollSettings() {
   const columns = [
     { key: 'name', header: t('common.worker'), render: (row) => <div><p className="font-bold">{row.full_name}</p><p className="text-xs text-(--muted)">{row.employee_code || '-'}</p></div> },
     { key: 'team', header: t('common.team'), render: (row) => row.team_name || '-' },
-    { key: 'type', header: t('payroll.paymentType'), render: (row) => row.payment_type === 'monthly' ? t('payroll.monthly') : t('payroll.weekly') },
+    { key: 'type', header: t('payroll.paymentType'), render: (row) => row.payment_type ? t(`payroll.${row.payment_type}`) : <span className="status-badge status-badge--warning">{t('payroll.unspecified')}</span> },
     { key: 'currency', header: t('payroll.currency'), render: (row) => row.payroll_compensation?.currency_code || '-' },
     { key: 'configuration', header: t('payroll.configuration'), render: (row) => needsConfiguration(row) ? <span className="status-badge status-badge--warning">{t('payroll.needsConfiguration')}</span> : <span className="status-badge status-badge--success">{t('payroll.configured')}</span> },
     { key: 'action', header: t('common.actions'), render: (row) => <button className="btn-secondary px-3 py-1" onClick={() => setSelectedWorker(row)}>{t('common.edit')}</button> },
@@ -114,7 +142,7 @@ function PayrollSettings() {
     {error ? <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
     <div className="surface-card mb-4 grid gap-3 p-4 md:grid-cols-4"><input type="search" className="input-base" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('payroll.searchPlaceholder')} /><select className="input-base" value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}><option value="all">{t('payroll.allPaymentTypes')}</option><option value="weekly">{t('payroll.weekly')}</option><option value="monthly">{t('payroll.monthly')}</option></select><select className="input-base" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="all">{t('common.allTeams')}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={missingOnly} onChange={(event) => setMissingOnly(event.target.checked)} />{t('payroll.showMissing')}</label></div>
     <Table columns={columns} data={filtered} loading={loading} emptyMessage={t('common.noResults')} />
-    <Modal isOpen={Boolean(selectedWorker)} title={t('payroll.editSettings')} onClose={() => !saving && setSelectedWorker(null)}>{selectedWorker ? <PayrollSettingsForm worker={selectedWorker} onSave={save} saving={saving} /> : null}</Modal>
+    <Modal isOpen={Boolean(selectedWorker)} title={t('payroll.editSettings')} onClose={() => !saving && setSelectedWorker(null)}>{selectedWorker ? <PayrollSettingsForm worker={selectedWorker} rules={rules} onSave={save} saving={saving} /> : null}</Modal>
   </section>
 }
 

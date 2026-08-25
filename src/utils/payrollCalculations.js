@@ -2,6 +2,14 @@ const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padSt
 const atNoon = (value) => new Date(`${value}T12:00:00`)
 const money = (value) => Math.round((Number(value) || 0) * 100) / 100
 
+export const monthlyDailyValue = (monthlySalary, divisor) => {
+  if (monthlySalary === '' || monthlySalary == null || divisor === '' || divisor == null) return null
+  const salary = Number(monthlySalary)
+  const workingDayDivisor = Number(divisor)
+  if (!Number.isFinite(salary) || salary < 0 || !Number.isFinite(workingDayDivisor) || workingDayDivisor <= 0) return null
+  return money(salary / workingDayDivisor)
+}
+
 export const currentBusinessDate = (value = new Date()) => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Africa/Lagos',
   year: 'numeric',
@@ -103,7 +111,7 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
   })
   const transportAmount = money(transportDays * transportRate)
   const overtimeAmount = money(overtimeHours * overtimeRate)
-  const dailyValue = money(monthlySalary / divisor)
+  const dailyValue = monthlyDailyValue(monthlySalary, divisor) ?? 0
   const absenceDeduction = paymentType === 'monthly' ? money(absentDays * dailyValue) : 0
   const halfDayDeduction = paymentType === 'monthly' ? money(halfDays * dailyValue * (1 - halfMultiplier)) : 0
   const baseAmount = paymentType === 'monthly' ? money(monthlySalary - absenceDeduction - halfDayDeduction) : money(attendanceWage)

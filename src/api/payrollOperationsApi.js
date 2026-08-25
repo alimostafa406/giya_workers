@@ -133,6 +133,18 @@ export const markSundayPaymentPaidRequest = async (sundayPaymentId) => {
   return data
 }
 
+export const reversePaidSundayPaymentRequest = async ({ sundayPaymentId, reason }) => {
+  const normalizedReason = String(reason || '').trim()
+  if (!normalizedReason) throw new Error('A Sunday correction reason is required.')
+  const client = getSupabaseClient()
+  const { data, error } = await client.rpc('reverse_paid_sunday_payment', {
+    p_sunday_payment_id: sundayPaymentId,
+    p_reason: normalizedReason,
+  })
+  if (error) throw error
+  return data
+}
+
 export const cancelSundayWorkRequest = async (sundayPaymentId) => {
   const client = getSupabaseClient()
   const { data, error } = await client.rpc('cancel_sunday_work', {

@@ -72,7 +72,7 @@ export default function SundayPaymentsPanel() {
     { key: 'amount', header: t('payroll.amount'), render: (row) => money(row.amount, row.currency_code, row.payment_type_snapshot) },
     { key: 'status', header: t('common.status'), render: (row) => row.payment_status === 'paid' ? t('payroll.sundayPaid') : row.payment_status === 'cancelled' ? t('payroll.sundayCancelled') : row.settled_payroll_run_id ? t('payroll.sundayIncludedInPayroll') : t('payroll.sundayUnpaid') },
     { key: 'paidAt', header: t('payroll.paidDate'), render: (row) => row.paid_at ? new Date(row.paid_at).toLocaleDateString() : '—' },
-    { key: 'note', header: t('attendance.notes'), render: (row) => row.note || '—' },
+    { key: 'note', header: t('attendance.notes'), render: (row) => row.payment_status === 'cancelled' ? <div><p>{row.cancellation_reason || '—'}</p>{row.cancelled_at ? <p className="mt-1 text-xs text-(--muted)">{new Date(row.cancelled_at).toLocaleString()}</p> : null}</div> : row.note || '—' },
     { key: 'action', header: t('common.actions'), render: (row) => row.payment_status === 'unpaid' && !row.settled_payroll_run_id ? <button className="btn-primary px-3 py-1" disabled={saving} onClick={() => markPaid(row)}>{t('payroll.sundayMarkPaid')}</button> : null },
   ]
 

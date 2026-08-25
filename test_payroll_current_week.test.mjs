@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { applyPayrollAdjustments, attachSundayEntitlements, calculatePayrollLine, currentBusinessDate, sundayBefore, weeklyDates } from './src/utils/payrollCalculations.js'
+import { applyPayrollAdjustments, attachSundayEntitlements, calculatePayrollLine, currentBusinessDate, monthlyDailyValue, sundayBefore, weeklyDates } from './src/utils/payrollCalculations.js'
 
 test('current week future days are neutral and contribute zero', () => {
   const worker = { id: 'worker-1' }
@@ -127,6 +127,26 @@ test('Sunday is paid only by its explicit payment action, never by payroll', () 
   assert.match(sql, /revoke execute on function public\.assign_sunday_payment_to_payroll_line[\s\S]*from authenticated/)
 })
 
+test('paid Sunday correction is explicit, reasoned, and preserves payment audit', () => {
+  const sql = readFileSync('./supabase/sql/worker_sunday_payments.sql', 'utf8')
+  const api = readFileSync('./src/api/payrollOperationsApi.js', 'utf8')
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  const editor = readFileSync('./src/components/Payroll/WeeklyPayrollWorkerEditPanel.jsx', 'utf8')
+  const history = readFileSync('./src/components/Payroll/SundayPaymentsPanel.jsx', 'utf8')
+  const reversal = sql.slice(sql.indexOf('create or replace function public.reverse_paid_sunday_payment'), sql.indexOf('create or replace function public.mark_payroll_run_paid_with_sundays'))
+
+  assert.match(reversal, /if not public\.is_admin\(\)/)
+  assert.match(reversal, /if v_reason is null then raise exception 'A Sunday correction reason is required'/)
+  assert.match(reversal, /payment_status = 'cancelled',[\s\S]*cancelled_at = now\(\),[\s\S]*cancelled_by = auth\.uid\(\),[\s\S]*cancellation_reason = v_reason/)
+  assert.match(reversal, /payment_status = 'paid'[\s\S]*settlement_method = 'separate'/)
+  assert.doesNotMatch(reversal, /paid_at\s*=|paid_by\s*=/)
+  assert.match(sql, /payment_status = 'cancelled'[\s\S]*paid_at is not null and paid_by is not null and settlement_method = 'separate'/)
+  assert.match(api, /rpc\('reverse_paid_sunday_payment',[\s\S]*p_sunday_payment_id: sundayPaymentId,[\s\S]*p_reason: normalizedReason/)
+  assert.match(operations, /window\.confirm\(t\('payroll\.sundayCorrectionConfirmation'\)\)[\s\S]*window\.prompt\(t\('payroll\.sundayCorrectionReasonPrompt'\)/)
+  assert.match(editor, /payment\.payment_status === 'paid'[\s\S]*onCorrectPaidSunday\(payment\)[\s\S]*sundayCorrectRegistration/)
+  assert.match(history, /row\.cancellation_reason[\s\S]*row\.cancelled_at/)
+})
+
 test('monthly approved daily value is salary divided by 26', () => {
   const line = calculatePayrollLine({
     worker: { id: 'monthly-1' }, term: { monthly_salary: 260000 }, attendanceByDate: new Map(),
@@ -222,4 +242,38 @@ test('future Sunday is shown neutral and cannot be edited', () => {
   const editor = readFileSync('./src/components/Payroll/WeeklyPayrollWorkerEditPanel.jsx', 'utf8')
   assert.match(editor, /const isFuture = line\.sundayDate > currentBusinessDate\(\)/)
   assert.match(editor, /isFuture \? <span[^>]*>—<\/span> : <select/)
+})
+
+test('monthly daily value is derived from salary and active divisor without a manual default', () => {
+  assert.equal(monthlyDailyValue(600000, 26), 23076.92)
+  assert.equal(monthlyDailyValue('', 26), null)
+  assert.equal(monthlyDailyValue(600000, 0), null)
+})
+
+test('payroll settings require an explicit per-worker payment method before compensation fields', () => {
+  const page = readFileSync('./src/pages/Payroll.jsx', 'utf8')
+  assert.match(page, /payment_type: worker\.payment_type \|\| ''/)
+  assert.ok(page.indexOf('<fieldset') < page.indexOf('{values.payment_type ?'))
+  assert.match(page, /disabled=\{saving \|\| !values\.payment_type\}/)
+  assert.match(page, /t\('payroll\.unspecified'\)/)
+  assert.doesNotMatch(page, /payment_type:\s*worker\.payment_type\s*\|\|\s*'weekly'/)
+})
+
+test('weekly and monthly settings expose only their approved wage source', () => {
+  const page = readFileSync('./src/pages/Payroll.jsx', 'utf8')
+  assert.match(page, /values\.payment_type === 'monthly'[\s\S]*payroll\.monthlySalary[\s\S]*payroll\.derivedDailyValue/)
+  assert.match(page, /monthlyDailyValue\(values\.monthly_salary, divisor\)/)
+  assert.match(page, /isMonthly \?[\s\S]*payroll\.monthlySalary[\s\S]*payroll\.dailyRate/)
+  assert.match(page, /latestTermForType\(worker, paymentType\)/)
+})
+
+test('settings save preserves effective-dated terms and never infers payment type from worker classification', () => {
+  const api = readFileSync('./src/api/payrollSettingsApi.js', 'utf8')
+  assert.match(api, /Payment type must be explicitly set to weekly or monthly/)
+  assert.match(api, /onConflict: 'worker_id,effective_from'/)
+  assert.match(api, /payment_type: paymentType/)
+  assert.match(api, /daily_rate: paymentType === 'weekly' \? dailyRate : null/)
+  assert.match(api, /monthly_salary: paymentType === 'monthly' \? monthlySalary : null/)
+  assert.doesNotMatch(api, /classification|nationality|special_staff/i)
+  assert.doesNotMatch(api, /\.from\('attendance'\)|\.from\('payroll_line'\)|\.delete\(\)/)
 })

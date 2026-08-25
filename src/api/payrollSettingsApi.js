@@ -18,15 +18,23 @@ const currentTermFor = (terms, today) => terms
 
 export const getPayrollSettingsWorkersRequest = async () => {
   const client = getSupabaseClient()
-  const [{ data: workers }, compensationResult] = await Promise.all([
+  const [{ data: workers }, compensationResult, ruleResult] = await Promise.all([
     getWorkersRequest(),
     client
       .from('worker_payroll_compensation')
       .select('id,worker_id,payment_type,effective_from,effective_to,currency_code,daily_rate,daily_transport_allowance,overtime_rate_per_hour,overtime_start_time,monthly_salary,monthly_payroll_cycle_start_date')
       .order('effective_from', { ascending: false }),
+    client
+      .from('payroll_rule_set')
+      .select('id,monthly_working_day_divisor,effective_from')
+      .eq('is_active', true)
+      .order('effective_from', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   if (compensationResult.error) throw compensationResult.error
+  if (ruleResult.error) throw ruleResult.error
 
   const today = localIsoDate()
   const termsByWorker = new Map()
@@ -36,11 +44,12 @@ export const getPayrollSettingsWorkersRequest = async () => {
   })
 
   return {
+    rules: ruleResult.data || null,
     data: asArray(workers).map((worker) => {
       const terms = termsByWorker.get(String(worker.id)) || []
       return {
         ...worker,
-        payroll_compensation: currentTermFor(terms, today),
+        payroll_compensation: currentTermFor(terms.filter((term) => term.payment_type === worker.payment_type), today),
         payroll_compensation_terms: terms,
       }
     }),
@@ -55,8 +64,14 @@ export const saveWorkerPayrollSettingsRequest = async (worker, values) => {
   const dailyTransportAllowance = numberOrNull(values.daily_transport_allowance) ?? 0
   const overtimeRate = numberOrNull(values.overtime_rate_per_hour)
 
+  if (!['weekly', 'monthly'].includes(paymentType)) {
+    throw new Error('Payment type must be explicitly set to weekly or monthly.')
+  }
   if (effectiveFrom < localIsoDate()) {
     throw new Error('Effective date cannot be in the past.')
+  }
+  if (worker.payment_type && paymentType !== worker.payment_type && effectiveFrom !== localIsoDate()) {
+    throw new Error('A payment-type change must take effect today so the worker profile and active compensation stay consistent.')
   }
   if (paymentType === 'weekly' && (dailyRate == null || dailyRate < 0)) {
     throw new Error('A non-negative daily rate is required for weekly workers.')
