@@ -185,7 +185,12 @@ export default function PayrollOperations() {
   const saveSheetEdit = async (line, values) => {
     const term = line.term || {}
     const compensation = values.compensation || {}
-    const compensationChanged = String(compensation.dailyRate ?? '') !== String(term.daily_rate ?? '')
+    const selectedPaymentType = compensation.paymentType || line.worker.payment_type || 'weekly'
+    const compensationChanged = selectedPaymentType !== line.worker.payment_type
+      || String(compensation.currencyCode ?? '') !== String(term.currency_code ?? line.currency ?? '')
+      || String(compensation.dailyRate ?? '') !== String(term.daily_rate ?? '')
+      || String(compensation.monthlySalary ?? '') !== String(term.monthly_salary ?? line.worker.monthly_salary ?? '')
+      || String(compensation.monthlyCycleStart ?? '') !== String(term.monthly_payroll_cycle_start_date ?? '')
       || String(compensation.dailyTransportAllowance ?? '') !== String(term.daily_transport_allowance ?? 0)
       || String(compensation.overtimeRate ?? '') !== String(term.overtime_rate_per_hour ?? '')
       || String(compensation.overtimeStartTime ?? '') !== String(term.overtime_start_time ?? '')
@@ -214,9 +219,11 @@ export default function PayrollOperations() {
     try {
       if (compensationChanged) {
         await saveWorkerPayrollSettingsRequest(line.worker, {
-          payment_type: 'weekly',
-          currency_code: line.currency || 'CDF',
+          payment_type: selectedPaymentType,
+          currency_code: compensation.currencyCode || (selectedPaymentType === 'monthly' ? 'USD' : 'CDF'),
           daily_rate: compensation.dailyRate,
+          monthly_salary: compensation.monthlySalary,
+          monthly_payroll_cycle_start_date: compensation.monthlyCycleStart,
           daily_transport_allowance: compensation.dailyTransportAllowance,
           overtime_rate_per_hour: compensation.overtimeRate,
           overtime_start_time: compensation.overtimeStartTime,

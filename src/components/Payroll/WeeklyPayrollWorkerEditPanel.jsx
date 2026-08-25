@@ -2,9 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import Modal from '../Modal/Modal'
 import { useTranslation } from '../../i18n/LanguageContext'
 import { localIsoDate } from '../../api/payrollSettingsApi'
-import { currentBusinessDate } from '../../utils/payrollCalculations'
+import { currentBusinessDate, monthlyDailyValue } from '../../utils/payrollCalculations'
+import { formatPayrollMoney } from '../../utils/payrollCurrency'
 
 const adjustmentTypes = ['bonus', 'deduction', 'advance', 'other']
+
+const latestTermForType = (line, paymentType) => (line?.worker?.payroll_compensation_terms || [])
+  .filter((term) => term.payment_type === paymentType)
+  .sort((left, right) => String(right.effective_from).localeCompare(String(left.effective_from)))[0] || null
 
 export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, saving, onClose, onSave, onMarkSundayPaid, onCorrectPaidSunday }) {
   const { t, language } = useTranslation()
@@ -16,7 +21,11 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
   const [adjustmentType, setAdjustmentType] = useState('bonus')
   const [adjustmentAmount, setAdjustmentAmount] = useState('')
   const [reason, setReason] = useState('')
+  const [paymentType, setPaymentType] = useState('weekly')
+  const [currencyCode, setCurrencyCode] = useState('CDF')
   const [dailyRate, setDailyRate] = useState('')
+  const [monthlySalary, setMonthlySalary] = useState('')
+  const [monthlyCycleStart, setMonthlyCycleStart] = useState('')
   const [dailyTransportAllowance, setDailyTransportAllowance] = useState('')
   const [overtimeRate, setOvertimeRate] = useState('')
   const [overtimeStartTime, setOvertimeStartTime] = useState('')
@@ -31,7 +40,11 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
     setAdjustmentType('bonus')
     setAdjustmentAmount('')
     setReason('')
+    setPaymentType(line?.worker?.payment_type || line?.paymentType || 'weekly')
+    setCurrencyCode(line?.term?.currency_code || line?.currency || 'CDF')
     setDailyRate(line?.term?.daily_rate ?? '')
+    setMonthlySalary(line?.term?.monthly_salary ?? line?.worker?.monthly_salary ?? '')
+    setMonthlyCycleStart(line?.term?.monthly_payroll_cycle_start_date || '')
     setDailyTransportAllowance(line?.term?.daily_transport_allowance ?? 0)
     setOvertimeRate(line?.term?.overtime_rate_per_hour ?? '')
     setOvertimeStartTime(line?.term?.overtime_start_time || '')
@@ -40,18 +53,37 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
   }, [initialStatuses, line])
 
   const locale = language === 'ar' ? 'ar' : language === 'fr' ? 'fr-FR' : 'en-US'
+  const monthlyDivisor = Number(line?.rules?.monthly_working_day_divisor || 26)
+  const derivedDailyValue = paymentType === 'monthly' ? monthlyDailyValue(monthlySalary, monthlyDivisor) : null
   const statusOptions = [['not_recorded', t('dashboard.notRecorded'), true], ['present', t('attendance.present'), false], ['half_day', t('attendance.halfDay'), false], ['absent', t('attendance.absent'), false]]
+  const selectPaymentType = (nextType) => {
+    const savedTerm = latestTermForType(line, nextType)
+    setPaymentType(nextType)
+    setCurrencyCode(savedTerm?.currency_code || (nextType === 'monthly' ? 'USD' : 'CDF'))
+    setDailyRate(nextType === 'weekly' ? savedTerm?.daily_rate ?? '' : '')
+    setMonthlySalary(nextType === 'monthly' ? savedTerm?.monthly_salary ?? line?.worker?.monthly_salary ?? '' : '')
+    setMonthlyCycleStart(nextType === 'monthly' ? savedTerm?.monthly_payroll_cycle_start_date || '' : '')
+    setDailyTransportAllowance(savedTerm?.daily_transport_allowance ?? line?.term?.daily_transport_allowance ?? 0)
+    setOvertimeRate(savedTerm?.overtime_rate_per_hour ?? line?.term?.overtime_rate_per_hour ?? '')
+    setOvertimeStartTime(savedTerm?.overtime_start_time || line?.term?.overtime_start_time || '')
+  }
   const save = (event) => {
     event.preventDefault()
     onSave(line, {
       statuses, checkIns, overtimeHours, transportAmount, adjustmentType, adjustmentAmount, reason,
-      sundayWorked, compensation: { dailyRate, dailyTransportAllowance, overtimeRate, overtimeStartTime, effectiveFrom },
+      sundayWorked, compensation: { paymentType, currencyCode, dailyRate, monthlySalary, monthlyCycleStart, dailyTransportAllowance, overtimeRate, overtimeStartTime, effectiveFrom },
     })
   }
 
   return <Modal isOpen={Boolean(line)} title={t('common.edit')} onClose={onClose}>
     {line ? <form className="space-y-4" onSubmit={save}>
       <div><p className="text-lg font-extrabold">{line.worker.full_name}</p><p className="text-sm text-(--muted)">{line.worker.employee_code || '—'}</p></div>
+      <fieldset className="rounded-xl border-2 border-(--primary) bg-blue-50/40 p-4">
+        <legend className="px-2 text-base font-extrabold">{t('payroll.paymentType')}</legend>
+        <div className="grid grid-cols-2 gap-3">
+          {['weekly', 'monthly'].map((type) => <button key={type} type="button" className={paymentType === type ? 'btn-primary' : 'btn-secondary'} onClick={() => selectPaymentType(type)}>{t(`payroll.${type}`)}</button>)}
+        </div>
+      </fieldset>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {(() => {
           const payment = line.sundayPayment
@@ -67,12 +99,17 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
       <section className="border-t border-(--border) pt-4">
         <h3 className="font-extrabold">{t('payroll.settingsTitle')}</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="text-sm font-bold">{t('payroll.dailyRate')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyRate} onChange={(event) => setDailyRate(event.target.value)} required /></label>
+          <label className="text-sm font-bold">{t('payroll.currency')}<input className="input-base mt-1" maxLength="3" value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)} required /></label>
+          {paymentType === 'weekly' ? <label className="text-sm font-bold">{t('payroll.dailyRate')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyRate} onChange={(event) => setDailyRate(event.target.value)} required /></label> : <>
+            <label className="text-sm font-bold">{t('payroll.monthlySalary')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={monthlySalary} onChange={(event) => setMonthlySalary(event.target.value)} required /></label>
+            <label className="text-sm font-bold">{t('payroll.cycleStart')}<input className="input-base mt-1" type="date" value={monthlyCycleStart} onChange={(event) => setMonthlyCycleStart(event.target.value)} required /></label>
+          </>}
           <label className="text-sm font-bold">{t('payroll.transport')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyTransportAllowance} onChange={(event) => setDailyTransportAllowance(event.target.value)} required /></label>
           <label className="text-sm font-bold">{t('payroll.overtimeRate')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={overtimeRate} onChange={(event) => setOvertimeRate(event.target.value)} /></label>
           <label className="text-sm font-bold">{t('payroll.overtimeStart')}<input className="input-base mt-1" type="time" value={overtimeStartTime} onChange={(event) => setOvertimeStartTime(event.target.value)} /></label>
           <label className="text-sm font-bold">{t('payroll.effectiveFrom')}<input className="input-base mt-1" type="date" min={localIsoDate()} value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} required /></label>
         </div>
+        {paymentType === 'monthly' && derivedDailyValue != null ? <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm"><p className="font-bold">{t('payroll.derivedDailyValue')}: {formatPayrollMoney(derivedDailyValue, { currency: currencyCode, paymentType: 'monthly' })}</p><p className="mt-1 text-xs text-(--muted)">{t('payroll.derivedDailyValueHelp', { divisor: monthlyDivisor })}</p></div> : null}
         <p className="mt-2 text-xs text-(--muted)">{t('payroll.effectiveHelp')}</p>
       </section>
       <section className="border-t border-(--border) pt-4">

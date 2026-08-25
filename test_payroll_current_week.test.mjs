@@ -277,3 +277,27 @@ test('settings save preserves effective-dated terms and never infers payment typ
   assert.doesNotMatch(api, /classification|nationality|special_staff/i)
   assert.doesNotMatch(api, /\.from\('attendance'\)|\.from\('payroll_line'\)|\.delete\(\)/)
 })
+
+test('the actual weekly row edit path renders a prominent editable payment-type control', () => {
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  const editor = readFileSync('./src/components/Payroll/WeeklyPayrollWorkerEditPanel.jsx', 'utf8')
+  assert.match(operations, /import WeeklyPayrollWorkerEditPanel/)
+  assert.match(operations, /<WeeklyPayrollSheet[\s\S]*onEdit=\{setEditingWorkerId\}/)
+  assert.match(operations, /<WeeklyPayrollWorkerEditPanel[\s\S]*onSave=\{saveSheetEdit\}/)
+  assert.ok(editor.indexOf("t('payroll.paymentType')") < editor.indexOf('dates.map((date)'))
+  assert.match(editor, /\['weekly', 'monthly'\]\.map[\s\S]*onClick=\{\(\) => selectPaymentType\(type\)\}/)
+  assert.match(editor, /paymentType === 'weekly' \?[\s\S]*payroll\.dailyRate[\s\S]*payroll\.monthlySalary[\s\S]*payroll\.cycleStart/)
+  assert.match(editor, /paymentType === 'monthly' && derivedDailyValue/)
+})
+
+test('both weekly and monthly row editors persist a changed per-worker payment type', () => {
+  const weeklyOperations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  const weeklyEditor = readFileSync('./src/components/Payroll/WeeklyPayrollWorkerEditPanel.jsx', 'utf8')
+  const monthlyOperations = readFileSync('./src/components/Payroll/MonthlyPayrollOperations.jsx', 'utf8')
+  assert.match(weeklyEditor, /compensation: \{ paymentType, currencyCode, dailyRate, monthlySalary, monthlyCycleStart/)
+  assert.match(weeklyOperations, /selectedPaymentType = compensation\.paymentType/)
+  assert.match(weeklyOperations, /saveWorkerPayrollSettingsRequest\(line\.worker, \{[\s\S]*payment_type: selectedPaymentType/)
+  assert.match(monthlyOperations, /\['weekly', 'monthly'\]\.map[\s\S]*selectPaymentType\(paymentType\)/)
+  assert.match(monthlyOperations, /values\.paymentType === 'weekly' \?[\s\S]*payroll\.dailyRate[\s\S]*payroll\.monthlySalary/)
+  assert.match(monthlyOperations, /saveWorkerPayrollSettingsRequest\(line\.worker, \{ payment_type: values\.paymentType/)
+})
