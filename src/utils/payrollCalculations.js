@@ -79,16 +79,18 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
   let transportDays = 0; let overtimeHours = 0; let holidayAmount = 0; let attendanceWage = 0
   const details = dates.map((date) => {
     const isFuture = futureDatesAreNeutral && date > businessDate
+    const attendanceRow = attendanceByDate.get(`${worker.id}|${date}`) || null
+    const isCurrentDayUnrecorded = futureDatesAreNeutral && date === businessDate && !attendanceRow
     // A future day is not an attendance fact yet. Ignore even an accidental
     // future row so it cannot become payable, deductible, or manually editable.
-    const row = isFuture ? null : attendanceByDate.get(`${worker.id}|${date}`) || null
-    const status = isFuture ? 'future' : row?.status || 'absent'
+    const row = isFuture ? null : attendanceRow
+    const status = isFuture ? 'future' : isCurrentDayUnrecorded ? 'not_recorded' : row?.status || 'absent'
     const factor = status === 'present' ? 1 : status === 'half_day' ? halfMultiplier : 0
     const isHoliday = holidayDates.has(date)
     if (status === 'present') presentDays += 1
     else if (status === 'half_day') halfDays += 1
     else if (status === 'pending' || status === 'in_progress') unresolvedDays += 1
-    else if (status === 'future') { /* Neutral until the business date arrives. */ }
+    else if (status === 'future' || status === 'not_recorded') { /* Neutral until attendance is recorded/finalized. */ }
     else absentDays += 1
     const eligibleTransport = status === 'present' || (status === 'half_day' && rules?.transport_eligibility === 'present_and_half_day')
     if (eligibleTransport) transportDays += 1
@@ -110,8 +112,8 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
 }
 
 export const totalLines = (lines) => lines.reduce((total, line) => ({
-  workers: total.workers + 1, presentDays: total.presentDays + line.presentDays, halfDays: total.halfDays + line.halfDays, absentDays: total.absentDays + line.absentDays, overtimeHours: money(total.overtimeHours + line.overtimeHours), baseAmount: money(total.baseAmount + line.baseAmount), transportAmount: money(total.transportAmount + line.transportAmount), overtimeAmount: money(total.overtimeAmount + line.overtimeAmount), holidayAmount: money(total.holidayAmount + line.holidayAmount), sundayCarryAmount: money(total.sundayCarryAmount + (line.sundayCarryAmount || 0)), bonusAmount: money(total.bonusAmount + (line.bonusAmount || 0)), deductionAmount: money(total.deductionAmount + (line.deductionAmount || 0)), advanceAmount: money(total.advanceAmount + (line.advanceAmount || 0)), manualAdjustmentAmount: money(total.manualAdjustmentAmount + (line.manualAdjustmentAmount || 0)), finalAmount: money(total.finalAmount + line.finalAmount),
-}), { workers: 0, presentDays: 0, halfDays: 0, absentDays: 0, overtimeHours: 0, baseAmount: 0, transportAmount: 0, overtimeAmount: 0, holidayAmount: 0, sundayCarryAmount: 0, bonusAmount: 0, deductionAmount: 0, advanceAmount: 0, manualAdjustmentAmount: 0, finalAmount: 0 })
+  workers: total.workers + 1, presentDays: total.presentDays + line.presentDays, halfDays: total.halfDays + line.halfDays, absentDays: total.absentDays + line.absentDays, overtimeHours: money(total.overtimeHours + line.overtimeHours), baseAmount: money(total.baseAmount + line.baseAmount), transportAmount: money(total.transportAmount + line.transportAmount), overtimeAmount: money(total.overtimeAmount + line.overtimeAmount), holidayAmount: money(total.holidayAmount + line.holidayAmount), bonusAmount: money(total.bonusAmount + (line.bonusAmount || 0)), deductionAmount: money(total.deductionAmount + (line.deductionAmount || 0)), advanceAmount: money(total.advanceAmount + (line.advanceAmount || 0)), manualAdjustmentAmount: money(total.manualAdjustmentAmount + (line.manualAdjustmentAmount || 0)), finalAmount: money(total.finalAmount + line.finalAmount),
+}), { workers: 0, presentDays: 0, halfDays: 0, absentDays: 0, overtimeHours: 0, baseAmount: 0, transportAmount: 0, overtimeAmount: 0, holidayAmount: 0, bonusAmount: 0, deductionAmount: 0, advanceAmount: 0, manualAdjustmentAmount: 0, finalAmount: 0 })
 
 export const summarizePayrollAdjustments = (adjustments = []) => adjustments
   .filter((adjustment) => !adjustment?.voided_at)
@@ -139,7 +141,7 @@ export const applyPayrollAdjustments = (line, adjustments = []) => {
   const deductionAmount = money(adjustmentSummary.deductionAmount)
   const advanceAmount = money(adjustmentSummary.advanceAmount)
   const manualAdjustmentAmount = money(adjustmentSummary.otherAmount)
-  const finalAmount = money(line.baseAmount + transportAmount + overtimeAmount + holidayAmount + Number(line.sundayCarryAmount || 0) + bonusAmount - deductionAmount - advanceAmount + manualAdjustmentAmount)
+  const finalAmount = money(line.baseAmount + transportAmount + overtimeAmount + holidayAmount + bonusAmount - deductionAmount - advanceAmount + manualAdjustmentAmount)
   return {
     ...line,
     transportAmount,
@@ -154,19 +156,15 @@ export const applyPayrollAdjustments = (line, adjustments = []) => {
   }
 }
 
-export const applySundayCarry = (line, sundayPayments = [], payrollRunId = null, settlementDue = line.cycle?.due || '') => {
-  const eligible = sundayPayments.filter((payment) => (
+export const attachSundayEntitlements = (line, sundayPayments = [], settlementDue = line.cycle?.due || '') => {
+  const visible = sundayPayments.filter((payment) => (
     String(payment.worker_id) === String(line.worker.id)
-    && payment.payment_status === 'unpaid'
+    && payment.payment_status !== 'cancelled'
     && payment.currency_code === line.currency
     && payment.work_date <= settlementDue
-    && (!payment.settled_payroll_run_id || String(payment.settled_payroll_run_id) === String(payrollRunId || ''))
   ))
-  const sundayCarryAmount = money(eligible.reduce((sum, payment) => sum + Number(payment.amount || 0), 0))
   return {
     ...line,
-    sundayPayments: eligible,
-    sundayCarryAmount,
-    finalAmount: money(line.finalAmount + sundayCarryAmount),
+    sundayPayments: visible,
   }
 }

@@ -15,6 +15,7 @@ const statusLabel = (status, t) => ({
   absent: t('attendance.absent'),
   pending: t('attendance.pending'),
   in_progress: t('attendance.inProgress'),
+  not_recorded: t('dashboard.notRecorded'),
 }[status] || '—')
 
 const sundayStatusLabel = (line, t) => {
@@ -36,7 +37,10 @@ export default function WeeklyPayrollSheet({ lines, dates, onEdit, editable = tr
     { key: 'attendanceWage', header: t('payroll.attendanceWage'), render: (line) => money(line.attendanceWage, line) },
     { key: 'overtimeHours', header: t('payroll.candidateOvertimeHours'), render: (line) => `${line.overtimeHours || 0} ${t('payroll.hoursShort')}` },
     { key: 'transport', header: t('payroll.transport'), render: (line) => money(line.transportAmount, line) },
-    { key: 'sunday', header: t('payroll.sundayWork'), render: (line) => money(line.sundayCarryAmount || 0, line) },
+    { key: 'sunday', header: t('payroll.sundayWork'), render: (line) => {
+      const payment = line.sundayPayment?.payment_status === 'cancelled' ? null : line.sundayPayment
+      return <div><p className="font-bold">{money(payment?.amount || 0, line)}</p>{payment ? <span className={`status-badge ${payment.payment_status === 'paid' ? 'status-badge--success' : 'status-badge--warning'}`}>{payment.payment_status === 'paid' ? t('payroll.sundayPaid') : t('payroll.sundayUnpaid')}</span> : null}<p className="mt-1 text-xs text-(--muted)">{t('payroll.sundayIndependent')}</p></div>
+    } },
     { key: 'final', header: t('payroll.finalPay'), render: (line) => <span className="font-extrabold">{money(line.finalAmount, line)}</span> },
     ...(editable ? [{ key: 'actions', header: t('common.actions'), render: (line) => <button type="button" className="btn-secondary px-3 py-1" onClick={() => onEdit(line.worker.id)}>{t('common.edit')}</button> }] : []),
   ]

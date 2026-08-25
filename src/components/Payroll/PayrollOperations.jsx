@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getErrorMessage } from '../../api/axios'
 import { saveAttendanceManuallyRequest, updateAttendanceManuallyRequest } from '../../api/attendanceApi'
-import { cancelSundayWorkRequest, confirmSundayWorkRequest, createPayrollAdjustmentRequest, getPayrollOperationsDataRequest, persistPayrollDraftRequest, setWeeklyPayrollRunStatusRequest } from '../../api/payrollOperationsApi'
+import { cancelSundayWorkRequest, confirmSundayWorkRequest, createPayrollAdjustmentRequest, getPayrollOperationsDataRequest, markSundayPaymentPaidRequest, persistPayrollDraftRequest, setWeeklyPayrollRunStatusRequest } from '../../api/payrollOperationsApi'
 import { saveWorkerPayrollSettingsRequest } from '../../api/payrollSettingsApi'
-import { applyPayrollAdjustments, applySundayCarry, calculatePayrollLine, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
+import { applyPayrollAdjustments, calculatePayrollLine, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { useTranslation } from '../../i18n/LanguageContext'
@@ -24,7 +24,7 @@ const weeklyLinesFor = (data, monday) => {
     .filter((worker) => worker.is_active !== false && worker.payment_type === 'weekly')
     .map((worker) => {
       const sundayPayment = (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(worker.id) && payment.work_date === sundayDate) || null
-      return { ...applySundayCarry(calculatePayrollLine({
+      return { ...calculatePayrollLine({
       worker,
       term: worker.payroll_compensation,
       attendanceByDate: attendance,
@@ -33,7 +33,7 @@ const weeklyLinesFor = (data, monday) => {
       holidayDates: holidays,
       paymentType: 'weekly',
       futureDatesAreNeutral: true,
-      }), data?.sundayPayments, run?.id, saturday), sundayDate, sundayPayment }
+      }), sundayDate, sundayPayment }
     })
 }
 
@@ -72,7 +72,7 @@ export default function PayrollOperations() {
       paymentType: stored.payment_type_snapshot,
       currency: stored.currency_code_snapshot,
       presentDays: Number(stored.present_days || 0), halfDays: Number(stored.half_days || 0), absentDays: Number(stored.absent_days || 0), unresolvedDays: Number(summary.unresolved_days || 0),
-      attendanceWage: Number(calculation.attendance_wage ?? stored.base_amount ?? 0), baseAmount: Number(stored.base_amount || 0), transportAmount: Number(stored.transport_amount || 0), overtimeHours: Number(stored.overtime_hours || 0), overtimeAmount: Number(stored.overtime_amount || 0), holidayAmount: Number(stored.holiday_amount || 0), sundayCarryAmount: Number(calculation.sunday_carry_amount || 0), sundayPayments: (data?.sundayPayments || []).filter((payment) => (calculation.sunday_payment_ids || []).includes(payment.id)), bonusAmount: Number(stored.bonus_amount || 0), deductionAmount: Number(stored.deduction_amount || 0), advanceAmount: Number(stored.advance_amount || 0), manualAdjustmentAmount: Number(stored.manual_adjustment_amount || 0), finalAmount: Number(stored.final_amount || 0),
+      attendanceWage: Number(calculation.attendance_wage ?? stored.base_amount ?? 0), baseAmount: Number(stored.base_amount || 0), transportAmount: Number(stored.transport_amount || 0), overtimeHours: Number(stored.overtime_hours || 0), overtimeAmount: Number(stored.overtime_amount || 0), holidayAmount: Number(stored.holiday_amount || 0), sundayDate: sundayBefore(stored.attendance_period_start), sundayPayment: (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(stored.worker_id) && payment.work_date === sundayBefore(stored.attendance_period_start)) || null, bonusAmount: Number(stored.bonus_amount || 0), deductionAmount: Number(stored.deduction_amount || 0), advanceAmount: Number(stored.advance_amount || 0), manualAdjustmentAmount: Number(stored.manual_adjustment_amount || 0), finalAmount: Number(stored.final_amount || 0),
       calculationSnapshotHasAdjustments: Object.prototype.hasOwnProperty.call(calculation, 'adjustment_summary'),
       details: (summary.days || []).map((detail) => ({ ...detail, row: detail.check_in || detail.check_out ? { check_in: detail.check_in, check_out: detail.check_out } : null })),
     }
@@ -261,6 +261,17 @@ export default function PayrollOperations() {
           : getErrorMessage(e))
     } finally { setSavingSheetWorkerId('') }
   }
+  const markSundayPaid = async (payment) => {
+    if (!payment?.id || payment.payment_status !== 'unpaid' || payment.settled_payroll_run_id) return
+    if (!window.confirm(t('payroll.sundayPaidConfirmation'))) return
+    setSavingSheetWorkerId(String(payment.worker_id))
+    setError('')
+    try {
+      await markSundayPaymentPaidRequest(payment.id)
+      await load()
+      setMessage(t('payroll.sundayMarkedPaid'))
+    } catch (e) { setError(getErrorMessage(e)) } finally { setSavingSheetWorkerId('') }
+  }
   const teamColumns = [{ key: 'name', header: t('common.team'), render: (group) => group.name }, { key: 'workers', header: t('payroll.workers'), render: (group) => group.totals.workers }, { key: 'days', header: `${t('payroll.presentDays')} / ${t('payroll.halfDays')} / ${t('payroll.absentDays')}`, render: (group) => `${group.totals.presentDays} / ${group.totals.halfDays} / ${group.totals.absentDays}` }, { key: 'total', header: t('payroll.teamTotal'), render: (group) => money(group.totals.finalAmount, 'CDF') }, { key: 'open', header: '', render: (group) => <button className="btn-secondary" onClick={() => setSelectedTeamId(group.id)}>{t('payroll.open')}</button> }]
   const exportButtons = (onExport) => <div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('print')}>{t('reports.print')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('pdf')}>{t('reports.pdf')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('excel')}>{t('reports.excel')}</button></div>
   return <section>
@@ -279,7 +290,7 @@ export default function PayrollOperations() {
     {reviewErrors.length ? <div className="mb-3 rounded bg-amber-50 p-3 text-amber-900"><p className="font-bold">{t('payroll.reviewValidationFailed')}</p><ul className="mt-2 list-inside list-disc text-sm">{reviewErrors.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
     {selectedTeam ? <><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} /><div className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>{t('payroll.presentDays')}:</strong> {selectedTeam.totals.presentDays + (selectedTeam.totals.halfDays * 0.5)}</p><p><strong>{t('payroll.candidateOvertimeHours')}:</strong> {selectedTeam.totals.overtimeHours}</p><p><strong>{t('payroll.transport')}:</strong> {money(selectedTeam.totals.transportAmount, 'CDF')}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {money(selectedTeam.totals.finalAmount, 'CDF')}</p></div></> : <><div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div><Table columns={teamColumns} data={teamGroups} loading={loading} emptyMessage={t('payroll.noTeams')} /></>}
     <p className="mt-3 font-extrabold">{t('payroll.allTeamsTotal')}: {money(totals.finalAmount, 'CDF')}</p>
-    <WeeklyPayrollWorkerEditPanel line={editingLine} dates={weeklyDates(monday)} hasDraft={Boolean(draftRun)} saving={Boolean(savingSheetWorkerId)} onClose={() => setEditingWorkerId('')} onSave={saveSheetEdit} />
+    <WeeklyPayrollWorkerEditPanel line={editingLine} dates={weeklyDates(monday)} hasDraft={Boolean(draftRun)} saving={Boolean(savingSheetWorkerId)} onClose={() => setEditingWorkerId('')} onSave={saveSheetEdit} onMarkSundayPaid={markSundayPaid} />
     <AttendanceEditModal row={editingAttendance} isOpen={Boolean(editingAttendance)} isSaving={savingAttendance} onClose={() => setEditingAttendance(null)} onSave={saveAttendanceCorrection} />
   </section>
 }

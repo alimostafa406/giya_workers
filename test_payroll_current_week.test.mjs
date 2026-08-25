@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { applyPayrollAdjustments, applySundayCarry, calculatePayrollLine, currentBusinessDate, sundayBefore, weeklyDates } from './src/utils/payrollCalculations.js'
+import { applyPayrollAdjustments, attachSundayEntitlements, calculatePayrollLine, currentBusinessDate, sundayBefore, weeklyDates } from './src/utils/payrollCalculations.js'
 
 test('current week future days are neutral and contribute zero', () => {
   const worker = { id: 'worker-1' }
@@ -33,6 +33,26 @@ test('current week future days are neutral and contribute zero', () => {
   assert.equal(line.transportAmount, 10)
   assert.equal(line.overtimeHours, 1)
   assert.equal(line.finalAmount, 130)
+})
+
+test('current workday without attendance is neutral and has no payroll effect', () => {
+  const line = calculatePayrollLine({
+    worker: { id: 'worker-1' },
+    term: { daily_rate: 20000, daily_transport_allowance: 1000 },
+    attendanceByDate: new Map(),
+    dates: ['2026-08-24', '2026-08-25'],
+    rules: { transport_eligibility: 'present_and_half_day' },
+    holidayDates: new Set(),
+    paymentType: 'weekly',
+    futureDatesAreNeutral: true,
+    businessDate: '2026-08-24',
+  })
+  assert.equal(line.details[0].status, 'not_recorded')
+  assert.equal(line.details[1].status, 'future')
+  assert.equal(line.absentDays, 0)
+  assert.equal(line.attendanceWage, 0)
+  assert.equal(line.transportAmount, 0)
+  assert.equal(line.finalAmount, 0)
 })
 
 test('historical missing days keep their existing absent behavior', () => {
@@ -67,28 +87,44 @@ test('weekly and monthly payroll use only explicit per-worker profile types', ()
   assert.match(monthlyOperations, /worker\.payment_type === 'monthly'/)
 })
 
-test('unpaid Sunday double pay is carried once and paid Sunday is excluded', () => {
+test('unpaid Sunday entitlement stays visible but never changes weekly net', () => {
   const baseLine = {
     worker: { id: 'worker-1' }, currency: 'CDF', baseAmount: 60000, transportAmount: 0,
     overtimeAmount: 0, holidayAmount: 0, finalAmount: 60000,
   }
   const unpaid = { id: 'sun-1', worker_id: 'worker-1', work_date: '2026-08-23', daily_value: 10000, multiplier: 2, amount: 20000, currency_code: 'CDF', payment_status: 'unpaid', settled_payroll_run_id: null }
-  const carried = applySundayCarry(baseLine, [unpaid], null, '2026-08-29')
-  assert.equal(carried.sundayCarryAmount, 20000)
-  assert.equal(carried.finalAmount, 80000)
-  assert.equal(applyPayrollAdjustments(carried).finalAmount, 80000)
+  const attached = attachSundayEntitlements(baseLine, [unpaid], '2026-08-29')
+  assert.equal(attached.sundayPayments[0].amount, 20000)
+  assert.equal(attached.finalAmount, 60000)
+  assert.equal(applyPayrollAdjustments(attached).finalAmount, 60000)
 
-  const paid = applySundayCarry(baseLine, [{ ...unpaid, payment_status: 'paid' }], null, '2026-08-29')
-  assert.equal(paid.sundayCarryAmount, 0)
+  const paid = attachSundayEntitlements(baseLine, [{ ...unpaid, payment_status: 'paid' }], '2026-08-29')
+  assert.equal(paid.sundayPayments[0].payment_status, 'paid')
   assert.equal(paid.finalAmount, 60000)
+
+  const nivaExample = attachSundayEntitlements(
+    { ...baseLine, baseAmount: 0, finalAmount: 0 },
+    [{ ...unpaid, daily_value: 20000, amount: 40000 }],
+    '2026-08-29',
+  )
+  assert.equal(nivaExample.sundayPayments[0].amount, 40000)
+  assert.equal(nivaExample.finalAmount, 0)
 })
 
-test('assigned Sunday remains in its run and cannot enter another settlement', () => {
-  const baseLine = { worker: { id: 'worker-1' }, currency: 'CDF', finalAmount: 60000 }
-  const assigned = { id: 'sun-1', worker_id: 'worker-1', work_date: '2026-08-23', amount: 20000, currency_code: 'CDF', payment_status: 'unpaid', settled_payroll_run_id: 'run-1' }
-  assert.equal(applySundayCarry(baseLine, [assigned], 'run-1', '2026-08-29').sundayCarryAmount, 20000)
-  assert.equal(applySundayCarry(baseLine, [assigned], 'run-2', '2026-09-05').sundayCarryAmount, 0)
-  assert.equal(applySundayCarry(baseLine, [{ ...assigned, payment_status: 'paid' }], null, '2026-09-05').sundayCarryAmount, 0)
+test('Sunday is paid only by its explicit payment action, never by payroll', () => {
+  const api = readFileSync('./src/api/payrollOperationsApi.js', 'utf8')
+  const sql = readFileSync('./supabase/sql/worker_sunday_payments.sql', 'utf8')
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  const editor = readFileSync('./src/components/Payroll/WeeklyPayrollWorkerEditPanel.jsx', 'utf8')
+  assert.doesNotMatch(api, /rpc\('assign_sunday_payment_to_payroll_line'/)
+  assert.doesNotMatch(api, /rpc\('mark_payroll_run_paid_with_sundays'/)
+  assert.match(api, /rpc\('mark_sunday_payment_paid'/)
+  assert.match(operations, /await markSundayPaymentPaidRequest\(payment\.id\)[\s\S]*await load\(\)/)
+  assert.match(editor, /payment\.payment_status === 'unpaid'[\s\S]*onMarkSundayPaid\(payment\)[\s\S]*sundayMarkPaid/)
+  assert.match(editor, /payment\.paid_at[\s\S]*toLocaleString/)
+  assert.match(sql, /payment_status = 'paid', settlement_method = 'separate', paid_at = now\(\), paid_by = auth\.uid\(\)/)
+  assert.match(sql, /Intentionally do not settle Sunday entitlements here/)
+  assert.match(sql, /revoke execute on function public\.assign_sunday_payment_to_payroll_line[\s\S]*from authenticated/)
 })
 
 test('monthly approved daily value is salary divided by 26', () => {
@@ -135,7 +171,8 @@ test('Sunday migration enforces auditability, uniqueness, and atomic settlement'
   assert.match(sql, /Future Sunday work cannot be confirmed/)
   assert.match(sql, /settled_payroll_run_id is not null and v_payment\.settled_payroll_run_id <> v_run\.id/)
   assert.match(sql, /mark_payroll_run_paid_with_sundays/)
-  assert.match(sql, /update public\.worker_sunday_payment set payment_status = 'paid'/)
+  assert.match(sql, /payment_status = 'paid', settlement_method = 'separate'/)
+  assert.doesNotMatch(sql, /where settled_payroll_run_id = p_payroll_run_id and payment_status = 'unpaid'/)
   assert.doesNotMatch(sql, /delete from public\.worker_sunday_payment/i)
 })
 
@@ -152,7 +189,7 @@ test('weekly payroll table shows Sunday first from the shared Sunday payment sta
   assert.ok(sheet.indexOf("key: 'sundayAttendance'") < sheet.indexOf('...dates.map((date)'))
   assert.match(sheet, /line\.sundayPayment && line\.sundayPayment\.payment_status !== 'cancelled'/)
   assert.match(sheet, /line\.sundayDate > currentBusinessDate\(\)/)
-  assert.match(sheet, /key: 'sunday'[\s\S]*sundayCarryAmount/)
+  assert.match(sheet, /key: 'sunday'[\s\S]*payment\?\.amount[\s\S]*sundayIndependent/)
 })
 
 test('Sunday work state stays outside normal weekly attendance wage calculation', () => {
@@ -163,7 +200,9 @@ test('Sunday work state stays outside normal weekly attendance wage calculation'
   })
   assert.equal(result.presentDays, 0)
   assert.equal(result.attendanceWage, 0)
-  assert.equal(applySundayCarry(result, [{ worker_id: 'w1', payment_status: 'unpaid', currency_code: 'CDF', work_date: '2026-08-23', amount: 200 }], null, '2026-08-29').sundayCarryAmount, 200)
+  const attached = attachSundayEntitlements(result, [{ worker_id: 'w1', payment_status: 'unpaid', currency_code: 'CDF', work_date: '2026-08-23', amount: 200 }], '2026-08-29')
+  assert.equal(attached.sundayPayments[0].amount, 200)
+  assert.equal(attached.finalAmount, 0)
 })
 
 test('Sunday present and absent use the shared auditable payment record workflow', () => {

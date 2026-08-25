@@ -69,6 +69,14 @@ create index if not exists worker_sunday_payment_run_idx
   on public.worker_sunday_payment (settled_payroll_run_id)
   where settled_payroll_run_id is not null;
 
+-- Sunday is an independent entitlement. Undo only unpaid legacy payroll
+-- assignments created by the previous carry model; paid history is preserved.
+update public.worker_sunday_payment set
+  settlement_method = null,
+  settled_payroll_run_id = null,
+  settled_payroll_line_id = null
+where payment_status = 'unpaid' and settlement_method = 'payroll';
+
 create or replace function public.set_worker_sunday_payment_updated_at()
 returns trigger language plpgsql set search_path = public as $$
 begin
@@ -289,8 +297,8 @@ begin
   if v_run.id is null or v_run.status <> 'finalized' then raise exception 'Only a finalized payroll run can be paid'; end if;
   update public.payroll_run set status = 'paid', paid_at = now(), paid_by = auth.uid()
   where id = p_payroll_run_id returning * into v_run;
-  update public.worker_sunday_payment set payment_status = 'paid', paid_at = v_run.paid_at, paid_by = auth.uid()
-  where settled_payroll_run_id = p_payroll_run_id and payment_status = 'unpaid';
+  -- Intentionally do not settle Sunday entitlements here. Sunday payment is
+  -- completed only through mark_sunday_payment_paid.
   return v_run;
 end;
 $$;
@@ -302,6 +310,6 @@ revoke all on function public.mark_sunday_payment_paid(uuid) from public;
 revoke all on function public.mark_payroll_run_paid_with_sundays(uuid) from public;
 grant execute on function public.confirm_worker_sunday_work(uuid, date, text, uuid) to authenticated;
 grant execute on function public.cancel_sunday_work(uuid, text) to authenticated;
-grant execute on function public.assign_sunday_payment_to_payroll_line(uuid, uuid) to authenticated;
+revoke execute on function public.assign_sunday_payment_to_payroll_line(uuid, uuid) from authenticated;
 grant execute on function public.mark_sunday_payment_paid(uuid) to authenticated;
 grant execute on function public.mark_payroll_run_paid_with_sundays(uuid) to authenticated;
