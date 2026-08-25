@@ -91,6 +91,8 @@ const readAttendance = async (client, params = {}) => {
     .select(`${attendanceFields},biometric_sync_metadata,manual_override,attendance_source`)
     .order('attendance_date', { ascending: false })
   if (params.date) query = query.eq('attendance_date', params.date)
+  if (params.date_from) query = query.gte('attendance_date', params.date_from)
+  if (params.date_to) query = query.lte('attendance_date', params.date_to)
   if (params.worker_id) query = query.eq('worker_id', params.worker_id)
   const { data, error } = await query
 
@@ -100,6 +102,8 @@ const readAttendance = async (client, params = {}) => {
       .select(attendanceFields)
       .order('attendance_date', { ascending: false })
     if (params.date) fallbackQuery = fallbackQuery.eq('attendance_date', params.date)
+    if (params.date_from) fallbackQuery = fallbackQuery.gte('attendance_date', params.date_from)
+    if (params.date_to) fallbackQuery = fallbackQuery.lte('attendance_date', params.date_to)
     if (params.worker_id) fallbackQuery = fallbackQuery.eq('worker_id', params.worker_id)
     const fallback = await fallbackQuery
     if (fallback.error) throw fallback.error
@@ -178,12 +182,14 @@ export const getAttendanceRequest = async (params = {}) => {
   const filtered = attendance.filter((row) => {
     const worker = workersById.get(String(row.worker_id)) || null
     const matchesDate = !params.date || row.attendance_date === params.date
+    const matchesDateFrom = !params.date_from || row.attendance_date >= params.date_from
+    const matchesDateTo = !params.date_to || row.attendance_date <= params.date_to
     const matchesTeam = !params.team_id || String(worker?.team_id ?? '') === String(params.team_id)
     const matchesWorker = !params.worker_id || String(row.worker_id ?? '') === String(params.worker_id)
     const matchesClassification = !params.staff_classification
       || (worker?.staff_classification || 'normal') === params.staff_classification
 
-    return matchesDate && matchesTeam && matchesWorker && matchesClassification
+    return matchesDate && matchesDateFrom && matchesDateTo && matchesTeam && matchesWorker && matchesClassification
   })
 
   const data = filtered.map((row) => {

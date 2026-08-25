@@ -261,3 +261,19 @@ Object.assign(translations.fr.payroll, {
   derivedDailyValue: 'Valeur journalière calculée',
   derivedDailyValueHelp: 'Calculée automatiquement : salaire mensuel ÷ {divisor}. Ne la saisissez pas manuellement.',
 })
+
+Object.assign(translations.ar, {
+  absenceReport: {
+    title: 'تقرير الغياب', description: 'تقرير قراءة فقط للغياب المؤكد حسب الفرق.', today: 'اليوم', week: 'هذا الأسبوع', allTeams: 'الكل', print: 'طباعة التقرير', companyTitle: 'تقرير حضور الشركة', todayTitle: 'تقرير غياب اليوم', weekTitle: 'تقرير غياب الأسبوع', generatedAt: 'تاريخ ووقت الإنشاء', teamsWithAbsence: 'عدد الفرق التي لديها غياب', absentWorkers: 'إجمالي العمال الغائبين', confirmedAbsenceDays: 'إجمالي أيام الغياب المؤكدة', absentCount: 'عدد الغائبين', absenceTotal: 'مجموع الغياب', needsReview: 'يحتاج مراجعة', empty: 'لا يوجد غياب مؤكد للفترة المختارة.',
+  },
+})
+Object.assign(translations.en, {
+  absenceReport: {
+    title: 'Absence Report', description: 'Read-only confirmed absence report grouped by team.', today: 'Today', week: 'This week', allTeams: 'All teams', print: 'Print report', companyTitle: 'Company Attendance Report', todayTitle: 'Today Absence Report', weekTitle: 'Weekly Absence Report', generatedAt: 'Generated at', teamsWithAbsence: 'Teams with absence', absentWorkers: 'Absent workers', confirmedAbsenceDays: 'Confirmed absence days', absentCount: 'Absent workers', absenceTotal: 'Total absences', needsReview: 'Needs review', empty: 'No confirmed absences for the selected period.',
+  },
+})
+Object.assign(translations.fr, {
+  absenceReport: {
+    title: 'Rapport d’absence', description: 'Rapport en lecture seule des absences confirmées par équipe.', today: 'Aujourd’hui', week: 'Cette semaine', allTeams: 'Toutes les équipes', print: 'Imprimer le rapport', companyTitle: 'Rapport de présence de l’entreprise', todayTitle: 'Rapport des absences du jour', weekTitle: 'Rapport hebdomadaire des absences', generatedAt: 'Généré le', teamsWithAbsence: 'Équipes avec absence', absentWorkers: 'Travailleurs absents', confirmedAbsenceDays: 'Jours d’absence confirmés', absentCount: 'Travailleurs absents', absenceTotal: 'Total des absences', needsReview: 'À vérifier', empty: 'Aucune absence confirmée pour la période sélectionnée.',
+  },
+})

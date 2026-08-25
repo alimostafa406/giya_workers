@@ -119,3 +119,148 @@ textarea {
 .alert--warning {
   @apply border-amber-200 bg-amber-50 text-amber-800;
 }
+
+.absence-report-print-root {
+  @apply rounded-2xl border border-(--border) bg-white p-5;
+}
+
+.absence-report-header {
+  @apply border-b-2 border-slate-800 pb-4 text-center;
+}
+
+.absence-report-header h1 {
+  @apply mt-1 text-2xl font-extrabold;
+}
+
+.absence-report-company {
+  @apply text-sm font-bold text-(--muted);
+}
+
+.absence-report-generated {
+  @apply mt-1 text-xs text-(--muted);
+}
+
+.absence-report-summary {
+  @apply my-4 grid gap-2 sm:grid-cols-3;
+}
+
+.absence-report-summary > div {
+  @apply flex items-center justify-between rounded-lg bg-slate-100 px-3 py-2 text-sm;
+}
+
+.absence-report-summary strong {
+  @apply text-lg;
+}
+
+.absence-team-block {
+  @apply mt-5;
+}
+
+.absence-team-block--small {
+  break-inside: avoid;
+}
+
+.absence-team-heading {
+  @apply mb-2 flex items-center justify-between border-b border-slate-300 pb-1;
+}
+
+.absence-team-heading h2 {
+  @apply text-lg font-extrabold;
+}
+
+.absence-team-heading p {
+  @apply text-sm font-bold text-(--muted);
+}
+
+.absence-today-list {
+  @apply grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3;
+}
+
+.absence-worker-card {
+  @apply flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm;
+}
+
+.absence-worker-card span {
+  @apply text-xs text-(--muted);
+}
+
+.absence-week-table {
+  @apply w-full border-collapse text-xs;
+}
+
+.absence-week-table th,
+.absence-week-table td {
+  @apply border border-slate-300 px-2 py-1.5 text-center;
+}
+
+.absence-week-table th:first-child,
+.absence-week-table td:first-child {
+  @apply text-start font-bold;
+}
+
+.absence-week-table thead {
+  @apply bg-slate-100;
+}
+
+.absence-state-absent {
+  @apply font-extrabold text-red-700;
+}
+
+.absence-total-cell {
+  @apply font-extrabold;
+}
+
+.absence-report-empty {
+  @apply rounded-lg bg-slate-50 py-8 text-center text-sm text-(--muted);
+}
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .absence-report-print-root,
+  .absence-report-print-root * {
+    visibility: visible;
+  }
+
+  .absence-report-screen-only {
+    display: none !important;
+  }
+
+  .absence-report-print-root {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    color: #111827;
+  }
+
+  .absence-team-block {
+    break-before: auto;
+    break-after: auto;
+  }
+
+  .absence-team-block--small {
+    break-inside: avoid;
+  }
+
+  .absence-week-table thead {
+    display: table-header-group;
+  }
+
+  .absence-week-table tr {
+    break-inside: avoid;
+  }
+
+  .absence-today-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

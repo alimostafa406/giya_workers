@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getAttendanceRequest, getCheckoutOnlyInfo, saveAttendanceManuallyRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
@@ -185,7 +186,7 @@ function Attendance() {
   return (
     <section>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-        <h2 className="text-xl font-extrabold">{t('attendance.title')}</h2>
+        <div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-extrabold">{t('attendance.title')}</h2><Link className="btn-secondary" to="/attendance/absence-report">{t('absenceReport.title')}</Link></div>
         <p className="text-sm font-semibold text-(--muted)">
           {t('attendance.date')}: <span dir="ltr">{filters.date}</span>
         </p>
