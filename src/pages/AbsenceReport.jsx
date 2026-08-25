@@ -52,7 +52,7 @@ export default function AbsenceReport() {
 
   const report = useMemo(() => buildAbsenceReport({ workers, attendance, mode, businessDate, teamId }), [attendance, businessDate, mode, teamId, workers])
   const formatDate = (value) => new Intl.DateTimeFormat(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(`${value}T12:00:00`))
-  const statusLabel = (state) => ({ absent: t('attendance.absent'), present: t('attendance.present'), half_day: t('attendance.halfDay'), review: t('absenceReport.needsReview'), not_recorded: t('dashboard.notRecorded'), future: '—', not_applicable: '—' }[state] || '—')
+  const statusLabel = (state) => ({ morning_recorded: t('absenceReport.morningRecorded'), morning_missing: t('absenceReport.morningMissing'), future: '—' }[state] || '—')
   const title = mode === 'today' ? t('absenceReport.todayTitle') : t('absenceReport.weekTitle')
   const range = mode === 'today' ? formatDate(businessDate) : `${formatDate(dates[0])} → ${formatDate(dates.at(-1))}`
 
@@ -77,13 +77,13 @@ export default function AbsenceReport() {
         <p className="absence-report-generated">{t('absenceReport.generatedAt')}: {generatedAt.toLocaleString(locale)}</p>
       </header>
       <div className="absence-report-summary">
-        <div><span>{t('absenceReport.teamsWithAbsence')}</span><strong>{report.groups.length}</strong></div>
-        <div><span>{t('absenceReport.absentWorkers')}</span><strong>{report.absentWorkers}</strong></div>
-        {mode === 'week' ? <div><span>{t('absenceReport.confirmedAbsenceDays')}</span><strong>{report.absenceDays}</strong></div> : null}
+        <div><span>{t('absenceReport.teamsWithMissingMorning')}</span><strong>{report.groups.length}</strong></div>
+        <div><span>{t('absenceReport.missingMorningWorkers')}</span><strong>{report.missingMorningWorkers}</strong></div>
+        {mode === 'week' ? <div><span>{t('absenceReport.missingMorningDays')}</span><strong>{report.missingMorningDays}</strong></div> : null}
       </div>
       {loading ? <p className="py-8 text-center">{t('common.loading')}</p> : report.groups.length === 0 ? <p className="absence-report-empty">{t('absenceReport.empty')}</p> : report.groups.map((group) => <section key={group.id} className={`absence-team-block ${group.workers.length <= 4 ? 'absence-team-block--small' : ''}`}>
-        <div className="absence-team-heading"><h2>{group.name}</h2><p>{t('absenceReport.absentCount')}: {group.workers.length}</p></div>
-        {mode === 'today' ? <div className="absence-today-list">{group.workers.map((worker) => <div key={worker.id} className="absence-worker-card"><strong>{worker.name}</strong>{worker.employeeCode ? <span>{worker.employeeCode}</span> : null}</div>)}</div> : <table className="absence-week-table"><thead><tr><th>{t('attendance.worker')}</th><th>{t('workers.employeeCode')}</th>{dates.map((date) => <th key={date}>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</th>)}<th>{t('absenceReport.absenceTotal')}</th></tr></thead><tbody>{group.workers.map((worker) => <tr key={worker.id}><td>{worker.name}</td><td>{worker.employeeCode || '—'}</td>{worker.states.map((day) => <td key={day.date} className={day.state === 'absent' ? 'absence-state-absent' : ''}>{statusLabel(day.state)}</td>)}<td className="absence-total-cell">{worker.absenceDays}</td></tr>)}</tbody></table>}
+        <div className="absence-team-heading"><h2>{group.name}</h2><p>{t('absenceReport.missingMorningCount')}: {group.workers.length}</p></div>
+        {mode === 'today' ? <div className="absence-today-list">{group.workers.map((worker) => <div key={worker.id} className="absence-worker-card"><strong>{worker.name}</strong>{worker.employeeCode ? <span>{worker.employeeCode}</span> : null}</div>)}</div> : <table className="absence-week-table"><thead><tr><th>{t('attendance.worker')}</th><th>{t('workers.employeeCode')}</th>{dates.map((date) => <th key={date}>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</th>)}<th>{t('absenceReport.missingMorningTotal')}</th></tr></thead><tbody>{group.workers.map((worker) => <tr key={worker.id}><td>{worker.name}</td><td>{worker.employeeCode || '—'}</td>{worker.states.map((day) => <td key={day.date} className={day.state === 'morning_missing' ? 'absence-state-absent' : ''}>{statusLabel(day.state)}</td>)}<td className="absence-total-cell">{worker.missingMorningDays}</td></tr>)}</tbody></table>}
       </section>)}
     </article>
   </section>
