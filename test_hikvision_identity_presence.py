@@ -13,7 +13,13 @@ class IdentityPresenceTests(unittest.TestCase):
             result = persist_device_identity_presence({'office-main': [{'employeeNo': '281', 'name': 'STEVE'}], 'office-secondary': [{'employeeNo': '281', 'name': 'STEVE'}]})
         self.assertEqual(result['state'], 'success')
         payload = post.call_args.kwargs['json']
+        self.assertEqual(
+            post.call_args.args[0],
+            'https://example.supabase.co/rest/v1/rpc/sync_biometric_device_identity_presence',
+        )
         self.assertEqual(payload['p_successful_device_ids'], ['office-main', 'office-secondary'])
+        self.assertIn('p_present', payload)
+        self.assertIn('p_seen_at', payload)
         self.assertEqual(len(payload['p_present']), 2)
         self.assertEqual(payload['p_present'][0]['device_employee_no'], '281')
 
