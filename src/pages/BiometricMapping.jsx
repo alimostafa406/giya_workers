@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { createWorkerAndConfirmBiometricMappingRequest, getBiometricMappingWorkspaceRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
+import { useEffect, useMemo, useState } from 'react'
+import { createWorkerAndConfirmBiometricMappingRequest, getBiometricMappingWorkspaceRequest, getRecentUnmappedBiometricIdentitiesRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
 import { normalizePersonName, replaceHikvisionDeviceUsers } from '../data/hikvisionRawData'
 import { useTranslation } from '../i18n/LanguageContext'
-import TodayPunchesPanel from '../components/Biometric/TodayPunchesPanel'
 import CreateWorkerFromDeviceModal from '../components/Biometric/CreateWorkerFromDeviceModal'
+import { completeCriticalBiometricWorkerCreation } from '../utils/biometricMappingSaveFlow'
+import { buildRecentIdentityUsers, recentUnmappedIdentityUsers } from '../utils/recentUnmappedIdentities'
 
 const isLocalDashboard = typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
 const helper = import.meta.env.VITE_LOCAL_HIKVISION_HELPER_URL || (isLocalDashboard ? 'http://127.0.0.1:8765' : '')
 const HELPER_LIGHTWEIGHT_TIMEOUT_MS = 5000
-const RECENT_IDENTITIES_KEY = 'biometric_recent_device_identities'
 const editDistance = (left, right) => {
   const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
   for (let row = 1; row <= left.length; row += 1) {
@@ -35,29 +35,27 @@ const rankWorkerName = (deviceName, workerName) => {
   if (device.includes(worker) || worker.includes(device)) return 3
   return 9
 }
-const readRecent = () => { try { const stored = JSON.parse(sessionStorage.getItem(RECENT_IDENTITIES_KEY) || '{}'); return stored && typeof stored === 'object' ? stored : {} } catch { return {} } }
 const timeLabel = (value) => value ? new Date(value).toLocaleString() : '—'
 
 export default function BiometricMapping() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [data, setData] = useState(null)
   const [deviceQuery, setDeviceQuery] = useState('')
   const [workerQuery, setWorkerQuery] = useState('')
   const [deviceFilter, setDeviceFilter] = useState('all')
-  const [showOld, setShowOld] = useState(false)
   const [selectedDeviceIdentity, setSelectedDeviceIdentity] = useState(null)
   const [selectedWorker, setSelectedWorker] = useState(null)
-  const [recentlyAdded, setRecentlyAdded] = useState(readRecent)
   const [lastSyncAt, setLastSyncAt] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [syncTarget, setSyncTarget] = useState('all')
-  const syncBeforeRef = useRef(new Set())
-  const [todayActivity, setTodayActivity] = useState(null)
-  const [todayLoading, setTodayLoading] = useState(false)
-  const [todayActivityError, setTodayActivityError] = useState(false)
+  const [recentActivity, setRecentActivity] = useState(null)
+  const [recentActivityLoading, setRecentActivityLoading] = useState(false)
+  const [recentActivityError, setRecentActivityError] = useState(false)
   const [inventoryRefreshError, setInventoryRefreshError] = useState(false)
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false)
   const [creatingWorker, setCreatingWorker] = useState(false)
+  const [optimisticallyMappedEmployeeNos, setOptimisticallyMappedEmployeeNos] = useState(() => new Set())
+  const [postSaveWarning, setPostSaveWarning] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -66,31 +64,52 @@ export default function BiometricMapping() {
       const workspace = (await getBiometricMappingWorkspaceRequest()).data
       setData(workspace)
       setInventoryRefreshError(Boolean(workspace.identityPresenceError))
-      return !workspace.identityPresenceError
+      return true
     } catch {
       setInventoryRefreshError(true)
       return false
     }
   }
-  const loadTodayActivity = async () => {
-    if (!helper) return
-    setTodayLoading(true)
-    setTodayActivityError(false)
+  const loadRecentActivity = async () => {
+    setRecentActivityLoading(true)
+    setRecentActivityError(false)
     try {
-      const response = await fetch(`${helper}/today-events`)
-      const result = await response.json().catch(() => null)
-      if (!response.ok || result?.status !== 'ok' || !Array.isArray(result.identities)) throw new Error('today_events_unavailable')
-      setTodayActivity(result)
+      const result = await getRecentUnmappedBiometricIdentitiesRequest({ days: 7 })
+      if (result.unavailable) {
+        setRecentActivity(null)
+        setRecentActivityError(true)
+        return false
+      }
+      const end = new Date(`${result.endDate}T12:00:00Z`)
+      end.setUTCDate(end.getUTCDate() - (result.days - 1))
+      setRecentActivity({
+        start_date: end.toISOString().slice(0, 10),
+        end_date: result.endDate,
+        identities: result.data.map((identity) => ({
+          employeeNo: identity.device_employee_no,
+          name: identity.device_name,
+          latest_event_at: identity.latest_event_at,
+          recent_event_count: identity.recent_event_count,
+          devices_seen: identity.devices_seen,
+        })),
+      })
+      return true
     } catch {
-      setTodayActivity(null)
-      setTodayActivityError(true)
+      setRecentActivity(null)
+      setRecentActivityError(true)
+      return false
     } finally {
-      setTodayLoading(false)
+      setRecentActivityLoading(false)
     }
   }
-  useEffect(() => { load(); loadTodayActivity() }, [])
+  useEffect(() => { load(); loadRecentActivity() }, [])
 
-  const allDeviceUsers = useMemo(() => (data?.deviceUsers || []).map((user) => ({ ...user, isNewThisSession: Boolean(recentlyAdded[user.employeeNo]) })), [data, recentlyAdded])
+  const recentActivityUsers = useMemo(() => buildRecentIdentityUsers({
+    activityIdentities: recentActivity?.identities,
+    inventoryUsers: data?.deviceUsers,
+    mappings: data?.mappings,
+    ignoredEmployeeNos: data?.ignoredDeviceEmployeeNos,
+  }), [data, recentActivity])
   // A worker can have only one active biometric identity. Keep this eligibility
   // rule aligned with saveBiometricMappingRequest, which rejects a second active
   // mapping even when a user reaches the API outside this screen.
@@ -102,18 +121,15 @@ export default function BiometricMapping() {
   const availableWorkers = useMemo(() => (data?.workers || [])
     .filter((worker) => worker.is_active !== false)
     .filter((worker) => !activeMappedWorkerIds.has(String(worker.id))), [activeMappedWorkerIds, data])
-  const deviceUsers = useMemo(() => allDeviceUsers
-    .filter((user) => user.isCurrentlyReturned !== false)
-    .filter((user) => user.mapping?.is_active === false || user.mapping?.mapping_review_state !== 'confirmed')
-    .filter((user) => !user.ignored)
-    .filter((user) => showOld || (user.firstSeenAt && new Date(user.firstSeenAt).getTime() >= Date.now() - 7 * 24 * 60 * 60 * 1000))
+  const recentUnmappedUsers = useMemo(() => recentUnmappedIdentityUsers(recentActivityUsers)
+    .filter((user) => !optimisticallyMappedEmployeeNos.has(user.employeeNo)), [optimisticallyMappedEmployeeNos, recentActivityUsers])
+  const deviceUsers = useMemo(() => recentUnmappedUsers
     .filter((user) => deviceFilter === 'all' || (user.devices || []).includes(deviceFilter))
-    .filter((user) => `${user.name || ''} ${user.employeeNo || ''}`.toLowerCase().includes(deviceQuery.trim().toLowerCase()))
-    .sort((a, b) => new Date(b.firstSeenAt || 0) - new Date(a.firstSeenAt || 0) || String(a.name || '').localeCompare(String(b.name || ''))), [allDeviceUsers, deviceFilter, deviceQuery, showOld])
+    .filter((user) => `${user.name || ''} ${user.employeeNo || ''}`.toLowerCase().includes(deviceQuery.trim().toLowerCase())), [deviceFilter, deviceQuery, recentUnmappedUsers])
   const workers = useMemo(() => availableWorkers
     .filter((worker) => `${worker.full_name || ''} ${worker.employee_code || ''}`.toLowerCase().includes(workerQuery.trim().toLowerCase()))
     .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''))), [availableWorkers, workerQuery])
-  const selectedDevice = allDeviceUsers.find((user) => user.employeeNo === selectedDeviceIdentity) || null
+  const selectedDevice = recentActivityUsers.find((user) => user.employeeNo === selectedDeviceIdentity) || null
   const similarWorkers = useMemo(() => {
     if (!selectedDevice) return []
     return availableWorkers
@@ -127,25 +143,58 @@ export default function BiometricMapping() {
   const clearSelections = () => { setSelectedDeviceIdentity(null); setSelectedWorker(null) }
   const selectDevice = (user) => { setSelectedDeviceIdentity(user.employeeNo); setSelectedWorker(null); setMessage('') }
   const selectWorker = (worker) => { setSelectedWorker(worker); setMessage('') }
+  const refreshTodayAttendanceAfterMapping = async () => {
+    if (!helper || !recentActivity?.end_date) return false
+    try {
+      const response = await fetch(`${helper}/attendance/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: recentActivity.end_date, confirm: true }),
+      })
+      return response.ok
+    } catch {
+      return false
+    }
+  }
   const link = async () => {
     if (!selectedDevice || !selectedWorker?.id) return
     try {
-      await saveBiometricMappingRequest({ deviceUser: selectedDevice, workerId: selectedWorker.id, reviewState: selectedDevice.sourceMatchCategory === 'unique_exact' ? 'confirmed' : 'needs_review' })
+      const reviewState = selectedDevice.sourceMatchCategory === 'unique_exact' ? 'confirmed' : 'needs_review'
+      await saveBiometricMappingRequest({ deviceUser: selectedDevice, workerId: selectedWorker.id, reviewState })
+      if (reviewState === 'confirmed') await refreshTodayAttendanceAfterMapping()
       await load()
       setMessage(t('biometric.mappingSaved'))
       clearSelections()
     } catch { setError(t('common.updateFailed')) }
   }
   const createWorkerFromDevice = async ({ fullName, employeeCode, teamId }) => {
-    if (!selectedDevice) return
+    if (!selectedDevice || creatingWorker) return
+    const deviceUser = selectedDevice
     setCreatingWorker(true)
     setError('')
+    setPostSaveWarning('')
     try {
-      await createWorkerAndConfirmBiometricMappingRequest({ deviceUser: selectedDevice, fullName, employeeCode, teamId })
-      await load()
-      clearSelections()
-      setCreateWorkerOpen(false)
-      setMessage(t('biometric.workerCreatedAndMapped'))
+      await completeCriticalBiometricWorkerCreation({
+        createWorker: () => createWorkerAndConfirmBiometricMappingRequest({ deviceUser, fullName, employeeCode, teamId }),
+        onCreated: () => {
+          setOptimisticallyMappedEmployeeNos((previous) => new Set(previous).add(deviceUser.employeeNo))
+          setCreatingWorker(false)
+          clearSelections()
+          setCreateWorkerOpen(false)
+          setMessage(t('biometric.workerCreatedAndMapped'))
+        },
+        runPostSave: async () => {
+          const [attendanceRefreshed, workspaceRefreshed, activityRefreshed] = await Promise.all([
+            refreshTodayAttendanceAfterMapping(),
+            load(),
+            loadRecentActivity(),
+          ])
+          if (!attendanceRefreshed || !workspaceRefreshed || !activityRefreshed) {
+            throw new Error('post_save_refresh_failed')
+          }
+        },
+        onPostSaveError: () => setPostSaveWarning(activityLabels.postSaveWarning),
+      })
     } catch (createError) {
       setError(createError?.message || t('common.updateFailed'))
     } finally {
@@ -156,7 +205,6 @@ export default function BiometricMapping() {
     if (!helper) return
     setError('')
     setMessage('')
-    syncBeforeRef.current = new Set(allDeviceUsers.filter((user) => user.isCurrentlyReturned !== false).map((user) => String(user.employeeNo)))
     try {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), HELPER_LIGHTWEIGHT_TIMEOUT_MS)
@@ -189,17 +237,13 @@ export default function BiometricMapping() {
         setSyncing(false)
         if (job.status !== 'success' || !Array.isArray(job.result?.users)) { setError(t('biometric.syncFailed')); return }
         const syncedAt = job.finished_at || new Date().toISOString()
-        const detected = Object.fromEntries(job.result.users.filter((user) => user?._local_sync?.is_currently_returned !== false).map((user) => String(user.employeeNo || user.employeeNoString || '').trim()).filter((employeeNo) => employeeNo && !syncBeforeRef.current.has(employeeNo)).map((employeeNo) => [employeeNo, syncedAt]))
-        const nextRecent = { ...recentlyAdded, ...detected }
-        sessionStorage.setItem(RECENT_IDENTITIES_KEY, JSON.stringify(nextRecent))
-        setRecentlyAdded(nextRecent); setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(job.result.users)
+        setLastSyncAt(syncedAt); replaceHikvisionDeviceUsers(job.result.users)
         await load()
         if (!cancelled) {
-          setShowOld(false)
           if (job.target_device_id && job.target_device_id !== 'all') setDeviceFilter(job.target_device_id)
           setMessage(t('biometric.syncSucceeded'))
         }
-        void loadTodayActivity()
+        void loadRecentActivity()
       } catch {
         if (!cancelled) { setSyncing(false); setError(t('biometric.syncFailed')) }
       }
@@ -211,15 +255,51 @@ export default function BiometricMapping() {
   const syncLabel = syncing
     ? (syncTarget === 'office-main' ? t('biometric.syncingOfficeMain') : syncTarget === 'office-secondary' ? t('biometric.syncingOfficeSecondary') : t('biometric.syncingAllDevices'))
     : null
+  const activityLabelsByLanguage = {
+    ar: {
+      title: 'بصمات غير مربوطة خلال آخر 7 أيام',
+      window: 'نافذة الأحداث الفعلية',
+      latest: 'آخر بصمة',
+      events: 'عدد الأحداث الحديثة',
+      unavailable: 'تعذر قراءة نشاط البصمة الفعلي لآخر 7 أيام.',
+      empty: 'لا توجد هويات غير مربوطة لها بصمات فعلية خلال آخر 7 أيام.',
+      postSaveWarning: 'تم إنشاء العامل وربطه بنجاح، لكن تعذر إكمال تحديث الحضور أو القوائم الثانوية. يمكن إعادة المحاولة من شاشة الحضور.',
+    },
+    en: {
+      title: 'Unmapped punches in the last 7 days',
+      window: 'Real-event window',
+      latest: 'Latest punch',
+      events: 'Recent events',
+      unavailable: 'Unable to read real biometric activity for the last 7 days.',
+      empty: 'No unmapped identities generated a real punch in the last 7 days.',
+      postSaveWarning: 'The worker was created and mapped, but a secondary attendance or list refresh could not finish. It can be retried from Attendance.',
+    },
+    fr: {
+      title: 'Pointages non liés des 7 derniers jours',
+      window: 'Fenêtre des événements réels',
+      latest: 'Dernier pointage',
+      events: 'Événements récents',
+      unavailable: 'Impossible de lire l’activité biométrique réelle des 7 derniers jours.',
+      empty: 'Aucune identité non liée n’a produit de pointage réel ces 7 derniers jours.',
+      postSaveWarning: 'Le travailleur a été créé et lié, mais une actualisation secondaire n’a pas abouti. Elle peut être relancée depuis Présence.',
+    },
+  }
+  const activityLabels = activityLabelsByLanguage[language] || activityLabelsByLanguage.en
 
   return <section>
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-extrabold">{t('biometricMapping.title')}</h2><p className="text-sm text-(--muted)">{t('biometricMapping.subtitle')}</p></div><div className="text-end"><div className="flex flex-wrap justify-end gap-2"><button type="button" className="btn-primary" disabled={!helper || syncing} onClick={() => syncUsers('office-main')}>{syncing && syncTarget === 'office-main' ? syncLabel : t('biometric.syncOfficeMain')}</button><button type="button" className="btn-secondary" disabled={!helper || syncing} onClick={() => syncUsers('office-secondary')}>{syncing && syncTarget === 'office-secondary' ? syncLabel : t('biometric.syncOfficeSecondary')}</button><button type="button" className="btn-secondary" disabled={!helper || syncing} onClick={() => syncUsers('all')}>{syncing && syncTarget === 'all' ? syncLabel : t('biometric.syncAllDevices')}</button></div>{lastSyncAt ? <p className="mt-1 text-xs text-(--muted)">{t('biometric.lastSync')}: {timeLabel(lastSyncAt)}</p> : null}</div></div>
-    {error ? <p className="alert alert--error mb-3">{error}</p> : null}{message ? <p className="mb-3 rounded bg-green-50 p-3 text-green-700">{message}</p> : null}{inventoryRefreshError ? <p className="alert alert--error mb-3">{t('biometric.inventoryRefreshFailed')}</p> : null}
-    <TodayPunchesPanel t={t} activity={todayActivity} loading={todayLoading} error={todayActivityError} onRefresh={loadTodayActivity} />
+    {error ? <p className="alert alert--error mb-3">{error}</p> : null}{message ? <p className="mb-3 rounded bg-green-50 p-3 text-green-700">{message}</p> : null}{postSaveWarning ? <p className="alert alert--warning mb-3">{postSaveWarning}</p> : null}{inventoryRefreshError ? <p className="alert alert--error mb-3">{t('biometric.inventoryRefreshFailed')}</p> : null}
+    <section className="surface-card mb-4 overflow-hidden border-2 border-amber-200">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-50 p-4">
+        <div><h3 className="font-extrabold">{activityLabels.title}</h3><p className="mt-1 text-xs text-(--muted)">{activityLabels.window}: <span dir="ltr">{recentActivity?.start_date || '—'} → {recentActivity?.end_date || '—'}</span></p></div>
+        <div className="flex items-center gap-3"><span className="rounded-full bg-amber-200 px-4 py-2 text-xl font-extrabold">{recentActivityLoading ? '…' : recentUnmappedUsers.length}</span><button type="button" className="btn-secondary" disabled={recentActivityLoading} onClick={loadRecentActivity}>{t('common.refresh')}</button></div>
+      </div>
+      {recentActivityError ? <p className="alert alert--error m-4">{activityLabels.unavailable}</p> : null}
+    </section>
     <section className="surface-card mb-4 border-2 border-blue-200 p-4"><div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]"><div className={selectedDevice ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedDeviceIdentity')}</p>{selectedDevice ? <><p className="mt-1 font-extrabold">{selectedDevice.name}</p><p dir="ltr">{selectedDevice.employeeNo}</p><p className="text-xs text-(--muted)">{deviceSource(selectedDevice)} · {deviceStatus(selectedDevice)}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometricMapping.selectIdentity')}</p>}</div><p className="self-center text-center text-3xl" dir="ltr">→</p><div className={selectedWorker ? 'rounded-xl bg-blue-50 p-3' : 'rounded-xl bg-slate-50 p-3'}><p className="text-sm text-(--muted)">{t('biometric.selectedWorker')}</p>{selectedWorker ? <><p className="mt-1 font-extrabold">{selectedWorker.full_name}</p><p dir="ltr">{selectedWorker.employee_code || '—'}</p></> : <p className="mt-1 text-sm text-(--muted)">{t('biometric.chooseWorkerFirst')}</p>}</div></div><div className="mt-3 flex flex-wrap gap-2 border-t border-(--border) pt-3"><button type="button" className="btn-secondary" onClick={clearSelections}>{t('biometric.clearSelection')}</button><button type="button" className="btn-primary px-8" disabled={!selectedDevice || !selectedWorker?.id} onClick={link}>{t('biometric.link')}</button></div></section>
     {selectedDevice ? <section className="surface-card mb-4 p-4"><h3 className="font-extrabold">{t('biometric.similarNames')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{similarWorkers.map(({ worker }) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'btn-primary text-start' : 'btn-secondary text-start'}><b>{worker.full_name}</b><span className="block text-xs" dir="ltr">{worker.employee_code || '—'}</span><span className="block text-xs">{worker.team?.name || worker.team_name || '—'}</span></button>)}</div>{!similarWorkers.length ? <p className="mt-3 text-sm text-(--muted)">{t('biometricMapping.noSimilarNames')}</p> : null}<div className="mt-4 border-t border-(--border) pt-4"><p className="text-sm text-(--muted)">{t('biometric.workerNotFound')}</p><button type="button" className="btn-secondary mt-2" onClick={() => setCreateWorkerOpen(true)}>{t('biometric.addNewWorker')}</button></div></section> : null}
     <div className="grid gap-4 xl:grid-cols-2">
-      <section className="surface-card overflow-hidden"><div className="border-b border-(--border) p-4"><div className="flex items-center justify-between gap-2"><h3 className="font-extrabold">{showOld ? t('biometric.allUnmapped') : t('biometric.newUnmapped')}</h3><button type="button" className="btn-secondary" onClick={() => setShowOld((value) => !value)}>{showOld ? t('biometric.showRecentUnmapped') : t('biometric.showAllUnmapped')}</button></div><div className="mt-3 grid gap-2 sm:grid-cols-2"><input className="input-base" value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder={t('biometric.searchDevice')} /><select className="input-base" value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)}><option value="all">{t('biometric.allDevices')}</option><option value="office-main">{t('biometric.officeMain')}</option><option value="office-secondary">{t('biometric.officeSecondary')}</option></select></div></div><div className="max-h-[34rem] divide-y divide-(--border) overflow-y-auto">{deviceUsers.map((user) => <button type="button" key={user.employeeNo} onClick={() => selectDevice(user)} className={selectedDeviceIdentity === user.employeeNo ? 'block w-full bg-blue-100 p-4 text-start ring-2 ring-inset ring-blue-600' : 'block w-full p-4 text-start hover:bg-slate-50'}><div className="flex items-center justify-between gap-2"><b>{user.name}</b><span dir="ltr">{user.employeeNo}</span></div><p className="mt-1 text-xs text-(--muted)">{deviceSource(user)} · {t('biometric.firstSeen')}: {timeLabel(user.firstSeenAt)}</p></button>)}{!deviceUsers.length ? <p className="p-5 text-sm text-(--muted)">{t('biometric.empty')}</p> : null}</div></section>
+      <section className="surface-card overflow-hidden"><div className="border-b border-(--border) p-4"><h3 className="font-extrabold">{activityLabels.title}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2"><input className="input-base" value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder={t('biometric.searchDevice')} /><select className="input-base" value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)}><option value="all">{t('biometric.allDevices')}</option><option value="office-main">{t('biometric.officeMain')}</option><option value="office-secondary">{t('biometric.officeSecondary')}</option></select></div></div><div className="max-h-[34rem] divide-y divide-(--border) overflow-y-auto">{deviceUsers.map((user) => <button type="button" key={user.employeeNo} onClick={() => selectDevice(user)} className={selectedDeviceIdentity === user.employeeNo ? 'block w-full bg-blue-100 p-4 text-start ring-2 ring-inset ring-blue-600' : 'block w-full p-4 text-start hover:bg-slate-50'}><div className="flex items-center justify-between gap-2"><b>{user.name || '—'}</b><span dir="ltr">{user.employeeNo}</span></div><p className="mt-1 text-xs text-(--muted)">{deviceSource(user)} · {activityLabels.latest}: {timeLabel(user.latestRecentEventAt)} · {activityLabels.events}: {user.recentEventCount}</p></button>)}{!deviceUsers.length ? <p className="p-5 text-sm text-(--muted)">{activityLabels.empty}</p> : null}</div></section>
       <section className="surface-card overflow-hidden"><div className="border-b border-(--border) p-4"><h3 className="font-extrabold">{t('biometric.systemWorkers')}</h3><input className="input-base mt-3" value={workerQuery} onChange={(event) => setWorkerQuery(event.target.value)} placeholder={t('biometric.searchWorker')} /></div><div className="max-h-[34rem] divide-y divide-(--border) overflow-y-auto">{workers.map((worker) => <button type="button" key={worker.id} onClick={() => selectWorker(worker)} className={String(selectedWorker?.id) === String(worker.id) ? 'block w-full bg-blue-100 p-4 text-start ring-2 ring-inset ring-blue-600' : 'block w-full p-4 text-start hover:bg-slate-50'}><b>{worker.full_name}</b><p className="mt-1 text-xs text-(--muted)"><span dir="ltr">{worker.employee_code || '—'}</span> · {worker.team?.name || worker.team_name || '—'}</p></button>)}{!workers.length ? <p className="p-5 text-sm text-(--muted)">{t('common.noResults')}</p> : null}</div></section>
     </div>
     <CreateWorkerFromDeviceModal deviceUser={selectedDevice} teams={data?.teams || []} isOpen={createWorkerOpen} isSaving={creatingWorker} onClose={() => setCreateWorkerOpen(false)} onSubmit={createWorkerFromDevice} />
