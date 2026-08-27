@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { applyPayrollAdjustments, attachSundayEntitlements, calculatePayrollLine, currentBusinessDate, monthlyDailyValue, sundayBefore, weeklyDates } from './src/utils/payrollCalculations.js'
+import { applyPayrollAdjustments, attachSundayEntitlements, calculateCandidateOvertimeHours, calculatePayrollLine, currentBusinessDate, monthlyDailyValue, sundayBefore, weeklyDates } from './src/utils/payrollCalculations.js'
 import { resolvePayrollCurrency } from './src/utils/payrollCurrency.js'
 
 test('current week future days are neutral and contribute zero', () => {
@@ -54,6 +54,24 @@ test('current workday without attendance is neutral and has no payroll effect', 
   assert.equal(line.attendanceWage, 0)
   assert.equal(line.transportAmount, 0)
   assert.equal(line.finalAmount, 0)
+})
+
+test('current biometric absence is neutral while a manual absence stays authoritative', () => {
+  const calculate = (row) => calculatePayrollLine({
+    worker: { id: 'worker-1' }, term: { monthly_salary: 260000 },
+    attendanceByDate: new Map([['worker-1|2026-08-24', row]]),
+    dates: ['2026-08-24'], rules: { monthly_working_day_divisor: 26 }, holidayDates: new Set(),
+    paymentType: 'monthly', futureDatesAreNeutral: true, businessDate: '2026-08-24',
+  })
+  assert.equal(calculate({ status: 'absent', attendance_source: 'biometric', manual_override: false }).absentDays, 0)
+  assert.equal(calculate({ status: 'absent', attendance_source: 'manual', manual_override: true }).absentDays, 1)
+})
+
+test('overtime grace ends after 17:30 but eligible time is calculated from 17:00', () => {
+  assert.equal(calculateCandidateOvertimeHours('17:00:00', '17:20:00', {}), 0)
+  assert.equal(calculateCandidateOvertimeHours('17:00:00', '17:30:00', {}), 0)
+  assert.equal(calculateCandidateOvertimeHours('17:00:00', '18:00:00', {}), 1)
+  assert.equal(calculateCandidateOvertimeHours('17:00:00', '19:00:00', {}), 2)
 })
 
 test('historical missing days keep their existing absent behavior', () => {

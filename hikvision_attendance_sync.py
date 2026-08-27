@@ -649,14 +649,9 @@ def workday_schedule(target_date: date_type) -> dict | None:
 
 
 def day_has_finalized(target_date: date_type, finalization_time: time | None) -> bool:
-    if finalization_time is None:
-        return True
+    """Absence is final only once the target date is a completed past day."""
     now = local_now()
-    if target_date < now.date():
-        return True
-    if target_date > now.date():
-        return False
-    return now.time() >= finalization_time
+    return target_date < now.date()
 
 
 def proposed_status(target_date: date_type, check_in: datetime | None, check_out: datetime | None) -> tuple[str, float | None]:
@@ -669,10 +664,9 @@ def proposed_status(target_date: date_type, check_in: datetime | None, check_out
         # Management rule: a valid morning arrival is visible as half day
         # immediately, then is upgraded when a valid checkout is later found.
         return 'half_day', 0.5
-    # A valid evening event without a morning arrival is still absent. The raw
-    # evening event is preserved as metadata by the caller, never as check_out.
-    if check_out:
-        return 'absent', 0.0
+    # Missing morning attendance, including an evening-only event, remains
+    # temporary for the entire current business date. The raw evening event is
+    # preserved as metadata by the caller, never as check_out.
     if not day_has_finalized(target_date, schedule['finalization_time']):
         return 'pending', None
     return 'absent', 0.0

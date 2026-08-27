@@ -76,6 +76,20 @@ const roundOvertime = (hours, rules) => {
   return money(rounded * minutes / 60)
 }
 
+export const calculateCandidateOvertimeHours = (overtimeStartTime, checkOut, rules) => {
+  if (!overtimeStartTime || !checkOut) return 0
+  const toSeconds = (value) => {
+    const [hours, minutes, seconds = 0] = String(value).split(':').map(Number)
+    return hours * 3600 + minutes * 60 + seconds
+  }
+  const overtimeStartSeconds = toSeconds(overtimeStartTime)
+  const checkOutSeconds = toSeconds(checkOut)
+  // The first 30 minutes are an eligibility grace period, not a new overtime
+  // start. Once eligible, pay from the configured normal checkout time.
+  if (!Number.isFinite(overtimeStartSeconds) || !Number.isFinite(checkOutSeconds) || checkOutSeconds <= overtimeStartSeconds + (30 * 60)) return 0
+  return roundOvertime(durationHours(overtimeStartTime, checkOut), rules)
+}
+
 export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, rules, holidayDates, paymentType, futureDatesAreNeutral = false, businessDate = currentBusinessDate() }) => {
   const dailyRate = Number(term?.daily_rate || 0)
   const monthlySalary = Number(term?.monthly_salary ?? worker.monthly_salary ?? 0)
@@ -88,7 +102,15 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
   const details = dates.map((date) => {
     const isFuture = futureDatesAreNeutral && date > businessDate
     const attendanceRow = attendanceByDate.get(`${worker.id}|${date}`) || null
-    const isCurrentDayUnrecorded = futureDatesAreNeutral && date === businessDate && !attendanceRow
+    const isCurrentDayUnrecorded = futureDatesAreNeutral && date === businessDate && (
+      !attendanceRow
+      || (
+        attendanceRow.status === 'absent'
+        && attendanceRow.attendance_source === 'biometric'
+        && attendanceRow.manual_override !== true
+        && !attendanceRow.check_in
+      )
+    )
     // A future day is not an attendance fact yet. Ignore even an accidental
     // future row so it cannot become payable, deductible, or manually editable.
     const row = isFuture ? null : attendanceRow
@@ -105,7 +127,7 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
     const baseEffect = paymentType === 'weekly' ? dailyRate * factor : 0
     const holidayEffect = paymentType === 'weekly' && isHoliday ? baseEffect * (Number(rules?.weekly_holiday_multiplier ?? 2) - 1) : 0
     attendanceWage += baseEffect; holidayAmount += holidayEffect
-    const candidate = row?.check_out && term?.overtime_start_time ? roundOvertime(durationHours(term.overtime_start_time, row.check_out), rules) : 0
+    const candidate = calculateCandidateOvertimeHours(term?.overtime_start_time, row?.check_out, rules)
     overtimeHours += candidate
     return { date, row, status, isFuture, isHoliday, baseEffect: money(baseEffect), holidayEffect: money(holidayEffect), candidateOvertimeHours: candidate, transportEffect: eligibleTransport ? transportRate : 0 }
   })

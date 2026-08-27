@@ -2,11 +2,12 @@
 
 import unittest
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
+from unittest.mock import patch
 
 import requests
 
-from hikvision_attendance_sync import apply_biometric_attendance, is_manual_protected, plan_attendance, safe_postgrest_error_details, write_summary
+from hikvision_attendance_sync import apply_biometric_attendance, is_manual_protected, plan_attendance, proposed_status, safe_postgrest_error_details, write_summary
 
 
 TARGET_DATE = date(2026, 8, 11)  # Tuesday
@@ -33,6 +34,15 @@ EVENTS = [{"employeeNoString": "8", "time": "2026-08-11T08:00:00+01:00"}]
 
 
 class ExistingAttendanceProtectionTests(unittest.TestCase):
+    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 11, 23, 0))
+    def test_current_date_without_morning_punch_never_finalizes_as_absent(self, _local_now):
+        self.assertEqual(proposed_status(TARGET_DATE, None, None), ('pending', None))
+        self.assertEqual(proposed_status(TARGET_DATE, None, datetime(2026, 8, 11, 17, 20)), ('pending', None))
+
+    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 12, 0, 1))
+    def test_completed_past_workday_without_morning_punch_is_absent(self, _local_now):
+        self.assertEqual(proposed_status(TARGET_DATE, None, None), ('absent', 0.0))
+
     def test_protection_rules(self):
         self.assertFalse(is_manual_protected(None))
         self.assertTrue(is_manual_protected({"attendance_source": "manual", "manual_override": False}))

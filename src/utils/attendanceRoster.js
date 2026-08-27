@@ -1,5 +1,18 @@
 const workerKey = (value) => String(value || '')
 
+const isCompanyWorkday = (date) => {
+  if (!date) return false
+  const weekday = new Date(`${date}T12:00:00`).getDay()
+  return weekday >= 1 && weekday <= 6
+}
+
+const isUnconfirmedBiometricAbsence = (row) => (
+  row?.attendance_source === 'biometric'
+  && row?.manual_override !== true
+  && !row?.check_in
+  && (row?.status === 'absent' || row?.status === 'pending')
+)
+
 const isLaterRow = (candidate, current) => {
   if (!current) return true
   const candidateTimestamp = candidate.updated_at || candidate.created_at || ''
@@ -31,7 +44,11 @@ export const mergeAttendanceRoster = ({
     ))
     .map((worker) => {
       const attendanceRow = attendanceByWorkerId.get(workerKey(worker.id)) || null
-      if (attendanceRow) return { ...attendanceRow, worker, team: worker.team || attendanceRow.team, is_virtual: false }
+      if (attendanceRow) {
+        const isCurrentUnconfirmed = date === businessDate && isUnconfirmedBiometricAbsence(attendanceRow)
+        return { ...attendanceRow, worker, team: worker.team || attendanceRow.team, is_virtual: false, roster_state: isCurrentUnconfirmed ? 'not_recorded' : attendanceRow.roster_state }
+      }
+      const isPastWorkday = date < businessDate && isCompanyWorkday(date)
       return {
         id: `roster-${worker.id}-${date}`,
         worker_id: worker.id,
@@ -41,12 +58,12 @@ export const mergeAttendanceRoster = ({
         team: worker.team || null,
         worker_name: worker.full_name || '—',
         team_name: worker.team_name || worker.team?.name || '—',
-        status: null,
+        status: isPastWorkday ? 'absent' : null,
         check_in: null,
         check_out: null,
         note: null,
         is_virtual: true,
-        roster_state: date === businessDate ? 'not_recorded' : 'not_applicable',
+        roster_state: date === businessDate ? 'not_recorded' : isPastWorkday ? 'confirmed_absent' : 'not_applicable',
       }
     })
     .sort((left, right) => String(left.worker_name || left.worker?.full_name || '').localeCompare(String(right.worker_name || right.worker?.full_name || '')))

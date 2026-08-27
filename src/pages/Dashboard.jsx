@@ -6,6 +6,7 @@ import { getWorkersRequest } from '../api/workersApi'
 import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatus'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
+import { attendanceRosterCategory, mergeAttendanceRoster } from '../utils/attendanceRoster'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -17,27 +18,14 @@ const asArray = (value) => {
   return []
 }
 
-const getAttendanceDate = (row) => {
-  return row.attendance_date || row.date || '-'
-}
-
-const getAttendanceKey = (row) => row.worker_id || row.id
-
 const isPresentStatus = (status) => {
   const normalized = String(status || '').toLowerCase()
   return normalized === 'present' || normalized === 'حاضر'
 }
 
-const isAbsentStatus = (status) => {
-  const normalized = String(status || '').toLowerCase()
-  return normalized === 'absent' || normalized === 'غائب'
-}
-
-const getTodayLocalDate = () => {
-  const date = new Date()
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
-  return date.toISOString().slice(0, 10)
-}
+const getTodayLocalDate = () => new Date().toLocaleDateString('en-CA', {
+  timeZone: 'Africa/Kinshasa',
+})
 
 function Dashboard() {
   const { t } = useTranslation()
@@ -72,70 +60,47 @@ function Dashboard() {
   }, [])
 
   const today = getTodayLocalDate()
-  const todayAttendance = useMemo(
-    () => attendance.filter((item) => getAttendanceDate(item) === today),
-    [attendance, today],
-  )
-
-  const recordedWorkerIds = useMemo(() => {
-    return new Set(todayAttendance.map((item) => getAttendanceKey(item)).filter(Boolean))
-  }, [todayAttendance])
-
-  const activeWorkers = useMemo(() => workers.filter((worker) => worker.is_active), [workers])
+  const todayRoster = useMemo(() => mergeAttendanceRoster({
+    workers,
+    attendance,
+    date: today,
+    businessDate: today,
+  }), [attendance, today, workers])
 
   const presentCount = useMemo(
-    () => todayAttendance.filter((item) => isPresentStatus(item.status || item.status_key)).length,
-    [todayAttendance],
+    () => todayRoster.filter((item) => isPresentStatus(item.status || item.status_key)).length,
+    [todayRoster],
   )
 
   const absentCount = useMemo(
-    () => todayAttendance.filter((item) => isAbsentStatus(item.status || item.status_key)).length,
-    [todayAttendance],
+    () => todayRoster.filter((item) => attendanceRosterCategory(item) === 'absent').length,
+    [todayRoster],
   )
   const halfDayCount = useMemo(
-    () => todayAttendance.filter((item) => String(item.status || item.status_key || '').toLowerCase() === 'half_day').length,
-    [todayAttendance],
+    () => todayRoster.filter((item) => String(item.status || item.status_key || '').toLowerCase() === 'half_day').length,
+    [todayRoster],
   )
 
-  const notRecordedCount = Math.max(activeWorkers.length - recordedWorkerIds.size, 0)
-
-  const activeTeams = useMemo(() => {
-    return teams.filter((team) => team.is_active !== false)
-  }, [teams])
-
-  const teamsWithMissingAttendanceToday = useMemo(() => {
-    return activeTeams
-      .map((team) => {
-        const teamWorkers = workers.filter(
-          (worker) => String(worker.team_id || '') === String(team.id) && worker.is_active !== false,
-        )
-        const missingWorkers = teamWorkers.filter((worker) => !recordedWorkerIds.has(getAttendanceKey(worker)))
-
-        return {
-          id: team.id,
-          totalWorkers: teamWorkers.length,
-          missingCount: missingWorkers.length,
-        }
-      })
-      .filter((team) => team.totalWorkers > 0 && team.missingCount > 0)
-  }, [activeTeams, workers, recordedWorkerIds])
+  const notRecordedCount = todayRoster.filter((item) => attendanceRosterCategory(item) === 'not_recorded').length
 
   const latestAttendance = useMemo(() => {
-    return [...attendance]
+    return todayRoster
+      .filter((row) => !row.is_virtual)
+      .slice()
       .sort((a, b) => {
         const aDate = new Date(a.created_at || a.check_in || a.date || 0)
         const bDate = new Date(b.created_at || b.check_in || b.attendance_date || 0)
         return bDate - aDate
       })
       .slice(0, 8)
-  }, [attendance])
+  }, [todayRoster])
 
   const cards = [
     { label: t('dashboard.presentToday'), value: presentCount },
     { label: t('dashboard.halfDay'), value: halfDayCount },
     { label: t('dashboard.absentToday'), value: absentCount },
     { label: t('dashboard.notRecorded'), value: notRecordedCount },
-    { label: t('dashboard.totalWorkers'), value: activeWorkers.length },
+    { label: t('dashboard.totalWorkers'), value: todayRoster.length },
   ]
 
   const columns = [
@@ -152,7 +117,7 @@ function Dashboard() {
     {
       key: 'status',
       header: t('attendance.status'),
-      render: (row) => row.status || '-',
+      render: (row) => row.roster_state === 'not_recorded' ? t('attendance.notRecorded') : row.status || '-',
     },
     {
       key: 'check_in',
