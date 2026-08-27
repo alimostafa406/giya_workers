@@ -4,7 +4,25 @@ import { createWorkerRequest, getWorkersRequest, updateWorkerRequest } from './w
 import { getTeamsRequest } from './teamsApi'
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
-const mappingFields = 'id,worker_id,device_employee_no,device_name,device_picture_url,is_active,mapping_review_state,created_at,updated_at'
+const mappingFields = 'id,worker_id,device_id,device_employee_no,device_name,device_picture_url,is_active,mapping_review_state,created_at,updated_at'
+const deviceIdentityKey = (deviceId, employeeNo) => `${String(deviceId || '').trim()}::${normalizeDeviceEmployeeNo(employeeNo)}`
+const currentBusinessDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' })
+
+const isMissingRecentActivityRpc = (error) => (
+  error?.code === '42883'
+  || error?.code === 'PGRST202'
+  || /get_recent_unmapped_biometric_identities/i.test(String(error?.message || ''))
+)
+
+export const getRecentUnmappedBiometricIdentitiesRequest = async ({ endDate = currentBusinessDate(), days = 7 } = {}) => {
+  const { data, error } = await getSupabaseClient().rpc('get_recent_unmapped_biometric_identities', {
+    p_end_date: endDate,
+    p_days: days,
+  })
+  if (error && isMissingRecentActivityRpc(error)) return { data: [], unavailable: true, endDate, days }
+  if (error) throw error
+  return { data: toArray(data), unavailable: false, endDate, days }
+}
 
 export class BiometricMappingConflictError extends Error {
   constructor(conflicts) {
@@ -41,7 +59,7 @@ const getWorkerClassificationsRequest = async () => {
 const getIgnoredDeviceIdentitiesRequest = async () => {
   const { data, error } = await getSupabaseClient()
     .from('biometric_device_identity_review')
-    .select('device_employee_no,review_state,note,updated_at')
+    .select('device_id,device_employee_no,review_state,note,updated_at')
     .eq('review_state', 'ignored')
   if (error) throw error
   return toArray(data)
@@ -57,11 +75,12 @@ const getDeviceIdentityPresenceRequest = async () => {
 
 export const setDeviceIdentityIgnoredRequest = async (deviceUser) => {
   const employeeNo = normalizeDeviceEmployeeNo(deviceUser?.employeeNo)
-  if (!employeeNo) throw new Error('رقم هوية الجهاز مطلوب.')
+  const deviceId = String(deviceUser?.deviceId || '').trim()
+  if (!deviceId || !employeeNo) throw new Error('الجهاز ورقم هوية الجهاز مطلوبان.')
   const { data, error } = await getSupabaseClient()
     .from('biometric_device_identity_review')
-    .upsert({ device_employee_no: employeeNo, review_state: 'ignored' }, { onConflict: 'device_employee_no' })
-    .select('device_employee_no,review_state')
+    .insert({ device_id: deviceId, device_employee_no: employeeNo, review_state: 'ignored' })
+    .select('device_id,device_employee_no,review_state')
     .single()
   if (error) throw error
   return { data }
@@ -99,13 +118,19 @@ export const getBiometricMappingWorkspaceRequest = async () => {
   const workers = toArray(workersResponse.data).filter(Boolean)
   const mappings = toArray(mappingsResponse.data).filter(isMappingRecord)
   const activeMappings = getActiveMappings(mappings)
-  const mappingsByDevice = new Map()
+  const mappingsByDeviceIdentity = new Map()
+  const legacyMappingsByEmployeeNo = new Map()
   const mappingsByWorker = new Map()
 
   activeMappings.forEach((mapping) => {
     const deviceNo = normalizeDeviceEmployeeNo(mapping.device_employee_no)
     const workerId = String(mapping.worker_id)
-    mappingsByDevice.set(deviceNo, [...(mappingsByDevice.get(deviceNo) || []), mapping])
+    if (mapping.device_id) {
+      const key = deviceIdentityKey(mapping.device_id, deviceNo)
+      mappingsByDeviceIdentity.set(key, [...(mappingsByDeviceIdentity.get(key) || []), mapping])
+    } else {
+      legacyMappingsByEmployeeNo.set(deviceNo, [...(legacyMappingsByEmployeeNo.get(deviceNo) || []), mapping])
+    }
     mappingsByWorker.set(workerId, [...(mappingsByWorker.get(workerId) || []), mapping])
   })
 
@@ -119,12 +144,15 @@ export const getBiometricMappingWorkspaceRequest = async () => {
     staffClassification: classificationsByWorkerId.get(String(worker.id)) || 'normal',
   }))
   const workersById = new Map(enrichedWorkers.map((worker) => [String(worker.id), worker]))
-  const ignoredByDeviceNo = new Set(ignoredIdentities.map((row) => normalizeDeviceEmployeeNo(row.device_employee_no)))
-  const presenceByEmployeeNo = new Map()
+  const ignoredByDeviceIdentity = new Set(ignoredIdentities
+    .filter((row) => row.device_id)
+    .map((row) => deviceIdentityKey(row.device_id, row.device_employee_no)))
+  const legacyIgnoredEmployeeNos = new Set(ignoredIdentities
+    .filter((row) => !row.device_id)
+    .map((row) => normalizeDeviceEmployeeNo(row.device_employee_no)))
+  const presenceByDeviceIdentity = new Map()
   presences.filter((presence) => presence.is_current).forEach((presence) => {
-    const employeeNo = normalizeDeviceEmployeeNo(presence.device_employee_no)
-    const existing = presenceByEmployeeNo.get(employeeNo)
-    if (!existing || new Date(presence.first_seen_at) < new Date(existing.first_seen_at)) presenceByEmployeeNo.set(employeeNo, presence)
+    presenceByDeviceIdentity.set(deviceIdentityKey(presence.device_id, presence.device_employee_no), presence)
   })
   const rawDeviceUsers = getHikvisionDeviceUsers()
   const deviceNameCounts = rawDeviceUsers.reduce((counts, user) => {
@@ -133,7 +161,10 @@ export const getBiometricMappingWorkspaceRequest = async () => {
     return counts
   }, new Map())
   const deviceUsers = rawDeviceUsers.map((deviceUser) => {
-    const deviceMappings = mappingsByDevice.get(deviceUser.employeeNo) || []
+    const key = deviceIdentityKey(deviceUser.deviceId, deviceUser.employeeNo)
+    const deviceMappings = mappingsByDeviceIdentity.get(key)
+      || legacyMappingsByEmployeeNo.get(deviceUser.employeeNo)
+      || []
     const linkedWorker = deviceMappings.length === 1
       ? workersById.get(String(deviceMappings[0]?.worker_id || '')) || null
       : null
@@ -151,16 +182,16 @@ export const getBiometricMappingWorkspaceRequest = async () => {
     const isAmbiguousMatch = !isUniqueExactMatch && sameNameWorkers.length > 0
     return {
       ...deviceUser,
-      firstSeenAt: presenceByEmployeeNo.get(deviceUser.employeeNo)?.first_seen_at || null,
-      lastSeenAt: presenceByEmployeeNo.get(deviceUser.employeeNo)?.last_seen_at || null,
-      ignored: ignoredByDeviceNo.has(deviceUser.employeeNo),
+      firstSeenAt: presenceByDeviceIdentity.get(key)?.first_seen_at || null,
+      lastSeenAt: presenceByDeviceIdentity.get(key)?.last_seen_at || null,
+      ignored: ignoredByDeviceIdentity.has(key) || legacyIgnoredEmployeeNos.has(deviceUser.employeeNo),
       mapping: deviceMappings[0] || null,
       mappingCount: deviceMappings.length,
       linkedWorker,
       suggestion: isUniqueExactMatch ? sameNameWorkers[0] : null,
       duplicateGroupKey: sameNameWorkers.length > 1 && deviceNameCounts.get(normalizePersonName(deviceUser.name)) > 1 ? normalizePersonName(deviceUser.name) : null,
       sameNameWorkers,
-      sourceMatchCategory: ignoredByDeviceNo.has(deviceUser.employeeNo) ? 'ignored' : isUniqueExactMatch ? 'unique_exact' : isAmbiguousMatch ? 'ambiguous' : 'device_only',
+      sourceMatchCategory: (ignoredByDeviceIdentity.has(key) || legacyIgnoredEmployeeNos.has(deviceUser.employeeNo)) ? 'ignored' : isUniqueExactMatch ? 'unique_exact' : isAmbiguousMatch ? 'ambiguous' : 'device_only',
       matchCategory: deviceMappings.length ? 'mapped' : isUniqueExactMatch ? 'unique_exact' : isAmbiguousMatch ? 'ambiguous' : 'device_only',
       isAmbiguousName: isAmbiguousMatch,
       isConflict: deviceMappings.length > 1 || (deviceMappings.length === 1 && !linkedWorker),
@@ -182,6 +213,7 @@ export const getBiometricMappingWorkspaceRequest = async () => {
       workerMappings,
       supabaseOnlyWorkers,
       teams: toArray(teamsResponse.data).filter((team) => team?.is_active !== false),
+      ignoredIdentities,
       identityPresenceError,
     },
   }
@@ -189,9 +221,10 @@ export const getBiometricMappingWorkspaceRequest = async () => {
 
 export const createWorkerAndConfirmBiometricMappingRequest = async ({ deviceUser, fullName, employeeCode, teamId }) => {
   const employeeNo = normalizeDeviceEmployeeNo(deviceUser?.employeeNo)
+  const deviceId = String(deviceUser?.deviceId || '').trim()
   const name = String(fullName || '').trim()
   const code = String(employeeCode || '').trim()
-  if (!employeeNo || !name || !code || !teamId) {
+  if (!deviceId || !employeeNo || !name || !code || !teamId) {
     throw new Error('Device identity, worker name, employee code, and team are required.')
   }
   const { data, error } = await getSupabaseClient().rpc('create_worker_and_confirm_biometric_mapping', {
@@ -199,6 +232,7 @@ export const createWorkerAndConfirmBiometricMappingRequest = async ({ deviceUser
     p_employee_code: code,
     p_team_id: teamId,
     p_device_employee_no: employeeNo,
+    p_device_id: deviceId,
     p_device_name: String(deviceUser?.name || '').trim() || null,
     p_device_picture_url: deviceUser?.attendancePhotoUrl || null,
   })
@@ -209,60 +243,38 @@ export const createWorkerAndConfirmBiometricMappingRequest = async ({ deviceUser
 export const saveBiometricMappingRequest = async ({ deviceUser, workerId, replaceExisting = false, reviewState = 'needs_review' }) => {
   const client = getSupabaseClient()
   const employeeNo = normalizeDeviceEmployeeNo(deviceUser?.employeeNo)
+  const deviceId = String(deviceUser?.deviceId || '').trim()
 
-  if (!employeeNo || !workerId) {
+  if (!deviceId || !employeeNo || !workerId) {
     throw new Error('يجب اختيار مستخدم الجهاز والعامل قبل الحفظ.')
   }
 
-  const { data: deviceRecord, error: deviceError } = await client
+  const { data: deviceRecords, error: deviceError } = await client
     .from('biometric_worker_mapping')
     .select(mappingFields)
     .eq('device_employee_no', employeeNo)
-    .maybeSingle()
+    .eq('is_active', true)
 
   if (deviceError) {
     throw deviceError
   }
-  const existingDeviceRecord = isMappingRecord(deviceRecord) ? deviceRecord : null
-
-  const { data: workerRecords, error: workerError } = await client
-    .from('biometric_worker_mapping')
-    .select(mappingFields)
-    .eq('worker_id', workerId)
-    .eq('is_active', true)
-
-  if (workerError) {
-    throw workerError
-  }
-
-  const activeWorkerRecord = toArray(workerRecords).filter(isMappingRecord).find(
-    (mapping) => String(mapping.id) !== String(existingDeviceRecord?.id || ''),
-  )
+  const existingDeviceRecord = toArray(deviceRecords).filter(isMappingRecord).find((mapping) => (
+    !mapping.device_id || String(mapping.device_id) === deviceId
+  )) || null
   const deviceWouldBeReplaced = Boolean(existingDeviceRecord)
     && existingDeviceRecord.is_active !== false
     && String(existingDeviceRecord.worker_id) !== String(workerId)
-  const workerWouldBeReplaced = Boolean(activeWorkerRecord)
 
-  if (!replaceExisting && (deviceWouldBeReplaced || workerWouldBeReplaced)) {
+  if (!replaceExisting && deviceWouldBeReplaced) {
     throw new BiometricMappingConflictError({
       deviceRecord: deviceWouldBeReplaced ? existingDeviceRecord : null,
-      workerRecord: activeWorkerRecord || null,
+      workerRecord: null,
     })
-  }
-
-  if (workerWouldBeReplaced) {
-    const { error } = await client
-      .from('biometric_worker_mapping')
-      .update({ is_active: false })
-      .eq('id', activeWorkerRecord.id)
-
-    if (error) {
-      throw error
-    }
   }
 
   const payload = {
     worker_id: workerId,
+    device_id: deviceId,
     device_employee_no: employeeNo,
     device_name: String(deviceUser.name || '').trim() || null,
     device_picture_url: deviceUser.attendancePhotoUrl || null,
@@ -432,22 +444,24 @@ export const unlinkBiometricMappingRequest = async (mappingId) => {
 }
 
 // Attendance sync will use this lookup exclusively; device names are never part of identity resolution.
-export const getMappedWorkerByDeviceEmployeeNoRequest = async (deviceEmployeeNo) => {
+export const getMappedWorkerByDeviceEmployeeNoRequest = async (deviceEmployeeNo, deviceId) => {
   const employeeNo = normalizeDeviceEmployeeNo(deviceEmployeeNo)
-  if (!employeeNo) return { data: null }
+  const normalizedDeviceId = String(deviceId || '').trim()
+  if (!normalizedDeviceId || !employeeNo) return { data: null }
 
   const client = getSupabaseClient()
   const { data, error } = await client
     .from('biometric_worker_mapping')
-    .select('worker_id,device_employee_no')
+    .select('worker_id,device_id,device_employee_no')
     .eq('device_employee_no', employeeNo)
     .eq('is_active', true)
     .eq('mapping_review_state', 'confirmed')
-    .maybeSingle()
 
   if (error) {
     throw error
   }
 
-  return { data }
+  return { data: toArray(data).find((mapping) => mapping.device_id === normalizedDeviceId)
+    || toArray(data).find((mapping) => !mapping.device_id)
+    || null }
 }
