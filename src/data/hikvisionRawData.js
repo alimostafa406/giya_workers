@@ -17,28 +17,34 @@ export const normalizePersonName = (value) => String(value || '')
 // Device inventory is populated only by the current local Helper sync response.
 // Historical device dumps must never be bundled into the production frontend.
 export const getHikvisionDeviceUsers = () => {
-  const usersByEmployeeNo = new Map()
+  const usersByDeviceIdentity = new Map()
 
   ;(locallySyncedUsers || []).forEach((user) => {
     const employeeNo = normalizeDeviceEmployeeNo(user.employeeNo || user.employeeNoString)
-    if (!employeeNo || usersByEmployeeNo.has(employeeNo)) return
+    if (!employeeNo) return
     const activityEvents = Array.isArray(user.activityEvents) ? user.activityEvents : []
-
-    usersByEmployeeNo.set(employeeNo, {
-      employeeNo,
-      name: String(user.name || '').trim() || 'بدون اسم',
-      isDeviceUserActive: user.Valid?.enable !== false && user._local_sync?.is_currently_returned !== false,
-      isCurrentlyReturned: user._local_sync?.is_currently_returned !== false,
-      removedFromAllDevices: user._local_sync?.removed_from_all_devices === true,
-      devices: Array.isArray(user.devices) ? user.devices : [],
-      devicePresence: user.device_presence || {},
-      activityEvents,
-      latestEvent: activityEvents[0] || null,
-      faceEnrolled: Number(user.numOfFace || 0) > 0,
+    const devices = Array.isArray(user.devices) ? user.devices : []
+    devices.forEach((deviceId) => {
+      const identityKey = `${deviceId}::${employeeNo}`
+      if (usersByDeviceIdentity.has(identityKey)) return
+      usersByDeviceIdentity.set(identityKey, {
+        employeeNo,
+        deviceId,
+        identityKey,
+        name: String(user.name || '').trim() || 'بدون اسم',
+        isDeviceUserActive: user.Valid?.enable !== false && user._local_sync?.is_currently_returned !== false,
+        isCurrentlyReturned: user._local_sync?.is_currently_returned !== false,
+        removedFromAllDevices: user._local_sync?.removed_from_all_devices === true,
+        devices: [deviceId],
+        devicePresence: user.device_presence || {},
+        activityEvents: activityEvents.filter((event) => (event._device_id || event.device_id) === deviceId),
+        latestEvent: activityEvents.find((event) => (event._device_id || event.device_id) === deviceId) || null,
+        faceEnrolled: Number(user.numOfFace || 0) > 0,
+      })
     })
   })
 
-  return Array.from(usersByEmployeeNo.values())
+  return Array.from(usersByDeviceIdentity.values())
 }
 
 export const getHikvisionRawStats = () => {

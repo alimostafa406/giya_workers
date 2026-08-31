@@ -63,7 +63,7 @@ test('UI prevents duplicate creation, removes identity optimistically, and prese
   assert.match(source, /if \(!selectedDevice \|\| creatingWorker\) return/)
   assert.match(source, /isSaving=\{creatingWorker\}/)
   assert.match(source, /setOptimisticallyMappedEmployeeNos/)
-  assert.match(source, /filter\(\(user\) => !optimisticallyMappedEmployeeNos\.has\(user\.employeeNo\)\)/)
+  assert.match(source, /filter\(\(user\) => !optimisticallyMappedEmployeeNos\.has\(user\.identityKey\)\)/)
   assert.match(source, /refreshTodayAttendanceAfterMapping\(\)/)
   assert.match(source, /saveBiometricMappingRequest\(/)
   assert.doesNotMatch(source, /await refreshTodayAttendanceAfterMapping\(\)\s*\n\s*await load\(\)\s*\n\s*clearSelections\(\)/)

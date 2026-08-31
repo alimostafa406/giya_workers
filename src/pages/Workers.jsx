@@ -12,6 +12,12 @@ import WorkerForm from '../components/Forms/WorkerForm'
 import Modal from '../components/Modal/Modal'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
+import {
+  biometricCoverageBadgeClass,
+  biometricCoverageForWorker,
+  biometricCoverageLabel,
+  buildBiometricCoverageByWorker,
+} from '../utils/biometricMappingCoverage'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -28,7 +34,7 @@ const getWorkerIsActive = (worker) => {
 }
 
 function Workers() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const navigate = useNavigate()
   const [workers, setWorkers] = useState([])
   const [teams, setTeams] = useState([])
@@ -77,6 +83,11 @@ function Workers() {
     })
     return mappingsByWorker
   }, [biometricMappings])
+
+  const biometricCoverageByWorkerId = useMemo(
+    () => buildBiometricCoverageByWorker(biometricMappings),
+    [biometricMappings],
+  )
 
   const filteredWorkers = useMemo(() => {
     const searchValue = String(searchQuery || '').trim().toLowerCase()
@@ -199,11 +210,9 @@ function Workers() {
       key: 'biometric',
       header: t('workers.biometric'),
       render: (row) => {
-        const mappings = biometricByWorkerId.get(String(row.id)) || []
-        const mapping = mappings[0]
-        if (mappings.length > 1) return <span className="status-badge status-badge--danger">{t('workers.conflict')}</span>
-        if (!mapping) return <span className="status-badge status-badge--neutral">{t('workers.unlinked')}</span>
-        return <div className="flex items-center gap-2">{mapping.device_picture_url ? <img src={mapping.device_picture_url} alt="" className="h-7 w-7 rounded-lg border border-(--border) object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}<span className="status-badge status-badge--success">{t('workers.linked')}</span><span dir="ltr" className="text-xs font-bold text-(--muted)">{mapping.device_employee_no}</span></div>
+        const coverage = biometricCoverageForWorker(biometricCoverageByWorkerId, row.id)
+        const mapping = coverage.mappings[0]
+        return <div className="flex items-center gap-2">{mapping?.device_picture_url ? <img src={mapping.device_picture_url} alt="" className="h-7 w-7 rounded-lg border border-(--border) object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}<span className={`status-badge ${biometricCoverageBadgeClass(coverage.status)}`}>{biometricCoverageLabel(coverage.status, language)}</span>{coverage.mappings.length ? <span dir="ltr" className="text-xs font-bold text-(--muted)">{coverage.mappings.map((item) => item.device_employee_no).join(' · ')}</span> : null}</div>
       },
     },
     {

@@ -151,26 +151,22 @@ def deduplicate_hikvision_events(events: list[dict]) -> list[dict]:
 def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_date: date_type) -> list[dict]:
     """Build append-only monitoring rows without changing attendance planning.
 
-    Events are retained only after the existing confirmed, active mapping lookup
-    resolves them to an active worker.  Midday events are deliberately included:
-    this data is observation-only and is not used by ``plan_attendance``.
+    Every non-ignored device identity is retained. A confirmed active worker is
+    attached when available; unmapped observations deliberately keep worker_id
+    null. This data is observation-only and is not used by ``plan_attendance``.
     """
     rows: list[dict] = []
     seen: set[tuple[str, str]] = set()
-    ignored = resolution.get('ignored', set())
     confirmed = resolution.get('confirmed', {})
     workers = resolution.get('workers', {})
 
     for event in deduplicate_hikvision_events(events):
         employee_no = str(event.get('employeeNoString') or '').strip()
-        if not employee_no or employee_no in ignored:
+        if not employee_no or biometric_identity_is_ignored(resolution, event):
             continue
-        mapping = confirmed.get(employee_no)
-        if not mapping:
-            continue
-        worker = workers.get(str(mapping.get('worker_id') or ''))
-        if not worker or worker.get('is_active') is False:
-            continue
+        mapping = biometric_mapping_for_event(resolution, event)
+        worker = workers.get(str(mapping.get('worker_id') or '')) if mapping else None
+        worker_id = str(worker['id']) if worker and worker.get('is_active') is not False else None
         try:
             event_timestamp = parse_monitoring_event_time(str(event.get('time') or ''))
         except ValueError:
@@ -186,7 +182,9 @@ def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_d
             continue
         seen.add(unique_key)
         rows.append({
-            'worker_id': str(worker['id']),
+            'worker_id': worker_id,
+            'device_employee_no': employee_no,
+            'device_name': str(event.get('name') or '').strip() or None,
             'attendance_date': target_date.isoformat(),
             'event_timestamp': event_timestamp.isoformat(),
             'device_id': device_id,
@@ -209,6 +207,41 @@ def monitoring_timestamp_repairs(rows: list[dict], existing_rows: list[dict]) ->
         if existing and str(existing.get('event_timestamp') or '') != row['event_timestamp']:
             repairs.append({'id': str(existing['id']), 'event_timestamp': row['event_timestamp']})
     return repairs
+
+
+def persisted_biometric_events(client, target_date: date_type) -> tuple[list[dict], list[dict]]:
+    """Reconstruct attendance inputs only from durable device-event observations."""
+    rows = client.read(
+        'biometric_attendance_events',
+        'id,attendance_date,event_timestamp,device_id,device_employee_no,device_name,event_identity',
+        attendance_date=f'eq.{target_date.isoformat()}',
+    )
+    events: list[dict] = []
+    valid_rows: list[dict] = []
+    for row in rows:
+        device_id = str(row.get('device_id') or '').strip()
+        employee_no = str(row.get('device_employee_no') or '').strip()
+        event_identity = str(row.get('event_identity') or '')
+        try:
+            timestamp = parse_event_time(str(row.get('event_timestamp') or '')).astimezone(MONITORING_TIME_ZONE)
+            identity_parts = json.loads(event_identity)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not device_id or not employee_no or timestamp.date() != target_date or not isinstance(identity_parts, list):
+            continue
+        serial = identity_parts[2] if len(identity_parts) >= 3 and identity_parts[0] == 'serial' else None
+        events.append({
+            'major': 5,
+            'minor': 75,
+            'employeeNoString': employee_no,
+            'serialNo': serial,
+            'time': timestamp.isoformat(),
+            'name': row.get('device_name'),
+            '_device_id': device_id,
+            '_persisted_event_id': row.get('id'),
+        })
+        valid_rows.append(row)
+    return deduplicate_hikvision_events(events), valid_rows
 
 
 def hikvision_events_for_device(
@@ -582,16 +615,35 @@ class SupabaseReadClient:
             raise
         self.diagnostics.success('SUPABASE', response.status_code)
 
+    def reactivate_worker_from_persisted_biometric_event(self, device_id: str, event_identity: str) -> dict:
+        """Ask the database to verify one persisted event and reactivate its unique confirmed owner."""
+        target = 'reactivating worker from persisted biometric event'
+        self.diagnostics.start('SUPABASE', target, 'POST', self.host)
+        try:
+            response = requests.post(
+                f'{self.base_url}/rest/v1/rpc/reactivate_worker_from_biometric_event',
+                headers={**self.headers, 'Prefer': 'return=representation'},
+                json={'p_device_id': device_id, 'p_event_identity': event_identity},
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            self.diagnostics.failure('SUPABASE', target, 'POST', self.host, error)
+            raise
+        self.diagnostics.success('SUPABASE', response.status_code)
+        data = response.json()
+        return data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else {}
+
 
 def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for_apply: bool = False) -> dict:
     active_mappings = client.read(
         'biometric_worker_mapping',
-        'worker_id,device_employee_no,is_active,mapping_review_state',
+        'worker_id,device_id,device_employee_no,is_active,mapping_review_state',
         is_active='eq.true',
     )
     workers = client.read('workers', 'id,full_name,is_active,team_id')
     classifications = client.read('worker_staff_classification', 'worker_id,classification')
-    ignored_identity_rows = client.read('biometric_device_identity_review', 'device_employee_no,review_state', review_state='eq.ignored')
+    ignored_identity_rows = client.read('biometric_device_identity_review', 'device_id,device_employee_no,review_state', review_state='eq.ignored')
     attendance_select = 'id,worker_id,attendance_date,status,check_in,check_out,note,recorded_by'
     if for_apply:
         # Apply requires attendance_biometric_workflow_upgrade.sql to have been
@@ -604,20 +656,24 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
     )
     workers_by_id = {str(worker['id']): worker for worker in workers if worker.get('id')}
     classifications_by_worker = {str(item['worker_id']): item.get('classification', 'normal') for item in classifications if item.get('worker_id')}
-    confirmed: dict[str, dict] = {}
-    unconfirmed_device_numbers: set[str] = set()
+    confirmed: dict[tuple[str | None, str], dict] = {}
+    unconfirmed_device_numbers: set[tuple[str | None, str]] = set()
     for mapping in active_mappings:
         employee_no = str(mapping.get('device_employee_no') or '').strip()
         if not employee_no:
             continue
+        mapping_key = (str(mapping.get('device_id') or '').strip() or None, employee_no)
         if mapping.get('mapping_review_state') == 'confirmed':
-            confirmed[employee_no] = mapping
+            confirmed[mapping_key] = mapping
         else:
-            unconfirmed_device_numbers.add(employee_no)
+            unconfirmed_device_numbers.add(mapping_key)
     return {
         'confirmed': confirmed,
         'unconfirmed': unconfirmed_device_numbers,
-        'ignored': {str(row.get('device_employee_no') or '').strip() for row in ignored_identity_rows},
+        'ignored': {
+            (str(row.get('device_id') or '').strip() or None, str(row.get('device_employee_no') or '').strip())
+            for row in ignored_identity_rows
+        },
         'workers': workers_by_id,
         'classifications': classifications_by_worker,
         'existing_attendance': {
@@ -626,6 +682,77 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
             if row.get('worker_id')
         },
     }
+
+
+def auto_reactivate_inactive_workers(client: SupabaseReadClient, persisted_rows: list[dict], resolution: dict) -> Counter:
+    """Reactivate only inactive owners backed by persisted, confirmed biometric evidence.
+
+    The database RPC repeats the authoritative mapping checks under row locks.
+    This client-side prefilter only avoids unnecessary RPC calls; it never grants
+    reactivation authority by itself.
+    """
+    results = Counter()
+    seen: set[tuple[str, str]] = set()
+    workers = resolution.get('workers', {})
+    for row in persisted_rows:
+        device_id = str(row.get('device_id') or '').strip()
+        event_identity = str(row.get('event_identity') or '')
+        employee_no = str(row.get('device_employee_no') or '').strip()
+        key = (device_id, event_identity)
+        if not device_id or not event_identity or not employee_no or key in seen:
+            continue
+        seen.add(key)
+        mapping = biometric_mapping_for_event(resolution, {
+            '_device_id': device_id,
+            'employeeNoString': employee_no,
+        })
+        worker = workers.get(str(mapping.get('worker_id') or '')) if mapping else None
+        if not worker or worker.get('is_active') is not False:
+            continue
+        try:
+            outcome = client.reactivate_worker_from_persisted_biometric_event(device_id, event_identity)
+        except requests.RequestException:
+            results['errors'] += 1
+            continue
+        outcome_name = str(outcome.get('outcome') or 'unknown')
+        results[outcome_name] += 1
+        if outcome_name in {'reactivated', 'already_active'}:
+            results['reload_required'] += 1
+    return results
+
+
+def biometric_mapping_for_event(resolution: dict, event: dict) -> dict | None:
+    employee_no = str(event.get('employeeNoString') or event.get('employeeNo') or '').strip()
+    device_id = str(event.get('_device_id') or event.get('device_id') or '').strip()
+    confirmed = resolution.get('confirmed', {})
+    # Exact device identity wins. Null-device mappings are compatibility rows
+    # created before device-scoped mappings existed.
+    return (
+        confirmed.get((device_id, employee_no))
+        or confirmed.get((None, employee_no))
+        or confirmed.get(employee_no)  # Backward-compatible test/fixture shape.
+    )
+
+
+def biometric_identity_needs_review(resolution: dict, event: dict) -> bool:
+    employee_no = str(event.get('employeeNoString') or event.get('employeeNo') or '').strip()
+    device_id = str(event.get('_device_id') or event.get('device_id') or '').strip()
+    unconfirmed = resolution.get('unconfirmed', set())
+    return (device_id, employee_no) in unconfirmed or (None, employee_no) in unconfirmed or employee_no in unconfirmed
+
+
+def biometric_identity_is_ignored(resolution: dict, event: dict) -> bool:
+    employee_no = str(event.get('employeeNoString') or event.get('employeeNo') or '').strip()
+    device_id = str(event.get('_device_id') or event.get('device_id') or '').strip()
+    ignored = resolution.get('ignored', set())
+    return (device_id, employee_no) in ignored or (None, employee_no) in ignored or employee_no in ignored
+
+
+def biometric_mapping_is_ignored(resolution: dict, mapping: dict) -> bool:
+    employee_no = str(mapping.get('device_employee_no') or '').strip()
+    device_id = str(mapping.get('device_id') or '').strip() or None
+    ignored = resolution.get('ignored', set())
+    return (device_id, employee_no) in ignored or (None, employee_no) in ignored or employee_no in ignored
 
 
 def workday_schedule(target_date: date_type) -> dict | None:
@@ -677,12 +804,12 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
     events_by_worker: dict[str, list[dict]] = defaultdict(list)
     for event in events:
         employee_no = str(event.get('employeeNoString') or '').strip()
-        if employee_no in resolution.get('ignored', set()):
+        if biometric_identity_is_ignored(resolution, event):
             counters['ignored_old_user'] += 1
             continue
-        mapping = resolution['confirmed'].get(employee_no)
+        mapping = biometric_mapping_for_event(resolution, event)
         if not mapping:
-            counters['needs_review' if employee_no in resolution['unconfirmed'] else 'unmapped'] += 1
+            counters['needs_review' if biometric_identity_needs_review(resolution, event) else 'unmapped'] += 1
             continue
         worker = resolution['workers'].get(str(mapping.get('worker_id') or ''))
         if not worker or worker.get('is_active') is False:
@@ -693,7 +820,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
 
     eligible_workers: dict[str, dict] = {}
     for mapping in resolution['confirmed'].values():
-        if str(mapping.get('device_employee_no') or '').strip() in resolution.get('ignored', set()):
+        if biometric_mapping_is_ignored(resolution, mapping):
             continue
         worker_id = str(mapping.get('worker_id') or '')
         worker = resolution['workers'].get(worker_id)
@@ -967,11 +1094,13 @@ def main() -> int:
     parser.add_argument('--debug', action='store_true', help='Show safe request-stage diagnostics')
     parser.add_argument('--apply', action='store_true', help='Apply biometric attendance writes (requires --confirm-write)')
     parser.add_argument('--confirm-write', action='store_true', help='Explicit acknowledgement required together with --apply')
+    parser.add_argument('--from-persisted-events', action='store_true', help='Use only real biometric events already persisted in Supabase')
     args = parser.parse_args()
     try:
         load_local_hikvision_config()
-        configured_devices()
         require_local_settings('SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY')
+        if not args.from_persisted_events:
+            configured_devices()
     except RuntimeError as error:
         print(f'Attendance sync configuration error: {error}', file=sys.stderr)
         return 2
@@ -981,23 +1110,42 @@ def main() -> int:
     try:
         target_date = date_type.fromisoformat(args.date)
         diagnostics = RequestDiagnostics(args.debug)
-        events, device_reads = hikvision_events_with_devices(target_date, diagnostics)
         client = SupabaseReadClient(diagnostics)
+        if args.from_persisted_events:
+            events, persisted_rows = persisted_biometric_events(client, target_date)
+            device_reads = {'persisted-event-store': {
+                'device_id': 'persisted-event-store',
+                'state': 'complete',
+                'event_count': len(events),
+                'error': None,
+            }}
+        else:
+            events, device_reads = hikvision_events_with_devices(target_date, diagnostics)
+            persisted_rows = []
         resolution = load_resolution_data(client, target_date, for_apply=args.apply)
+        apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
+        reactivation_results = None
+        if args.apply and not apply_blocked_reason:
+            if not args.from_persisted_events:
+                persisted_rows = resolved_biometric_event_rows(events, resolution, target_date)
+                client.insert_biometric_attendance_events(persisted_rows)
+            reactivation_results = auto_reactivate_inactive_workers(client, persisted_rows, resolution)
+            if reactivation_results.get('reload_required'):
+                resolution = load_resolution_data(client, target_date, for_apply=True)
         plans, counters = plan_attendance(events, resolution, target_date)
     except (RuntimeError, requests.RequestException, ValueError) as error:
         print(f'DRY RUN FAILED: {error}', file=sys.stderr)
         return 1
 
     planned_writes = write_summary(plans, resolution['existing_attendance'], counters)
-    apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
     if args.apply:
         print(json.dumps({
             'mode': 'apply_preflight',
             'date': target_date.isoformat(),
-            'schema_prerequisite': 'attendance_biometric_workflow_upgrade.sql must already be approved and executed',
+            'schema_prerequisite': 'attendance_biometric_workflow_upgrade.sql and biometric_auto_reactivation.sql must already be approved and executed',
             'device_reads': device_reads,
             'apply_blocked_reason': apply_blocked_reason,
+            'auto_reactivation': dict(reactivation_results or {}),
             **planned_writes,
         }, ensure_ascii=False, indent=2))
         if apply_blocked_reason:
@@ -1013,6 +1161,8 @@ def main() -> int:
             'skipped_manual_protected': write_results.get('skipped_manual_protected', 0),
             'unmapped': write_results.get('unmapped', 0),
             'needs_review': write_results.get('needs_review', 0),
+            'workers_reactivated': (reactivation_results or {}).get('reactivated', 0),
+            'reactivation_errors': (reactivation_results or {}).get('errors', 0),
             'errors': write_results.get('errors', 0),
         }, ensure_ascii=False, indent=2))
     else:
@@ -1020,6 +1170,7 @@ def main() -> int:
 
     report = {
         'mode': 'apply' if args.apply else 'dry_run',
+        'event_source': 'persisted_supabase_events' if args.from_persisted_events else 'direct_hikvision_devices',
         'date': target_date.isoformat(),
         'event_count': len(events),
         'device_reads': device_reads,
@@ -1032,6 +1183,7 @@ def main() -> int:
         'counts': dict(counters),
         'write_preflight': planned_writes,
         'write_results': dict(write_results) if write_results is not None else None,
+        'auto_reactivation': dict(reactivation_results or {}) if args.apply else None,
         'proposals': plans,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))

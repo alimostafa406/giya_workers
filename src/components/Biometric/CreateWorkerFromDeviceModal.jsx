@@ -1,19 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Modal from '../Modal/Modal'
 import { useTranslation } from '../../i18n/LanguageContext'
 
-export default function CreateWorkerFromDeviceModal({ deviceUser, teams, isOpen, isSaving, onClose, onSubmit }) {
+export default function CreateWorkerFromDeviceModal({ deviceUser, teams, initialEmployeeCode = '', isOpen, isSaving, onClose, onSubmit }) {
   const { t } = useTranslation()
   const [fullName, setFullName] = useState('')
   const [employeeCode, setEmployeeCode] = useState('')
   const [teamId, setTeamId] = useState('')
+  const initializedForCurrentOpening = useRef(false)
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) {
+      initializedForCurrentOpening.current = false
+      return
+    }
+    if (initializedForCurrentOpening.current) return
+    initializedForCurrentOpening.current = true
     setFullName(deviceUser?.name || '')
-    setEmployeeCode('')
+    setEmployeeCode(initialEmployeeCode)
     setTeamId('')
-  }, [deviceUser, isOpen])
+  }, [deviceUser, initialEmployeeCode, isOpen])
 
   const save = (event) => {
     event.preventDefault()

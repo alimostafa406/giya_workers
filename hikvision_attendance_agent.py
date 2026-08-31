@@ -23,6 +23,7 @@ from hikvision_attendance_sync import (
     SupabaseReadClient,
     attendance_apply_blocked_reason,
     apply_biometric_attendance,
+    auto_reactivate_inactive_workers,
     hikvision_events,
     hikvision_events_with_devices,
     load_resolution_data,
@@ -173,21 +174,23 @@ class AttendanceAgent:
             self.logger.error('Hikvision user sync failed: %s: %s', type(error).__name__, error)
             return False
 
-    def persist_observed_biometric_events(self, events: list[dict], resolution: dict, target_date) -> None:
-        """Persist positive observations only; never affects attendance planning."""
+    def persist_observed_biometric_events(self, events: list[dict], resolution: dict, target_date) -> list[dict]:
+        """Persist positive observations and return only rows backed by a successful write."""
         rows = resolved_biometric_event_rows(events, resolution, target_date)
         if not rows:
-            return
+            return []
         try:
             self.client.insert_biometric_attendance_events(rows)
             self.logger.info(
-                'Biometric monitoring observations persisted: date=%s resolved_events=%s',
+                'Biometric monitoring observations persisted: date=%s observed_events=%s',
                 target_date.isoformat(), len(rows),
             )
+            return rows
         except (RuntimeError, requests.RequestException, ValueError) as error:
             # Monitoring is deliberately isolated: a failure here must never
             # block or alter the established attendance workflow.
             self.logger.error('Biometric monitoring event persistence failed: %s: %s', type(error).__name__, error)
+            return []
 
     def process_today_attendance(self) -> tuple[bool, str | None]:
         target_date = local_now().date()
@@ -210,10 +213,16 @@ class AttendanceAgent:
                     self.device_statuses[device_id].update(reachable=False, last_error=result.get('error'))
             self.client = self.client or SupabaseReadClient(diagnostics)
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
-            self.persist_observed_biometric_events(events, resolution, target_date)
+            persisted_rows = self.persist_observed_biometric_events(events, resolution, target_date)
+            apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
+            reactivation_results = None
+            if not self.dry_run and not apply_blocked_reason and persisted_rows:
+                reactivation_results = auto_reactivate_inactive_workers(self.client, persisted_rows, resolution)
+                if reactivation_results.get('reload_required'):
+                    resolution = load_resolution_data(self.client, target_date, for_apply=True)
+                self.logger.info('Biometric auto-reactivation: %s', dict(reactivation_results))
             plans, counters = plan_attendance(events, resolution, target_date)
             summary = write_summary(plans, resolution['existing_attendance'], counters)
-            apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
             if self.dry_run:
                 self.logger.info('Attendance dry run: events=%s device_reads=%s %s', len(events), device_reads, dict(summary))
             elif apply_blocked_reason:
@@ -224,6 +233,9 @@ class AttendanceAgent:
                 result_counts = dict(results)
                 result_counts['unmapped'] = counters.get('unmapped', 0)
                 result_counts['needs_review'] = counters.get('needs_review', 0)
+                if reactivation_results is not None:
+                    result_counts['workers_reactivated'] = reactivation_results.get('reactivated', 0)
+                    result_counts['reactivation_errors'] = reactivation_results.get('errors', 0)
                 if results.get('aborted_structural_error'):
                     self.logger.error('Attendance write cycle aborted after structural Supabase error.')
                 else:
@@ -261,12 +273,29 @@ class AttendanceAgent:
                     self.device_statuses[device_id].update(reachable=False, last_error=result.get('error'))
             self.client = self.client or SupabaseReadClient(diagnostics)
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
-            self.persist_observed_biometric_events(events, resolution, target_date)
+            persisted_rows = self.persist_observed_biometric_events(events, resolution, target_date)
+            apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
+            previously_inactive_ids = {
+                worker_id for worker_id, worker in resolution.get('workers', {}).items()
+                if worker.get('is_active') is False
+            }
+            reactivation_results = None
+            if not self.dry_run and not apply_blocked_reason and persisted_rows:
+                reactivation_results = auto_reactivate_inactive_workers(self.client, persisted_rows, resolution)
+                if reactivation_results.get('reload_required'):
+                    resolution = load_resolution_data(self.client, target_date, for_apply=True)
+                self.logger.info('Previous-workday biometric auto-reactivation: %s', dict(reactivation_results))
+            reactivated_worker_ids = {
+                worker_id for worker_id in previously_inactive_ids
+                if resolution.get('workers', {}).get(worker_id, {}).get('is_active') is True
+            }
             plans, counters = plan_attendance(events, resolution, target_date)
             existing = resolution['existing_attendance']
-            recovery_plans = completion_plans(plans, existing)
+            recovery_plans = [
+                plan for plan in plans
+                if existing.get(plan['worker_id']) or plan['worker_id'] in reactivated_worker_ids
+            ]
             summary = write_summary(recovery_plans, existing, counters)
-            apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
             if self.dry_run:
                 updated = summary.get('update', 0)
                 unchanged = summary.get('unchanged', 0) + summary.get('skipped_manual_protected', 0)

@@ -25,7 +25,7 @@ from hikvision_local_config import load_local_hikvision_config, require_local_se
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Backfill one day of resolved biometric monitoring events only.')
+    parser = argparse.ArgumentParser(description='Backfill one day of biometric monitoring events only.')
     parser.add_argument('--date', required=True, help='Single date to read: YYYY-MM-DD')
     parser.add_argument('--confirm-event-backfill', action='store_true', help='Required acknowledgement; no attendance is written.')
     args = parser.parse_args()
@@ -47,7 +47,7 @@ def main() -> int:
         resolution = load_resolution_data(client, target_date, for_apply=False)
         rows = resolved_biometric_event_rows(events, resolution, target_date)
         client.insert_biometric_attendance_events(rows)
-        print(f'Biometric monitoring backfill complete: date={target_date.isoformat()} events={len(events)} resolved_rows={len(rows)}')
+        print(f'Biometric monitoring backfill complete: date={target_date.isoformat()} events={len(events)} observed_rows={len(rows)}')
         return 0
     except (RuntimeError, requests.RequestException, ValueError) as error:
         print(f'BACKFILL FAILED: {type(error).__name__}: {error}', file=sys.stderr)

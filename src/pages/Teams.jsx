@@ -11,6 +11,12 @@ import TeamForm from '../components/Forms/TeamForm'
 import Modal from '../components/Modal/Modal'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
+import {
+  biometricCoverageBadgeClass,
+  biometricCoverageForWorker,
+  biometricCoverageLabel,
+  buildBiometricCoverageByWorker,
+} from '../utils/biometricMappingCoverage'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -23,7 +29,7 @@ const asArray = (value) => {
 }
 
 function Teams() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [teams, setTeams] = useState([])
   const [supervisors, setSupervisors] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -109,6 +115,11 @@ function Teams() {
     })
     return result
   }, [biometricMappings])
+
+  const biometricCoverageByWorkerId = useMemo(
+    () => buildBiometricCoverageByWorker(biometricMappings),
+    [biometricMappings],
+  )
 
   const openCreate = () => {
     setSelectedTeam(null)
@@ -309,8 +320,9 @@ function Teams() {
                   (() => {
                     const mappings = biometricByWorkerId.get(String(worker.id)) || []
                     const mapping = mappings[0]
+                    const coverage = biometricCoverageForWorker(biometricCoverageByWorkerId, worker.id)
                     return <div key={worker.id} className="rounded-xl border border-(--border) bg-white px-3 py-2">
-                      <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2">{mapping?.device_picture_url ? <img src={mapping.device_picture_url} alt="" className="h-7 w-7 rounded-lg border border-(--border) object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}<p className="truncate font-semibold">{worker.full_name}</p></div>{mappings.length > 1 ? <span className="status-badge status-badge--danger">{t('workers.conflict')}</span> : mapping ? <span className="status-badge status-badge--success">{t('workers.linked')}</span> : <span className="status-badge status-badge--neutral">{t('workers.unlinked')}</span>}</div>
+                      <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2">{mapping?.device_picture_url ? <img src={mapping.device_picture_url} alt="" className="h-7 w-7 rounded-lg border border-(--border) object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : null}<p className="truncate font-semibold">{worker.full_name}</p></div><span className={`status-badge ${biometricCoverageBadgeClass(coverage.status)}`}>{biometricCoverageLabel(coverage.status, language)}</span></div>
                       <p className="mt-1 text-xs text-(--muted)">{worker.is_active === false ? t('common.inactive') : t('common.active')}{mapping ? ` · ${t('teams.deviceNumber')}: ${mapping.device_employee_no}` : ''}</p>
                     </div>
                   })()

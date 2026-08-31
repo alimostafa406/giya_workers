@@ -14,6 +14,18 @@ const isMissingRecentActivityRpc = (error) => (
   || /get_recent_unmapped_biometric_identities/i.test(String(error?.message || ''))
 )
 
+const isMissingUnresolvedAttendanceRpc = (error) => (
+  error?.code === '42883'
+  || error?.code === 'PGRST202'
+  || /get_unresolved_biometric_attendance/i.test(String(error?.message || ''))
+)
+
+const isMissingInactiveWorkerActivityRpc = (error) => (
+  error?.code === '42883'
+  || error?.code === 'PGRST202'
+  || /get_inactive_worker_biometric_activity/i.test(String(error?.message || ''))
+)
+
 export const getRecentUnmappedBiometricIdentitiesRequest = async ({ endDate = currentBusinessDate(), days = 7 } = {}) => {
   const { data, error } = await getSupabaseClient().rpc('get_recent_unmapped_biometric_identities', {
     p_end_date: endDate,
@@ -22,6 +34,34 @@ export const getRecentUnmappedBiometricIdentitiesRequest = async ({ endDate = cu
   if (error && isMissingRecentActivityRpc(error)) return { data: [], unavailable: true, endDate, days }
   if (error) throw error
   return { data: toArray(data), unavailable: false, endDate, days }
+}
+
+export const getUnresolvedBiometricAttendanceRequest = async ({ attendanceDate = currentBusinessDate() } = {}) => {
+  const { data, error } = await getSupabaseClient().rpc('get_unresolved_biometric_attendance', {
+    p_attendance_date: attendanceDate,
+  })
+  if (error && isMissingUnresolvedAttendanceRpc(error)) {
+    return { data: [], unavailable: true, attendanceDate }
+  }
+  if (error) throw error
+  return { data: toArray(data), unavailable: false, attendanceDate }
+}
+
+export const getInactiveWorkerBiometricActivityRequest = async ({ attendanceDate = currentBusinessDate() } = {}) => {
+  const { data, error } = await getSupabaseClient().rpc('get_inactive_worker_biometric_activity', {
+    p_attendance_date: attendanceDate,
+  })
+  if (error && isMissingInactiveWorkerActivityRpc(error)) {
+    const fallback = await getUnresolvedBiometricAttendanceRequest({ attendanceDate })
+    return {
+      data: toArray(fallback.data).filter((row) => row?.resolution_reason === 'inactive_worker'),
+      unavailable: Boolean(fallback.unavailable),
+      limitedToMorningWindow: !fallback.unavailable,
+      attendanceDate,
+    }
+  }
+  if (error) throw error
+  return { data: toArray(data), unavailable: false, limitedToMorningWindow: false, attendanceDate }
 }
 
 export class BiometricMappingConflictError extends Error {

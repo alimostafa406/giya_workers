@@ -7,6 +7,7 @@ create or replace function public.create_worker_and_confirm_biometric_mapping(
   p_employee_code text,
   p_team_id uuid,
   p_device_employee_no text,
+  p_device_id text,
   p_device_name text default null,
   p_device_picture_url text default null
 )
@@ -21,6 +22,7 @@ declare
   v_full_name text := btrim(coalesce(p_full_name, ''));
   v_employee_code text := btrim(coalesce(p_employee_code, ''));
   v_device_employee_no text := btrim(coalesce(p_device_employee_no, ''));
+  v_device_id text := btrim(coalesce(p_device_id, ''));
   v_worker_id uuid;
   v_mapping_id uuid;
   v_existing_mapping_id uuid;
@@ -38,8 +40,8 @@ begin
   end if;
 
   v_stage := 'input validation';
-  if v_full_name = '' or v_employee_code = '' or v_device_employee_no = '' or p_team_id is null then
-    raise exception 'Name, employee code, team, and device identity are required.' using errcode = '22023';
+  if v_full_name = '' or v_employee_code = '' or v_device_id = '' or v_device_employee_no = '' or p_team_id is null then
+    raise exception 'Name, employee code, team, device, and device identity are required.' using errcode = '22023';
   end if;
 
   v_stage := 'team validation';
@@ -56,6 +58,10 @@ begin
   select m.id, m.is_active into v_existing_mapping_id, v_existing_mapping_active
   from public.biometric_worker_mapping as m
   where m.device_employee_no = v_device_employee_no
+    and (m.device_id = v_device_id or m.device_id is null)
+    and m.is_active is true
+  order by (m.device_id = v_device_id) desc
+  limit 1
   for update;
   if v_existing_mapping_id is not null and v_existing_mapping_active then
     raise exception 'This device identity is already actively mapped.' using errcode = '23505';
@@ -82,9 +88,9 @@ begin
   if v_existing_mapping_id is null then
     v_stage := 'biometric_worker_mapping insert';
     insert into public.biometric_worker_mapping as m (
-      "worker_id", device_employee_no, device_name, device_picture_url, is_active, mapping_review_state
+      "worker_id", device_id, device_employee_no, device_name, device_picture_url, is_active, mapping_review_state
     ) values (
-      v_worker_id, v_device_employee_no, nullif(btrim(coalesce(p_device_name, '')), ''),
+      v_worker_id, v_device_id, v_device_employee_no, nullif(btrim(coalesce(p_device_name, '')), ''),
       nullif(btrim(coalesce(p_device_picture_url, '')), ''), true, 'confirmed'
     ) returning m.id into v_mapping_id;
   else
@@ -139,4 +145,11 @@ exception
 end;
 $$;
 
-grant execute on function public.create_worker_and_confirm_biometric_mapping(text, text, uuid, text, text, text) to authenticated;
+do $$
+begin
+  if to_regprocedure('public.create_worker_and_confirm_biometric_mapping(text,text,uuid,text,text,text)') is not null then
+    execute 'revoke execute on function public.create_worker_and_confirm_biometric_mapping(text, text, uuid, text, text, text) from authenticated';
+  end if;
+end;
+$$;
+grant execute on function public.create_worker_and_confirm_biometric_mapping(text, text, uuid, text, text, text, text) to authenticated;

@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
-import { getTeamsRequest } from '../api/teamsApi'
+import { getRecentUnmappedBiometricIdentitiesRequest, getUnresolvedBiometricAttendanceRequest } from '../api/biometricMappingApi'
 import { getWorkersRequest } from '../api/workersApi'
 import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatus'
+import UnresolvedBiometricAttendancePanel from '../components/Attendance/UnresolvedBiometricAttendancePanel'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
 import { attendanceRosterCategory, mergeAttendanceRoster } from '../utils/attendanceRoster'
+import { splitUnresolvedBiometricAttendance } from '../utils/unresolvedBiometricAttendance'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -28,27 +31,33 @@ const getTodayLocalDate = () => new Date().toLocaleDateString('en-CA', {
 })
 
 function Dashboard() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [teams, setTeams] = useState([])
   const [workers, setWorkers] = useState([])
   const [attendance, setAttendance] = useState([])
+  const [recentUnmappedCount, setRecentUnmappedCount] = useState(null)
+  const [unresolvedBiometric, setUnresolvedBiometric] = useState([])
+  const [unresolvedBiometricUnavailable, setUnresolvedBiometricUnavailable] = useState(false)
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       setError('')
       try {
-        const [teamsRes, workersRes, attendanceRes] = await Promise.all([
-          getTeamsRequest(),
+        const attendanceDate = getTodayLocalDate()
+        const [workersRes, attendanceRes, recentUnmappedRes, unresolvedRes] = await Promise.all([
           getWorkersRequest(),
           getAttendanceRequest(),
+          getRecentUnmappedBiometricIdentitiesRequest({ days: 7 }).catch(() => ({ data: [], unavailable: true })),
+          getUnresolvedBiometricAttendanceRequest({ attendanceDate }).catch(() => ({ data: [], unavailable: true })),
         ])
 
-        setTeams(asArray(teamsRes.data))
         setWorkers(asArray(workersRes.data))
         setAttendance(asArray(attendanceRes.data))
+        setRecentUnmappedCount(recentUnmappedRes.unavailable ? null : asArray(recentUnmappedRes.data).length)
+        setUnresolvedBiometric(asArray(unresolvedRes.data))
+        setUnresolvedBiometricUnavailable(Boolean(unresolvedRes.unavailable))
       } catch (err) {
         setError(getErrorMessage(err))
       } finally {
@@ -83,6 +92,11 @@ function Dashboard() {
 
   const notRecordedCount = todayRoster.filter((item) => attendanceRosterCategory(item) === 'not_recorded').length
 
+  const urgentBiometric = useMemo(
+    () => splitUnresolvedBiometricAttendance(unresolvedBiometric).urgent,
+    [unresolvedBiometric],
+  )
+
   const latestAttendance = useMemo(() => {
     return todayRoster
       .filter((row) => !row.is_virtual)
@@ -102,6 +116,13 @@ function Dashboard() {
     { label: t('dashboard.notRecorded'), value: notRecordedCount },
     { label: t('dashboard.totalWorkers'), value: todayRoster.length },
   ]
+
+  const reviewLabelsByLanguage = {
+    ar: { title: 'بصمات غير مربوطة خلال آخر 7 أيام', description: 'هويات سجلت بصمة فعلية حديثًا ولم يتم ربطها بعامل في النظام.', action: 'مراجعة' },
+    en: { title: 'Unmapped punches in the last 7 days', description: 'Identities generated a recent real punch but are not linked to a system worker.', action: 'Review' },
+    fr: { title: 'Pointages non liés des 7 derniers jours', description: 'Des identités ont produit un pointage réel récent sans être liées à un travailleur.', action: 'Vérifier' },
+  }
+  const reviewLabels = reviewLabelsByLanguage[language] || reviewLabelsByLanguage.en
 
   const columns = [
     {
@@ -161,6 +182,18 @@ function Dashboard() {
           </div>
         ))}
       </div>
+
+      <div className="surface-card mb-5 flex flex-wrap items-center justify-between gap-4 border-2 border-amber-200 bg-amber-50 p-4">
+        <div><p className="font-extrabold">{reviewLabels.title}</p><p className="mt-1 text-sm text-(--muted)">{reviewLabels.description}</p></div>
+        <div className="flex items-center gap-3"><span className="text-3xl font-extrabold text-amber-800">{recentUnmappedCount ?? '—'}</span><Link className="btn-secondary" to="/biometric-mapping">{reviewLabels.action}</Link></div>
+      </div>
+
+      <UnresolvedBiometricAttendancePanel
+        rows={urgentBiometric}
+        unavailable={unresolvedBiometricUnavailable}
+        loading={loading}
+        language={language}
+      />
 
       <AttendanceAgentStatus />
 

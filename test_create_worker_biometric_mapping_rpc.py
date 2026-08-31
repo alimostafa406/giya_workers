@@ -80,17 +80,20 @@ class CreateWorkerBiometricMappingRpcTests(unittest.TestCase):
     def test_existing_worker_mapping_uses_direct_guarded_table_path(self):
         source = (ROOT / 'src' / 'pages' / 'BiometricMapping.jsx').read_text(encoding='utf-8')
         api = (ROOT / 'src' / 'api' / 'biometricMappingApi.js').read_text(encoding='utf-8')
-        self.assertIn('await saveBiometricMappingRequest({ deviceUser: selectedDevice, workerId: selectedWorker.id', source)
+        self.assertIn('await completeCriticalBiometricMappingSave({', source)
+        self.assertIn("saveMapping: () => saveBiometricMappingRequest({ deviceUser, workerId, reviewState: 'confirmed' })", source)
         save_path = api.split('export const saveBiometricMappingRequest', 1)[1].split('export const setBiometricMappingReviewStateRequest', 1)[0]
         self.assertIn("from('biometric_worker_mapping')", save_path)
-        self.assertIn(".eq('worker_id', workerId)", save_path)
+        self.assertIn(".eq('device_employee_no', employeeNo)", save_path)
+        self.assertIn('String(existingDeviceRecord.worker_id) !== String(workerId)', save_path)
         self.assertNotIn('.rpc(', save_path)
 
     def test_new_worker_mapping_uses_the_atomic_rpc_path(self):
         source = (ROOT / 'src' / 'pages' / 'BiometricMapping.jsx').read_text(encoding='utf-8')
         api = (ROOT / 'src' / 'api' / 'biometricMappingApi.js').read_text(encoding='utf-8')
         self.assertIn('createWorkerAndConfirmBiometricMappingRequest', source)
-        self.assertIn('await createWorkerAndConfirmBiometricMappingRequest({ deviceUser: selectedDevice, fullName, employeeCode, teamId })', source)
+        self.assertIn('await completeCriticalBiometricWorkerCreation({', source)
+        self.assertIn('createWorker: () => createWorkerAndConfirmBiometricMappingRequest({ deviceUser, fullName, employeeCode, teamId })', source)
         self.assertIn("rpc('create_worker_and_confirm_biometric_mapping'", api)
 
 
