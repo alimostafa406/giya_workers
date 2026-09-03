@@ -2,86 +2,167 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { absenceWeekDates, buildAbsenceReport, hasValidMorningBiometricPunch } from './src/utils/absenceReport.js'
+import {
+  absenceWeekDates,
+  buildAbsenceReport,
+  createAbsenceReportRefreshCoordinator,
+  hasAttendanceCheckIn,
+} from './src/utils/absenceReport.js'
+import { isAttendancePageLocked, prepareAttendanceOutput } from './src/utils/attendanceOperationalGate.js'
 
 const workers = [
   { id: 'w1', full_name: 'NIVA', employee_code: '211', team_id: 'a', team_name: 'Cleaner', team: { id: 'a', name: 'Cleaner' }, is_active: true, staff_classification: 'normal' },
   { id: 'w2', full_name: 'JOHN', employee_code: '212', team_id: 'a', team_name: 'Cleaner', team: { id: 'a', name: 'Cleaner' }, is_active: true, staff_classification: 'normal' },
   { id: 'w3', full_name: 'DAVID', employee_code: '301', team_id: 'b', team_name: 'Administration', team: { id: 'b', name: 'Administration' }, is_active: true, staff_classification: 'normal' },
+  { id: 'inactive', full_name: 'INACTIVE', team_id: 'b', team_name: 'Administration', is_active: false, staff_classification: 'normal' },
   { id: 'special', full_name: 'SPECIAL', team_id: 'b', team_name: 'Administration', is_active: true, staff_classification: 'special_staff' },
 ]
 
-test('valid biometric morning punch is detected only inside the Hikvision 07:00-09:00 window', () => {
-  assert.equal(hasValidMorningBiometricPunch({ attendance_source: 'biometric', check_in: '07:45:00' }), true)
-  assert.equal(hasValidMorningBiometricPunch({ attendance_source: 'biometric', check_in: '09:00:00' }), true)
-  assert.equal(hasValidMorningBiometricPunch({ attendance_source: 'biometric', check_in: '17:12:00' }), false)
-  assert.equal(hasValidMorningBiometricPunch({ attendance_source: 'manual', check_in: '08:00:00' }), false)
-  assert.equal(hasValidMorningBiometricPunch({ attendance_source: 'manual', biometric_sync_metadata: { check_in_event_timestamp: '2026-08-25T07:30:00+01:00' } }), true)
+const reportFor = (attendance, extra = {}) => buildAbsenceReport({
+  workers,
+  attendance,
+  selectedDate: '2026-09-03',
+  businessDate: '2026-09-03',
+  mode: 'today',
+  ...extra,
 })
 
-test('today includes evening-only and no-event workers but excludes a worker with morning biometrics', () => {
-  const report = buildAbsenceReport({
-    workers,
-    businessDate: '2026-08-25',
-    mode: 'today',
-    attendance: [
-      { id: 'morning', worker_id: 'w1', attendance_date: '2026-08-25', status: 'half_day', attendance_source: 'biometric', check_in: '07:45:00' },
-      { id: 'evening-only', worker_id: 'w2', attendance_date: '2026-08-25', status: 'absent', attendance_source: 'biometric', check_in: null, biometric_sync_metadata: { checkout_only: true, evening_punch_time: '17:12:00' } },
-    ],
-  })
-  assert.equal(report.missingMorningWorkers, 2)
-  assert.deepEqual(report.groups.flatMap((group) => group.workers.map((worker) => worker.id)).sort(), ['w2', 'w3'])
+test('any matching attendance check-in is authoritative regardless of clock time', () => {
+  assert.equal(hasAttendanceCheckIn({ worker_id: 'w1', attendance_date: '2026-09-03', check_in: '06:26:23' }), true)
+  assert.equal(hasAttendanceCheckIn({ worker_id: 'w1', attendance_date: '2026-09-03', check_in: '09:05:13' }), true)
+  assert.equal(hasAttendanceCheckIn({ worker_id: 'w1', attendance_date: '2026-09-03', check_in: null }), false)
 })
 
-test('final attendance status is not the report condition', () => {
-  const report = buildAbsenceReport({
-    workers: workers.slice(0, 2),
-    businessDate: '2026-08-25',
-    mode: 'today',
-    attendance: [
-      { id: 'status-absent-but-observed', worker_id: 'w1', attendance_date: '2026-08-25', status: 'absent', attendance_source: 'biometric', check_in: '08:15:00' },
-      { id: 'status-present-without-biometric', worker_id: 'w2', attendance_date: '2026-08-25', status: 'present', attendance_source: 'manual', check_in: '08:00:00', check_out: '17:00:00' },
-    ],
-  })
-  assert.deepEqual(report.groups[0].workers.map((worker) => worker.id), ['w2'])
+test('check-in before 07:00 is not missing', () => {
+  const report = reportFor([{ worker_id: 'w1', attendance_date: '2026-09-03', status: 'half_day', check_in: '06:26:23' }], { workers: [workers[0]] })
+  assert.equal(report.missingMorningWorkers, 0)
 })
 
-test('week report is Monday-Saturday, records missing mornings, and keeps future days neutral', () => {
-  assert.deepEqual(absenceWeekDates('2026-08-25'), ['2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28', '2026-08-29'])
+test('check-in after 09:00 is not missing', () => {
+  const report = reportFor([{ worker_id: 'w1', attendance_date: '2026-09-03', status: 'late', check_in: '10:51:26' }], { workers: [workers[0]] })
+  assert.equal(report.missingMorningWorkers, 0)
+})
+
+test('late and half-day workers with real check-ins are not missing', () => {
+  const report = reportFor([
+    { worker_id: 'w1', attendance_date: '2026-09-03', status: 'late', check_in: '09:05:13' },
+    { worker_id: 'w2', attendance_date: '2026-09-03', status: 'half_day', check_in: '06:26:23' },
+  ], { workers: workers.slice(0, 2) })
+  assert.equal(report.missingMorningWorkers, 0)
+})
+
+test('active normal worker with no check-in is missing', () => {
+  const report = reportFor([{ worker_id: 'w1', attendance_date: '2026-09-03', status: 'absent', check_in: null }], { workers: [workers[0]] })
+  assert.equal(report.missingMorningWorkers, 1)
+  assert.equal(report.groups[0].workers[0].id, 'w1')
+})
+
+test('inactive and special-staff workers are excluded', () => {
+  const report = reportFor([], { workers: workers.slice(3) })
+  assert.equal(report.missingMorningWorkers, 0)
+})
+
+test('attendance must match both worker and selected date', () => {
+  const report = reportFor([
+    { worker_id: 'w1', attendance_date: '2026-09-02', check_in: '08:00:00' },
+    { worker_id: 'another-worker', attendance_date: '2026-09-03', check_in: '08:00:00' },
+  ], { workers: [workers[0]] })
+  assert.equal(report.missingMorningWorkers, 1)
+})
+
+test('production-like 46-worker fixture removes all eight false positives and leaves 38 missing', () => {
+  const falsePositiveWorkers = [
+    ['NANCY', '21', '09:47:25', 'late'], ['metshi', '334', '06:54:05', 'half_day'],
+    ['PAYIKE', '63', '10:51:26', 'late'], ['KOYAKAMBA', '125', '09:05:13', 'late'],
+    ['CHRISTIAN', '51', '10:20:38', 'late'], ['DJODJO2', '151', '06:26:23', 'half_day'],
+    ['JOHN', '83', '09:15:55', 'late'], ['niva', '211', '09:11:13', 'late'],
+  ].map(([full_name, employee_code], index) => ({ id: `checked-${index}`, full_name, employee_code, team_id: 'a', team_name: 'Team', is_active: true, staff_classification: 'normal' }))
+  const genuinelyMissing = Array.from({ length: 38 }, (_, index) => ({ id: `missing-${index}`, full_name: `Missing ${index}`, team_id: 'a', team_name: 'Team', is_active: true, staff_classification: 'normal' }))
+  const attendance = falsePositiveWorkers.map((worker, index) => ({
+    worker_id: worker.id,
+    attendance_date: '2026-09-03',
+    check_in: [['09:47:25'], ['06:54:05'], ['10:51:26'], ['09:05:13'], ['10:20:38'], ['06:26:23'], ['09:15:55'], ['09:11:13']][index][0],
+  }))
+  const report = reportFor(attendance, { workers: [...falsePositiveWorkers, ...genuinelyMissing] })
+  const shownIds = new Set(report.groups.flatMap((group) => group.workers.map((worker) => worker.id)))
+  assert.equal(report.missingMorningWorkers, 38)
+  assert.equal(falsePositiveWorkers.some((worker) => shownIds.has(worker.id)), false)
+  assert.equal(genuinelyMissing.every((worker) => shownIds.has(worker.id)), true)
+})
+
+test('week report remains Monday-Saturday and future dates remain neutral', () => {
+  assert.deepEqual(absenceWeekDates('2026-09-03'), ['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05'])
   const report = buildAbsenceReport({
     workers: [workers[0]],
-    businessDate: '2026-08-25',
+    attendance: [{ worker_id: 'w1', attendance_date: '2026-08-31', check_in: '06:30:00' }],
+    selectedDate: '2026-09-03',
+    businessDate: '2026-09-03',
     mode: 'week',
-    attendance: [
-      { id: 'mon', worker_id: 'w1', attendance_date: '2026-08-24', attendance_source: 'biometric', check_in: '07:40:00', status: 'present' },
-      { id: 'tue-evening', worker_id: 'w1', attendance_date: '2026-08-25', attendance_source: 'biometric', check_in: null, status: 'absent', biometric_sync_metadata: { checkout_only: true, evening_punch_time: '17:20:00' } },
-    ],
   })
-  const worker = report.groups[0].workers[0]
-  assert.deepEqual(worker.states.map((day) => day.state), ['morning_recorded', 'morning_missing', 'future', 'future', 'future', 'future'])
-  assert.equal(worker.missingMorningDays, 1)
-  assert.equal(report.missingMorningDays, 1)
+  assert.deepEqual(report.groups[0].workers[0].states.map((day) => day.state), ['morning_recorded', 'morning_missing', 'morning_missing', 'morning_missing', 'future', 'future'])
 })
 
-test('worker identity is deduplicated and optional team filter preserves grouping', () => {
-  const report = buildAbsenceReport({ workers: [...workers, { ...workers[0] }], businessDate: '2026-08-25', mode: 'today', teamId: 'a', attendance: [] })
+test('team filtering and worker deduplication are preserved', () => {
+  const report = reportFor([], { workers: [...workers, { ...workers[0] }], teamId: 'a' })
   assert.equal(report.groups.length, 1)
-  assert.equal(report.groups[0].id, 'a')
   assert.deepEqual(report.groups[0].workers.map((worker) => worker.id).sort(), ['w1', 'w2'])
 })
 
-test('report is read-only, routed from Attendance, and labels morning punch state', () => {
+test('today before 09:30 is locked and historical dates are accessible', () => {
+  const now = new Date('2026-09-03T08:29:59.000Z')
+  assert.equal(isAttendancePageLocked({ selectedDate: '2026-09-03', now }), true)
+  assert.equal(isAttendancePageLocked({ selectedDate: '2026-09-02', now }), false)
+})
+
+test('refresh coordinator coalesces overlapping requests', async () => {
+  const coordinate = createAbsenceReportRefreshCoordinator()
+  let calls = 0
+  let release
+  const pending = new Promise((resolve) => { release = resolve })
+  const load = async () => { calls += 1; await pending; return { fresh: true } }
+  const first = coordinate('today:2026-09-03', load)
+  const second = coordinate('today:2026-09-03', load)
+  await Promise.resolve()
+  assert.equal(calls, 1)
+  release()
+  assert.deepEqual(await first, { fresh: true })
+  assert.deepEqual(await second, { fresh: true })
+})
+
+test('print waits for a fresh snapshot and failed refresh cancels printing', async () => {
+  const order = []
+  const success = await prepareAttendanceOutput({
+    locked: false,
+    refresh: async () => { order.push('refresh'); return { key: 'fresh' } },
+    generate: async () => { order.push('print') },
+  })
+  assert.equal(success.ok, true)
+  assert.deepEqual(order, ['refresh', 'print'])
+  let printed = false
+  const failure = await prepareAttendanceOutput({
+    locked: false,
+    refresh: async () => { throw new Error('offline') },
+    generate: async () => { printed = true },
+  })
+  assert.equal(failure.reason, 'refresh_failed')
+  assert.equal(printed, false)
+})
+
+test('page uses coordinated current attendance freshness and no biometric event authority', () => {
   const page = readFileSync('./src/pages/AbsenceReport.jsx', 'utf8')
   const attendancePage = readFileSync('./src/pages/Attendance.jsx', 'utf8')
   const router = readFileSync('./src/routes/AppRouter.jsx', 'utf8')
-  const api = readFileSync('./src/api/attendanceApi.js', 'utf8')
   assert.match(attendancePage, /to="\/attendance\/absence-report"/)
   assert.match(router, /path="\/attendance\/absence-report" element=\{<AbsenceReport \/>\}/)
-  assert.match(page, /morning_recorded/)
-  assert.match(page, /morning_missing/)
+  assert.match(page, /Promise\.all\(\[[\s\S]*getWorkersRequest\(\)[\s\S]*getTeamsRequest\(\)[\s\S]*getAttendanceRequest\(attendanceParams\)/)
+  assert.match(page, /setInterval\(\(\) => setNow\(new Date\(\)\), 1_000\)/)
+  assert.match(page, /ATTENDANCE_REFRESH_INTERVAL_MS/)
+  assert.match(page, /window\.addEventListener\('focus', refreshAfterFocus\)/)
+  assert.match(page, /document\.addEventListener\('visibilitychange', refreshAfterFocus\)/)
+  assert.match(page, /prepareAttendanceOutput/)
+  assert.match(page, /refresh: \(\) => refreshSnapshot\(requested\)/)
+  assert.doesNotMatch(page, /getCompanyMappedBiometricEventsRequest|biometricEvents|07:00|09:00/)
   assert.doesNotMatch(page, /saveAttendance|updateAttendance|insert|upsert|delete/)
-  assert.match(api, /params\.date_from[\s\S]*\.gte\('attendance_date', params\.date_from\)/)
-  assert.match(api, /params\.date_to[\s\S]*\.lte\('attendance_date', params\.date_to\)/)
 })
 
 test('print CSS still flows teams and supports portrait today and landscape week', () => {
