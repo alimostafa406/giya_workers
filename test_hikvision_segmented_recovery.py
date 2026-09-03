@@ -135,6 +135,79 @@ class SegmentedRecoveryTests(unittest.TestCase):
         self.assertEqual(len(events), 7)
         self.assertIsNone(attendance_apply_blocked_reason(reads))
 
+    def test_timed_out_secondary_does_not_block_primary_device_read(self):
+        secondary = SimpleNamespace(ip='192.0.2.137', username='u', password='p', device_id='office-secondary')
+        primary = SimpleNamespace(ip='192.0.2.136', username='u', password='p', device_id='office-main')
+        calls = []
+
+        def read_device(_target_date, _diagnostics, device):
+            calls.append(device.device_id)
+            if device.device_id == 'office-secondary':
+                return [], {
+                    'device_id': device.device_id, 'state': 'failed', 'event_count': 0,
+                    'error': 'ReadTimeout: device did not respond', 'timed_out': True,
+                }
+            return [event('primary-event')], {
+                'device_id': device.device_id, 'state': 'complete', 'event_count': 1,
+                'error': None, 'timed_out': False,
+            }
+
+        with patch('hikvision_attendance_sync.configured_devices', return_value=[secondary, primary]), patch(
+            'hikvision_attendance_sync.hikvision_events_for_device_with_recovery', side_effect=read_device,
+        ):
+            events, reads = hikvision_events_with_devices(TARGET_DATE, RequestDiagnostics(False))
+
+        self.assertEqual(calls, ['office-secondary', 'office-main'])
+        self.assertEqual([item['serialNo'] for item in events], ['primary-event'])
+        self.assertEqual(reads['office-secondary']['state'], 'failed')
+        self.assertEqual(reads['office-main']['state'], 'complete')
+
+    def test_timed_out_primary_does_not_block_secondary_device_read(self):
+        primary = SimpleNamespace(ip='192.0.2.136', username='u', password='p', device_id='office-main')
+        secondary = SimpleNamespace(ip='192.0.2.137', username='u', password='p', device_id='office-secondary')
+        calls = []
+
+        def read_device(_target_date, _diagnostics, device):
+            calls.append(device.device_id)
+            if device.device_id == 'office-main':
+                return [], {
+                    'device_id': device.device_id, 'state': 'failed', 'event_count': 0,
+                    'error': 'ReadTimeout: device did not respond', 'timed_out': True,
+                }
+            return [event('secondary-event')], {
+                'device_id': device.device_id, 'state': 'complete', 'event_count': 1,
+                'error': None, 'timed_out': False,
+            }
+
+        with patch('hikvision_attendance_sync.configured_devices', return_value=[primary, secondary]), patch(
+            'hikvision_attendance_sync.hikvision_events_for_device_with_recovery', side_effect=read_device,
+        ):
+            events, reads = hikvision_events_with_devices(TARGET_DATE, RequestDiagnostics(False))
+
+        self.assertEqual(calls, ['office-main', 'office-secondary'])
+        self.assertEqual([item['serialNo'] for item in events], ['secondary-event'])
+        self.assertEqual(reads['office-main']['state'], 'failed')
+        self.assertEqual(reads['office-secondary']['state'], 'complete')
+
+    def test_socket_timeout_does_not_expand_into_seven_segment_requests(self):
+        class Client:
+            def __init__(self, *_): pass
+            def url(self, path): return f'http://device{path}'
+            @property
+            def device_ip(self): return '192.0.2.137'
+            def request(self, _method, _url, **_kwargs):
+                raise requests.ReadTimeout('secondary stopped responding')
+            def refresh_digest_session(self): pass
+            def close(self): pass
+
+        with patch('hikvision_attendance_sync.HikvisionReadClient', Client):
+            events, status = hikvision_events_for_device_with_recovery(TARGET_DATE, RequestDiagnostics(False), DEVICE)
+
+        self.assertEqual(events, [])
+        self.assertEqual(status['state'], 'failed')
+        self.assertTrue(status['timed_out'])
+        self.assertNotIn('recovery', status)
+
 
 if __name__ == '__main__':
     unittest.main()

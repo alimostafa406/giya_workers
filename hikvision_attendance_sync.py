@@ -19,19 +19,20 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
-from hikvision_http import HikvisionReadClient
+from hikvision_http import HIKVISION_REQUEST_TIMEOUT, HikvisionReadClient
 from hikvision_device_lock import HikvisionDeviceOperationLock
 from hikvision_devices import configured_devices
 from hikvision_local_config import load_local_hikvision_config, require_local_settings
+from attendance_business_rules import (
+    END_OF_DAY,
+    OFFICIAL_START,
+    VALID_ATTENDANCE_MAJOR,
+    VALID_ATTENDANCE_MINOR,
+    workday_schedule,
+)
 
 
-MORNING_START = time(7, 0)
-MORNING_END = time(9, 0)
-WEEKDAY_CHECKOUT_START = time(16, 30)  # permits a genuine 16:58 exit for a 17:00 finish
-SATURDAY_CHECKOUT_START = time(14, 0)  # permits a genuine 14:xx exit for a 14:30 finish
-WEEKDAY_FINALIZATION = time(17, 15)
-SATURDAY_FINALIZATION = time(14, 45)
-END_OF_DAY = time(23, 59, 59)
+ON_TIME_CHECKIN_END = OFFICIAL_START
 HIKVISION_EVENT_BATCH_SIZE = 30
 HIKVISION_SUCCESSFUL_PAGE_DELAY_SECONDS = 0.2
 HIKVISION_EVENT_WINDOWS = (
@@ -278,14 +279,14 @@ def hikvision_events_for_device(
             target = f'event search (batch position {position})'
             diagnostics.start('HIKVISION', target, 'POST', host)
             try:
-                response = hikvision.request('POST', url, json=payload, timeout=30)
+                response = hikvision.request('POST', url, json=payload, timeout=HIKVISION_REQUEST_TIMEOUT)
                 # A first-request 401 remains an authentication failure. A 401
                 # after earlier 200 batches can be a stale device Digest nonce;
                 # refresh once and retry this exact page without restarting.
                 if response.status_code == 401 and successful_batches > 0:
                     print(f'[HIKVISION] stale Digest suspected at batch position {position}; refreshing once', file=sys.stderr)
                     hikvision.refresh_digest_session()
-                    response = hikvision.request('POST', url, json=payload, timeout=30)
+                    response = hikvision.request('POST', url, json=payload, timeout=HIKVISION_REQUEST_TIMEOUT)
                 response.raise_for_status()
             except requests.RequestException as error:
                 diagnostics.failure('HIKVISION', target, 'POST', host, error)
@@ -328,12 +329,21 @@ def hikvision_events_for_device(
         state = 'failed'
         error_message = f'{type(read_error).__name__}: {read_error}'
 
+    timed_out = isinstance(read_error, requests.Timeout)
+    if timed_out:
+        print(
+            f'[HIKVISION] device={device.device_id} ip={device.ip} attendance read timed out; '
+            f'state={state} fetched_events={len(filtered_events)} error={error_message}',
+            file=sys.stderr,
+        )
+
     status = {
         'device_id': device.device_id,
         'state': state,
         'event_count': len(filtered_events),
         'error': error_message,
         'failed_position': failed_position,
+        'timed_out': timed_out,
         'query_start': start_time.strftime('%H:%M:%S'),
         'query_end': end_time.strftime('%H:%M:%S'),
     }
@@ -405,6 +415,11 @@ def hikvision_events_for_device_with_recovery(target_date: date_type, diagnostic
         events, status = hikvision_events_for_device(target_date, diagnostics, device, return_status=True)
         if status['state'] == 'complete':
             return events, status
+        # A socket timeout is already retried by HikvisionReadClient. Repeating
+        # seven segmented reads against the same unresponsive device can delay
+        # the agent for many minutes without adding trustworthy observations.
+        if status.get('timed_out'):
+            return events, status
         failed_position = status.get('failed_position')
         if failed_position is not None:
             print(
@@ -442,6 +457,11 @@ def hikvision_events_with_devices(target_date: date_type, diagnostics: RequestDi
             events.extend(device_events)
             device_reads[device.device_id] = read_status
         except (RuntimeError, requests.RequestException, ValueError) as error:
+            print(
+                f'[HIKVISION] device={device.device_id} ip={device.ip} attendance read failed: '
+                f'{type(error).__name__}: {error}',
+                file=sys.stderr,
+            )
             device_reads[device.device_id] = {
                 'device_id': device.device_id,
                 'state': 'failed',
@@ -526,6 +546,35 @@ class SupabaseReadClient:
         self.diagnostics.success('SUPABASE', response.status_code)
         data = response.json()
         return data[0] if isinstance(data, list) and data else data
+
+    def update_attendance_if_unchanged(self, existing: dict, payload: dict) -> dict | None:
+        """Atomically update only the exact unprotected biometric row reconciled."""
+        target = 'updating unchanged biometric attendance'
+        self.diagnostics.start('SUPABASE', target, 'PATCH', self.host)
+        params = {
+            'id': f"eq.{existing['id']}",
+            'attendance_source': 'eq.biometric',
+            'manual_override': 'eq.false',
+            'check_in': f"eq.{existing['check_in']}",
+            'check_out': 'is.null' if existing.get('check_out') is None else f"eq.{existing['check_out']}",
+        }
+        if existing.get('updated_at'):
+            params['updated_at'] = f"eq.{existing['updated_at']}"
+        try:
+            response = requests.patch(
+                f'{self.base_url}/rest/v1/attendance',
+                headers={**self.headers, 'Prefer': 'return=representation'},
+                params=params,
+                json=payload,
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            self.diagnostics.failure('SUPABASE', target, 'PATCH', self.host, error)
+            raise
+        self.diagnostics.success('SUPABASE', response.status_code)
+        data = response.json()
+        return data[0] if isinstance(data, list) and data else None
 
     def upsert_agent_status(self, payload: dict) -> dict:
         """Write a non-sensitive local-agent heartbeat; never used for attendance."""
@@ -648,7 +697,7 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
     if for_apply:
         # Apply requires attendance_biometric_workflow_upgrade.sql to have been
         # approved and executed by the administrator first.
-        attendance_select += ',attendance_source,manual_override,biometric_sync_key,biometric_sync_metadata,attendance_day_fraction'
+        attendance_select += ',attendance_source,manual_override,biometric_sync_key,biometric_sync_metadata,attendance_day_fraction,updated_at'
     existing_attendance = client.read(
         'attendance',
         attendance_select,
@@ -755,43 +804,46 @@ def biometric_mapping_is_ignored(resolution: dict, mapping: dict) -> bool:
     return (device_id, employee_no) in ignored or (None, employee_no) in ignored or employee_no in ignored
 
 
-def workday_schedule(target_date: date_type) -> dict | None:
-    """Return acceptance and finalization independently; ISO weekday Monday is 0."""
-    weekday = target_date.weekday()  # Monday=0, Saturday=5, Sunday=6
-    if weekday <= 4:
-        return {
-            'label': 'monday_friday',
-            'checkout_start': WEEKDAY_CHECKOUT_START,
-            'checkout_end': END_OF_DAY,
-            'finalization_time': WEEKDAY_FINALIZATION,
-        }
-    if weekday == 5:
-        return {
-            'label': 'saturday',
-            'checkout_start': SATURDAY_CHECKOUT_START,
-            'checkout_end': END_OF_DAY,
-            'finalization_time': SATURDAY_FINALIZATION,
-        }
-    return None
-
-
 def day_has_finalized(target_date: date_type, finalization_time: time | None) -> bool:
     """Absence is final only once the target date is a completed past day."""
     now = local_now()
     return target_date < now.date()
 
 
+def existing_biometric_check_in(existing: dict | None, target_date: date_type) -> datetime | None:
+    """Return only a same-day, unprotected biometric arrival already on file."""
+    if (
+        not existing
+        or is_manual_protected(existing)
+        or existing.get('attendance_source') != 'biometric'
+        or str(existing.get('attendance_date') or '') != target_date.isoformat()
+        or not existing.get('check_in')
+    ):
+        return None
+    try:
+        check_in_time = time.fromisoformat(str(existing['check_in'])).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        return None
+    return datetime.combine(target_date, check_in_time, tzinfo=MONITORING_TIME_ZONE)
+
+
 def proposed_status(target_date: date_type, check_in: datetime | None, check_out: datetime | None) -> tuple[str, float | None]:
     schedule = workday_schedule(target_date)
     if schedule is None:
         return 'non_working_day', None
-    if check_in and check_out:
-        return 'present', 1.0
     if check_in:
-        # Management rule: a valid morning arrival is visible as half day
-        # immediately, then is upgraded when a valid checkout is later found.
+        arrival_time = check_in.timetz().replace(tzinfo=None)
+        if arrival_time > ON_TIME_CHECKIN_END:
+            # A genuine late arrival proves attendance. Preserve the existing
+            # incomplete-day fraction until a real checkout is observed, but
+            # never allow finalization to turn this worker into absent.
+            return 'late', 1.0 if check_out else 0.5
+        if check_out:
+            return 'present', 1.0
+        # An on-time arrival is visible as half day immediately, then upgraded
+        # when a valid checkout is later found.
         return 'half_day', 0.5
-    # Missing morning attendance, including an evening-only event, remains
+    # Missing attendance remains
     # temporary for the entire current business date. The raw evening event is
     # preserved as metadata by the caller, never as check_out.
     if not day_has_finalized(target_date, schedule['finalization_time']):
@@ -803,6 +855,13 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
     counters = Counter()
     events_by_worker: dict[str, list[dict]] = defaultdict(list)
     for event in events:
+        # Direct readers already filter events, but persisted-event replay and
+        # callers receive the same defense-in-depth protection. Legacy test or
+        # integration fixtures without event codes remain compatible.
+        if event.get('major') is not None or event.get('minor') is not None:
+            if event.get('major') != VALID_ATTENDANCE_MAJOR or event.get('minor') != VALID_ATTENDANCE_MINOR:
+                counters['ignored_non_attendance_event'] += 1
+                continue
         employee_no = str(event.get('employeeNoString') or '').strip()
         if biometric_identity_is_ignored(resolution, event):
             counters['ignored_old_user'] += 1
@@ -830,44 +889,85 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
     plans = []
     schedule = workday_schedule(target_date)
     for worker_id, worker in eligible_workers.items():
+        # Existing attendance is constrained to target_date by load_resolution_data.
+        # Recheck the date here before using its real biometric arrival as a
+        # continuity anchor across device pagination/timezone discontinuities.
+        existing = resolution['existing_attendance'].get(worker_id)
+        stored_check_in = existing_biometric_check_in(existing, target_date)
         worker_events = events_by_worker.get(worker_id, [])
-        parsed = sorted(((parse_event_time(event['time']), event) for event in worker_events), key=lambda item: item[0])
-        morning = [item for item in parsed if MORNING_START <= item[0].timetz().replace(tzinfo=None) <= MORNING_END]
+        # Attendance is based on the terminal's displayed local wall clock. A
+        # terminal offset correction must not reorder events or rewrite their
+        # exact raw timestamp metadata.
+        parsed = sorted(
+            ((parse_monitoring_event_time(event['time']), event) for event in worker_events),
+            key=lambda item: item[0],
+        )
+        arrivals = [] if schedule is None else [
+            item for item in parsed
+            if schedule['workday_boundary'] <= item[0].timetz().replace(tzinfo=None)
+        ]
+        check_in_event = arrivals[0] if arrivals and schedule is not None else None
+        check_in = check_in_event[0] if check_in_event else None
+        # Once a real biometric arrival has been stored, historical/current
+        # reconciliation may attach later positive evidence but must never
+        # reinterpret or replace that established arrival. This is especially
+        # important across terminal timezone corrections and discontinuous reads.
+        check_in_from_existing = bool(stored_check_in)
+        if check_in_from_existing:
+            check_in = stored_check_in
+            check_in_event = None
         checkout = [] if schedule is None else [
             item for item in parsed
             if schedule['checkout_start'] <= item[0].timetz().replace(tzinfo=None) <= schedule['checkout_end']
+            and (check_in is None or item[0] > check_in)
         ]
-        check_in = morning[0][0] if morning else None
         checkout_event = checkout[-1] if checkout else None
         checkout_time = checkout_event[0] if checkout_event else None
         status, fraction = proposed_status(target_date, check_in, checkout_time)
         checkout_only = bool(not check_in and checkout_time)
         # Existing attendance is keyed by worker and the selected attendance date.
         # Only explicitly biometric, non-overridden records can be revised later.
-        existing = resolution['existing_attendance'].get(worker_id)
         existing_protection = 'manual_protected' if is_manual_protected(existing) else None
-        metadata = None if not checkout_only else {
+        existing_metadata = normalized_metadata(existing.get('biometric_sync_metadata')) if existing else None
+        metadata = dict(existing_metadata) if isinstance(existing_metadata, dict) else None
+        if checkout_only:
+            metadata = metadata or {}
+            metadata.update({
             'checkout_only': True,
             'evening_punch_time': attendance_time_value(checkout_time),
             'evening_event_serial': checkout_event[1].get('serialNo') or checkout_event[1].get('eventSerialNo'),
             'evening_event_timestamp': checkout_event[1].get('time'),
             'evening_device_id': checkout_event[1].get('_device_id'),
-        }
+            })
         devices_seen = sorted({event.get('_device_id') for event in worker_events if event.get('_device_id')})
-        if check_in:
+        if check_in and check_in_event:
             metadata = metadata or {}
+            arrival_time = check_in.timetz().replace(tzinfo=None)
+            on_time_end = datetime.combine(check_in.date(), ON_TIME_CHECKIN_END, tzinfo=check_in.tzinfo)
             metadata.update({
-                'check_in_device_id': morning[0][1].get('_device_id'),
-                'check_in_event_serial': morning[0][1].get('serialNo') or morning[0][1].get('eventSerialNo'),
-                'check_in_event_timestamp': morning[0][1].get('time'),
+                'check_in_device_id': check_in_event[1].get('_device_id'),
+                'check_in_event_serial': check_in_event[1].get('serialNo') or check_in_event[1].get('eventSerialNo'),
+                'check_in_event_timestamp': check_in_event[1].get('time'),
+                'check_in_employee_no': check_in_event[1].get('employeeNoString'),
+                'check_in_device_name': check_in_event[1].get('name'),
+                'late_arrival': arrival_time > ON_TIME_CHECKIN_END,
+                'lateness_minutes': max(0, int((check_in - on_time_end).total_seconds() // 60)),
+                'lateness_seconds': max(0, int((check_in - on_time_end).total_seconds())),
                 'devices_seen': devices_seen,
             })
+        elif check_in_from_existing:
+            # Preserve the original check-in audit fields exactly. Only extend
+            # devices_seen with devices contributing newly observed evidence.
+            metadata = metadata or {}
+            metadata['devices_seen'] = sorted(set(metadata.get('devices_seen') or []).union(devices_seen))
         if checkout_event and check_in:
             metadata = metadata or {}
             metadata.update({
                 'check_out_device_id': checkout_event[1].get('_device_id'),
                 'check_out_event_serial': checkout_event[1].get('serialNo') or checkout_event[1].get('eventSerialNo'),
                 'check_out_event_timestamp': checkout_event[1].get('time'),
+                'check_out_employee_no': checkout_event[1].get('employeeNoString'),
+                'check_out_device_name': checkout_event[1].get('name'),
                 'devices_seen': devices_seen,
             })
         plans.append({
@@ -885,6 +985,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             'evening_punch_time': metadata.get('evening_punch_time') if metadata else None,
             'biometric_sync_metadata': metadata,
             'raw_events_used': len(worker_events),
+            'check_in_from_existing': check_in_from_existing,
             'sync_key': f'hikvision:{worker_id}:{target_date.isoformat()}',
             'existing_attendance_protection': existing_protection,
             # A future write stage may upgrade its own half_day row to present when
@@ -906,7 +1007,7 @@ def is_manual_protected(row: dict | None) -> bool:
 
 
 def is_writeable_plan(plan: dict) -> bool:
-    return plan.get('proposed_status') in {'half_day', 'present', 'absent'}
+    return plan.get('proposed_status') in {'half_day', 'present', 'late', 'absent'}
 
 
 def earlier_time(first: str | None, second: str | None) -> str | None:
@@ -936,24 +1037,47 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
 
     if existing:
         existing_status = existing.get('status')
-        if existing_status == 'present' and existing.get('check_in') and existing.get('check_out'):
-            status = 'present'
-            check_in = earlier_time(existing.get('check_in'), check_in)
+        if existing_status in {'present', 'late'} and existing.get('check_in') and existing.get('check_out'):
+            # A partial/replayed read cannot replace the established biometric
+            # arrival or downgrade a completed day.
+            status = 'present' if existing_status == 'present' or status == 'present' else 'late'
+            check_in = existing.get('check_in')
             check_out = later_time(existing.get('check_out'), check_out)
-        elif status == 'present':
-            check_in = earlier_time(existing.get('check_in'), check_in)
+        elif status in {'present', 'late'}:
+            check_in = existing.get('check_in') or check_in
             check_out = later_time(existing.get('check_out'), check_out)
         elif status == 'half_day':
-            check_in = earlier_time(existing.get('check_in'), check_in)
+            check_in = existing.get('check_in') or check_in
             check_out = None
-        elif status == 'absent' and existing_status in {'half_day', 'present'}:
+        elif status == 'absent' and existing_status in {'half_day', 'present', 'late'}:
             # A partial device response must never downgrade a biometric record
-            # that already contains a valid morning arrival or checkout.
+            # that already contains a valid arrival or checkout.
             return None
 
     metadata = plan.get('biometric_sync_metadata')
     if metadata is None and existing:
         metadata = normalized_metadata(existing.get('biometric_sync_metadata'))
+
+    if status in {'present', 'late', 'half_day'} and check_in:
+        # Recompute from the final merged earliest arrival. A partial device
+        # response containing only a later punch must not downgrade an already
+        # known on-time biometric arrival to late.
+        status = (
+            'late'
+            if str(check_in)[:8] > ON_TIME_CHECKIN_END.strftime('%H:%M:%S')
+            else ('present' if check_out else 'half_day')
+        )
+
+    if status == 'present':
+        day_fraction = 1.0
+    elif status == 'late':
+        day_fraction = 1.0 if check_out else 0.5
+    elif status == 'half_day':
+        day_fraction = 0.5
+    elif status == 'absent':
+        day_fraction = 0.0
+    else:
+        day_fraction = plan['day_fraction']
 
     return {
         'status': status,
@@ -963,7 +1087,7 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
         'manual_override': False,
         'biometric_sync_key': plan['sync_key'],
         'biometric_sync_metadata': metadata,
-        'attendance_day_fraction': plan['day_fraction'],
+        'attendance_day_fraction': day_fraction,
     }
 
 
@@ -1017,7 +1141,7 @@ def write_summary(plans: list[dict], existing_attendance: dict, counters: Counte
     # These are derived from the final plans, rather than re-evaluating any
     # attendance rule for reporting. A checkout-only plan remains absent and
     # is counted separately as additional diagnostic information.
-    for status in ('present', 'half_day', 'absent', 'pending'):
+    for status in ('present', 'late', 'half_day', 'absent', 'pending'):
         summary[status] = sum(1 for plan in plans if plan.get('proposed_status') == status)
     summary['checkout_only'] = sum(1 for plan in plans if plan.get('checkout_only') is True)
     summary['confirmed_workers_considered'] = len(plans)
@@ -1042,8 +1166,12 @@ def apply_biometric_attendance(client: SupabaseReadClient, plans: list[dict], ex
             continue
         try:
             if existing:
-                client.update_attendance(str(existing['id']), payload)
-                results['updated'] += 1
+                if hasattr(client, 'update_attendance_if_unchanged'):
+                    updated = client.update_attendance_if_unchanged(existing, payload)
+                    results['updated' if updated else 'skipped_concurrent_change'] += 1
+                else:
+                    client.update_attendance(str(existing['id']), payload)
+                    results['updated'] += 1
             else:
                 client.insert_attendance({
                     'worker_id': plan['worker_id'],

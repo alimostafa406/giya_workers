@@ -67,6 +67,30 @@ test('current biometric absence is neutral while a manual absence stays authorit
   assert.equal(calculate({ status: 'absent', attendance_source: 'manual', manual_override: true }).absentDays, 1)
 })
 
+test('late attendance preserves the workday wage and incomplete-day safeguards', () => {
+  const calculate = (row) => calculatePayrollLine({
+    worker: { id: 'worker-1' },
+    term: { daily_rate: 20000, daily_transport_allowance: 1000 },
+    attendanceByDate: new Map([['worker-1|2026-09-02', row]]),
+    dates: ['2026-09-02'],
+    rules: { half_day_multiplier: 0.5, transport_eligibility: 'present_and_half_day' },
+    holidayDates: new Set(),
+    paymentType: 'weekly',
+    businessDate: '2026-09-02',
+  })
+
+  const completed = calculate({ status: 'late', check_in: '09:05:00', check_out: '17:05:00', attendance_day_fraction: 1 })
+  assert.equal(completed.presentDays, 1)
+  assert.equal(completed.absentDays, 0)
+  assert.equal(completed.attendanceWage, 20000)
+  assert.equal(completed.transportAmount, 1000)
+
+  const incomplete = calculate({ status: 'late', check_in: '10:30:00', check_out: null, attendance_day_fraction: 0.5 })
+  assert.equal(incomplete.halfDays, 1)
+  assert.equal(incomplete.absentDays, 0)
+  assert.equal(incomplete.attendanceWage, 10000)
+})
+
 test('overtime grace ends after 17:30 but eligible time is calculated from 17:00', () => {
   assert.equal(calculateCandidateOvertimeHours('17:00:00', '17:20:00', {}), 0)
   assert.equal(calculateCandidateOvertimeHours('17:00:00', '17:30:00', {}), 0)

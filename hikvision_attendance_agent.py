@@ -50,8 +50,33 @@ def previous_workday(today: date_type) -> date_type:
 
 
 def completion_plans(plans: list[dict], existing_attendance: dict) -> list[dict]:
-    """Recovery may only improve a row that already exists for that workday."""
-    return [plan for plan in plans if existing_attendance.get(plan['worker_id'])]
+    """Recover only an established biometric arrival missing its real checkout."""
+    eligible = []
+    for plan in plans:
+        existing = existing_attendance.get(plan['worker_id'])
+        if (
+            existing
+            and existing.get('attendance_source') == 'biometric'
+            and existing.get('manual_override') is False
+            and existing.get('check_in')
+            and existing.get('check_out') is None
+            and plan.get('check_out')
+        ):
+            eligible.append(plan)
+    return eligible
+
+
+def positive_evidence_plans(plans: list[dict]) -> list[dict]:
+    """Under incomplete coverage, allow positive evidence but never absence."""
+    return [plan for plan in plans if plan.get('proposed_status') != 'absent']
+
+
+def complete_device_persisted_rows(persisted_rows: list[dict], device_reads: dict) -> list[dict]:
+    """Limit automatic reactivation to observations from fully read devices."""
+    return [
+        row for row in persisted_rows
+        if device_reads.get(str(row.get('device_id') or ''), {}).get('state') == 'complete'
+    ]
 
 
 def positive_int_env(name: str, default: int) -> int:
@@ -115,21 +140,22 @@ class AttendanceAgent:
     def probe_hikvision(self) -> tuple[bool, str | None]:
         return check_hikvision_reachable()
 
-    def heartbeat(self) -> None:
-        reachable, probe_error = self.probe_hikvision()
-        if reachable:
-            self.hikvision_probe_failures = 0
-            self.hikvision_reachable = True
-        else:
-            self.hikvision_probe_failures += 1
-            # A transient disconnected socket must not immediately turn a known
-            # healthy device into a permanent-looking dashboard failure.
-            if self.hikvision_probe_failures >= 2:
-                self.hikvision_reachable = False
-        if probe_error:
-            self.last_error = probe_error
-        elif self.last_error and self.last_error.startswith('Hikvision '):
-            self.last_error = None
+    def heartbeat(self, *, probe_devices: bool = True) -> None:
+        if probe_devices:
+            reachable, probe_error = self.probe_hikvision()
+            if reachable:
+                self.hikvision_probe_failures = 0
+                self.hikvision_reachable = True
+            else:
+                self.hikvision_probe_failures += 1
+                # A transient disconnected socket must not immediately turn a known
+                # healthy device into a permanent-looking dashboard failure.
+                if self.hikvision_probe_failures >= 2:
+                    self.hikvision_reachable = False
+            if probe_error:
+                self.last_error = probe_error
+            elif self.last_error and self.last_error.startswith('Hikvision '):
+                self.last_error = None
         payload = self.status_payload(True)
         # A restarted Agent has no in-memory processing timestamp yet.  Do not
         # erase the last known successful processing time from Supabase merely
@@ -216,8 +242,9 @@ class AttendanceAgent:
             persisted_rows = self.persist_observed_biometric_events(events, resolution, target_date)
             apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
             reactivation_results = None
-            if not self.dry_run and not apply_blocked_reason and persisted_rows:
-                reactivation_results = auto_reactivate_inactive_workers(self.client, persisted_rows, resolution)
+            reactivation_rows = complete_device_persisted_rows(persisted_rows, device_reads)
+            if not self.dry_run and reactivation_rows:
+                reactivation_results = auto_reactivate_inactive_workers(self.client, reactivation_rows, resolution)
                 if reactivation_results.get('reload_required'):
                     resolution = load_resolution_data(self.client, target_date, for_apply=True)
                 self.logger.info('Biometric auto-reactivation: %s', dict(reactivation_results))
@@ -225,11 +252,14 @@ class AttendanceAgent:
             summary = write_summary(plans, resolution['existing_attendance'], counters)
             if self.dry_run:
                 self.logger.info('Attendance dry run: events=%s device_reads=%s %s', len(events), device_reads, dict(summary))
-            elif apply_blocked_reason:
-                self.logger.error('%s No attendance writes were attempted.', apply_blocked_reason)
-                return False, apply_blocked_reason
             else:
-                results = apply_biometric_attendance(self.client, plans, resolution['existing_attendance'])
+                apply_plans = positive_evidence_plans(plans) if apply_blocked_reason else plans
+                if apply_blocked_reason:
+                    self.logger.warning(
+                        '%s Negative attendance decisions are blocked; processing positive biometric evidence only.',
+                        apply_blocked_reason,
+                    )
+                results = apply_biometric_attendance(self.client, apply_plans, resolution['existing_attendance'])
                 result_counts = dict(results)
                 result_counts['unmapped'] = counters.get('unmapped', 0)
                 result_counts['needs_review'] = counters.get('needs_review', 0)
@@ -240,10 +270,11 @@ class AttendanceAgent:
                     self.logger.error('Attendance write cycle aborted after structural Supabase error.')
                 else:
                     self.logger.info('Attendance apply complete: events=%s %s', len(events), result_counts)
-                    self.mark_attendance_sync_success()
+                    if not apply_blocked_reason:
+                        self.mark_attendance_sync_success()
             self.hikvision_reachable = True
             self.hikvision_probe_failures = 0
-            return True, 'partial_device_failure' if apply_blocked_reason else None
+            return (False, apply_blocked_reason) if apply_blocked_reason else (True, None)
         except (RuntimeError, requests.RequestException, ValueError) as error:
             message = f'{type(error).__name__}: {error}'
             self.logger.error('Attendance cycle failed: %s', message)
@@ -275,40 +306,33 @@ class AttendanceAgent:
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
             persisted_rows = self.persist_observed_biometric_events(events, resolution, target_date)
             apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
-            previously_inactive_ids = {
-                worker_id for worker_id, worker in resolution.get('workers', {}).items()
-                if worker.get('is_active') is False
-            }
             reactivation_results = None
-            if not self.dry_run and not apply_blocked_reason and persisted_rows:
-                reactivation_results = auto_reactivate_inactive_workers(self.client, persisted_rows, resolution)
+            reactivation_rows = complete_device_persisted_rows(persisted_rows, device_reads)
+            if not self.dry_run and reactivation_rows:
+                reactivation_results = auto_reactivate_inactive_workers(self.client, reactivation_rows, resolution)
                 if reactivation_results.get('reload_required'):
                     resolution = load_resolution_data(self.client, target_date, for_apply=True)
                 self.logger.info('Previous-workday biometric auto-reactivation: %s', dict(reactivation_results))
-            reactivated_worker_ids = {
-                worker_id for worker_id in previously_inactive_ids
-                if resolution.get('workers', {}).get(worker_id, {}).get('is_active') is True
-            }
             plans, counters = plan_attendance(events, resolution, target_date)
             existing = resolution['existing_attendance']
-            recovery_plans = [
-                plan for plan in plans
-                if existing.get(plan['worker_id']) or plan['worker_id'] in reactivated_worker_ids
-            ]
+            recovery_plans = completion_plans(plans, existing)
             summary = write_summary(recovery_plans, existing, counters)
             if self.dry_run:
                 updated = summary.get('update', 0)
                 unchanged = summary.get('unchanged', 0) + summary.get('skipped_manual_protected', 0)
-            elif apply_blocked_reason:
-                self.logger.error('%s No previous-workday attendance writes were attempted.', apply_blocked_reason)
-                return False, apply_blocked_reason
             else:
-                results = apply_biometric_attendance(self.client, recovery_plans, existing)
-                updated = results.get('updated', 0)
+                apply_plans = positive_evidence_plans(recovery_plans) if apply_blocked_reason else recovery_plans
+                if apply_blocked_reason:
+                    self.logger.warning(
+                        '%s Historical absence decisions are blocked; processing positive biometric evidence only.',
+                        apply_blocked_reason,
+                    )
+                results = apply_biometric_attendance(self.client, apply_plans, existing)
+                updated = results.get('updated', 0) + results.get('inserted', 0)
                 unchanged = results.get('unchanged', 0) + results.get('skipped_manual_protected', 0)
                 if results.get('aborted_structural_error'):
                     self.logger.error('Previous-workday attendance write cycle aborted after structural Supabase error.')
-                else:
+                elif not apply_blocked_reason:
                     self.mark_attendance_sync_success()
             self.logger.info(
                 'Previous workday completion: date=%s events=%s updated=%s unchanged=%s',
@@ -316,7 +340,7 @@ class AttendanceAgent:
             )
             self.hikvision_reachable = True
             self.hikvision_probe_failures = 0
-            return True, 'partial_device_failure' if apply_blocked_reason else None
+            return (False, apply_blocked_reason) if apply_blocked_reason else (True, None)
         except (RuntimeError, requests.RequestException, ValueError) as error:
             message = f'{type(error).__name__}: {error}'
             self.logger.error('Previous workday completion failed: %s', message)
@@ -346,6 +370,7 @@ def run_agent_loop(
     attendance_interval: int,
     users_interval: int,
     heartbeat_interval: int,
+    reconciliation_interval: int = 1800,
     once: bool = False,
     max_iterations: int | None = None,
 ) -> None:
@@ -353,11 +378,30 @@ def run_agent_loop(
     last_users = 0.0
     last_attendance = 0.0
     last_heartbeat = 0.0
+    last_reconciliation = None
+    last_reconciliation_error = None
     iterations = 0
     while True:
         now = time_module.monotonic()
         users_due = now - last_users >= users_interval
         attendance_due = now - last_attendance >= attendance_interval
+        heartbeat_due = now - last_heartbeat >= heartbeat_interval
+        if last_reconciliation is None:
+            last_reconciliation = now
+        reconciliation_due = now - last_reconciliation >= reconciliation_interval
+        try:
+            # Publish liveness before potentially slow device work. Hikvision
+            # requests are bounded, so a failed device cannot permanently stop
+            # subsequent scheduler iterations or heartbeats.
+            if heartbeat_due:
+                agent.heartbeat()
+                last_heartbeat = now
+        except KeyboardInterrupt:
+            raise
+        except Exception as error:
+            agent.last_error = f'{type(error).__name__}: {error}'
+            agent.logger.exception('Attendance Agent heartbeat failed; continuing: %s', agent.last_error)
+
         try:
             if users_due or attendance_due:
                 agent.run_cycle(users_due, attendance_due)
@@ -371,16 +415,23 @@ def run_agent_loop(
             agent.last_error = f'{type(error).__name__}: {error}'
             agent.logger.exception('Attendance Agent scheduled cycle failed; continuing: %s', agent.last_error)
 
-        heartbeat_due = now - last_heartbeat >= heartbeat_interval
         try:
-            if heartbeat_due:
-                agent.heartbeat()
-                last_heartbeat = now
+            if reconciliation_due:
+                recovery_ok, recovery_error = agent.complete_previous_workday()
+                last_reconciliation = now
+                if not recovery_ok:
+                    agent.last_error = recovery_error
+                    last_reconciliation_error = recovery_error
+                elif last_reconciliation_error and agent.last_error == last_reconciliation_error:
+                    agent.last_error = None
+                    last_reconciliation_error = None
         except KeyboardInterrupt:
             raise
         except Exception as error:
+            last_reconciliation = now
             agent.last_error = f'{type(error).__name__}: {error}'
-            agent.logger.exception('Attendance Agent heartbeat failed; continuing: %s', agent.last_error)
+            last_reconciliation_error = agent.last_error
+            agent.logger.exception('Scheduled previous-workday reconciliation failed; continuing: %s', agent.last_error)
 
         iterations += 1
         if once or (max_iterations is not None and iterations >= max_iterations):
@@ -388,7 +439,29 @@ def run_agent_loop(
         next_users = max(0.0, users_interval - (time_module.monotonic() - last_users))
         next_attendance = max(0.0, attendance_interval - (time_module.monotonic() - last_attendance))
         next_heartbeat = max(0.0, heartbeat_interval - (time_module.monotonic() - last_heartbeat))
-        time_module.sleep(max(1.0, min(60.0, next_users, next_attendance, next_heartbeat)))
+        next_reconciliation = max(0.0, reconciliation_interval - (time_module.monotonic() - last_reconciliation))
+        time_module.sleep(max(1.0, min(60.0, next_users, next_attendance, next_heartbeat, next_reconciliation)))
+
+
+def run_startup_recovery(agent: AttendanceAgent) -> None:
+    """Publish liveness before attempting bounded previous-workday recovery."""
+    try:
+        agent.heartbeat(probe_devices=False)
+    except KeyboardInterrupt:
+        raise
+    except Exception as error:
+        agent.last_error = f'{type(error).__name__}: {error}'
+        agent.logger.exception('Initial Attendance Agent heartbeat failed; continuing: %s', agent.last_error)
+
+    try:
+        recovery_ok, recovery_error = agent.complete_previous_workday()
+        if not recovery_ok:
+            agent.last_error = recovery_error
+    except KeyboardInterrupt:
+        raise
+    except Exception as error:
+        agent.last_error = f'{type(error).__name__}: {error}'
+        agent.logger.exception('Previous-workday startup recovery failed; continuing: %s', agent.last_error)
 
 
 def main() -> int:
@@ -407,25 +480,19 @@ def main() -> int:
     attendance_interval = positive_int_env('HIKVISION_AGENT_ATTENDANCE_INTERVAL_SECONDS', 300)
     users_interval = positive_int_env('HIKVISION_AGENT_USERS_INTERVAL_SECONDS', 1800)
     heartbeat_interval = positive_int_env('HIKVISION_AGENT_HEARTBEAT_INTERVAL_SECONDS', 60)
+    reconciliation_interval = positive_int_env('HIKVISION_AGENT_RECONCILIATION_INTERVAL_SECONDS', 1800)
     attendance_writes_enabled = truthy_env('HIKVISION_AGENT_ENABLE_ATTENDANCE_WRITES') and not args.dry_run
     agent = AttendanceAgent(not attendance_writes_enabled, logger)
-    logger.info('Attendance Agent started: agent_id=%s dry_run=%s attendance_interval=%ss users_interval=%ss heartbeat_interval=%ss', agent.agent_id, agent.dry_run, attendance_interval, users_interval, heartbeat_interval)
+    logger.info('Attendance Agent started: agent_id=%s dry_run=%s attendance_interval=%ss users_interval=%ss heartbeat_interval=%ss reconciliation_interval=%ss', agent.agent_id, agent.dry_run, attendance_interval, users_interval, heartbeat_interval, reconciliation_interval)
 
-    try:
-        recovery_ok, recovery_error = agent.complete_previous_workday()
-        if not recovery_ok:
-            agent.last_error = recovery_error
-    except KeyboardInterrupt:
-        raise
-    except Exception as error:
-        agent.last_error = f'{type(error).__name__}: {error}'
-        logger.exception('Previous-workday startup recovery failed; continuing: %s', agent.last_error)
+    run_startup_recovery(agent)
 
     run_agent_loop(
         agent,
         attendance_interval=attendance_interval,
         users_interval=users_interval,
         heartbeat_interval=heartbeat_interval,
+        reconciliation_interval=reconciliation_interval,
         once=args.once,
     )
     return 0

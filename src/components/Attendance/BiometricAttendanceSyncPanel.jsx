@@ -13,7 +13,7 @@ const initialDate = () => {
   nextDay.setDate(nextDay.getDate() + 1)
   return nextDay.toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
 }
-const labels = { present: 'حاضر', half_day: 'نصف يوم', absent: 'غائب', pending: 'معلّق', unmapped: 'غير مربوط', needs_review: 'يحتاج مراجعة', manual_protected: 'محمي يدويًا', special_staff: 'موظف خاص' }
+const labels = { present: 'حاضر', late: 'متأخر', half_day: 'نصف يوم', absent: 'غائب', pending: 'معلّق', unmapped: 'غير مربوط', needs_review: 'يحتاج مراجعة', manual_protected: 'محمي يدويًا', special_staff: 'موظف خاص' }
 
 function BiometricAttendanceSyncPanel({ onApplied }) {
   const [date, setDate] = useState(initialDate)

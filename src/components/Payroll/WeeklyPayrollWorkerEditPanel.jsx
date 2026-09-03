@@ -55,7 +55,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
   const locale = language === 'ar' ? 'ar' : language === 'fr' ? 'fr-FR' : 'en-US'
   const monthlyDivisor = Number(line?.rules?.monthly_working_day_divisor || 26)
   const derivedDailyValue = paymentType === 'monthly' ? monthlyDailyValue(monthlySalary, monthlyDivisor) : null
-  const statusOptions = [['not_recorded', t('dashboard.notRecorded'), true], ['present', t('attendance.present'), false], ['half_day', t('attendance.halfDay'), false], ['absent', t('attendance.absent'), false]]
+  const statusOptions = [['not_recorded', t('dashboard.notRecorded'), true], ['present', t('attendance.present'), false], ['late', t('attendance.late'), false], ['half_day', t('attendance.halfDay'), false], ['absent', t('attendance.absent'), false]]
   const selectPaymentType = (nextType) => {
     const savedTerm = latestTermForType(line, nextType)
     setPaymentType(nextType)
@@ -92,7 +92,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
         })()}
         {dates.map((date) => {
           const isFuture = line.details.find((detail) => detail.date === date)?.isFuture
-          return <label key={date} className="text-sm font-bold"><span>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</span>{isFuture ? <span className="input-base mt-1 block text-(--muted)">—</span> : <><select className="input-base mt-1" value={statuses[date] || 'absent'} onChange={(event) => setStatuses((current) => ({ ...current, [date]: event.target.value }))}>{statusOptions.map(([value, label, disabled]) => <option key={value} value={value} disabled={disabled}>{label}</option>)}</select>{statuses[date] === 'half_day' ? <input className="input-base mt-1" type="time" required value={checkIns[date] || ''} onChange={(event) => setCheckIns((current) => ({ ...current, [date]: event.target.value }))} /> : null}</>}</label>
+          return <label key={date} className="text-sm font-bold"><span>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</span>{isFuture ? <span className="input-base mt-1 block text-(--muted)">—</span> : <><select className="input-base mt-1" value={statuses[date] || 'absent'} onChange={(event) => setStatuses((current) => ({ ...current, [date]: event.target.value }))}>{statusOptions.map(([value, label, disabled]) => <option key={value} value={value} disabled={disabled}>{label}</option>)}</select>{statuses[date] === 'half_day' || statuses[date] === 'late' ? <input className="input-base mt-1" type="time" required value={checkIns[date] || ''} onChange={(event) => setCheckIns((current) => ({ ...current, [date]: event.target.value }))} /> : null}</>}</label>
         })}
       </div>
       <section className="border-t border-(--border) pt-4">

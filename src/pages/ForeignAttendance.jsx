@@ -6,6 +6,7 @@ const today = () => new Date().toISOString().slice(0, 10)
 
 const statusLabel = (status) => ({
   present: 'حاضر',
+  late: 'متأخر',
   half_day: 'نصف يوم',
   absent: 'غائب',
 }[status] || 'لم يسجل بعد')

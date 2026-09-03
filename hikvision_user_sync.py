@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
-from hikvision_http import HikvisionReadClient
+from hikvision_http import HIKVISION_PROBE_TIMEOUT, HIKVISION_REQUEST_TIMEOUT, HikvisionReadClient
 from hikvision_device_lock import HikvisionDeviceOperationLock
 from hikvision_devices import configured_devices
 
@@ -51,13 +51,13 @@ def fetch_current_users_for_device(device) -> list[dict]:
                         "maxResults": 100,
                     }
                 }
-                response = hikvision.request('POST', url, json=payload, timeout=30)
+                response = hikvision.request('POST', url, json=payload, timeout=HIKVISION_REQUEST_TIMEOUT)
                 # Keep first-page 401 strict. A later 401 after successful pages is
                 # a stale device Digest challenge: refresh once for this page only.
                 if response.status_code == 401 and successful_batches > 0:
                     print(f'[HIKVISION] {device.device_id} stale Digest suspected at user batch position {position}; refreshing once', file=sys.stderr)
                     hikvision.refresh_digest_session()
-                    response = hikvision.request('POST', url, json=payload, timeout=30)
+                    response = hikvision.request('POST', url, json=payload, timeout=HIKVISION_REQUEST_TIMEOUT)
                 response.raise_for_status()
                 result = response.json().get("UserInfoSearch", {})
                 batch = result.get("UserInfo") or []
@@ -96,7 +96,7 @@ def fetch_current_users(target_device_id: str | None = 'all') -> tuple[dict[str,
         except (RuntimeError, requests.RequestException, ValueError) as error:
             reason = f'{type(error).__name__}: {error}'
             failures[device.device_id] = reason
-            print(f'[HIKVISION] {device.device_id} user sync failed: {reason}', file=sys.stderr)
+            print(f'[HIKVISION] {device.device_id} ({device.ip}) user sync failed: {reason}', file=sys.stderr)
     return users_by_device, failures
 
 
@@ -134,18 +134,23 @@ def check_hikvision_reachable() -> tuple[bool, str | None]:
     """Perform a small read-only connectivity probe, without fetching users/events."""
     try:
         results = []
+        failures = []
         for device in configured_devices():
             hikvision = HikvisionReadClient(device.ip, device.username, device.password, device.device_id)
             try:
-                response = hikvision.request('GET', hikvision.url('/ISAPI/System/capabilities'), timeout=10)
+                response = hikvision.request('GET', hikvision.url('/ISAPI/System/capabilities'), timeout=HIKVISION_PROBE_TIMEOUT)
                 results.append(response.ok)
+            except requests.Timeout as error:
+                failures.append(f'{device.device_id} ({device.ip}) timed out')
+                print(f'[HIKVISION] device={device.device_id} ip={device.ip} connectivity probe timed out: {type(error).__name__}', file=sys.stderr)
+            except requests.RequestException as error:
+                failures.append(f'{device.device_id} ({device.ip}) is unreachable')
+                print(f'[HIKVISION] device={device.device_id} ip={device.ip} connectivity probe failed: {type(error).__name__}', file=sys.stderr)
             finally:
                 hikvision.close()
-        return any(results), None if any(results) else 'All Hikvision devices are unavailable.'
-    except requests.Timeout:
-        return False, "Hikvision connectivity check timed out."
-    except requests.RequestException:
-        return False, "Hikvision is unreachable from the office laptop."
+        if any(results):
+            return True, None
+        return False, '; '.join(failures) if failures else 'All Hikvision devices are unavailable.'
     except RuntimeError as error:
         # Missing-variable messages name the variable only, never its value.
         return False, str(error)

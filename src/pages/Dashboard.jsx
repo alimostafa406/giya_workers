@@ -21,11 +21,6 @@ const asArray = (value) => {
   return []
 }
 
-const isPresentStatus = (status) => {
-  const normalized = String(status || '').toLowerCase()
-  return normalized === 'present' || normalized === 'حاضر'
-}
-
 const getTodayLocalDate = () => new Date().toLocaleDateString('en-CA', {
   timeZone: 'Africa/Kinshasa',
 })
@@ -77,7 +72,15 @@ function Dashboard() {
   }), [attendance, today, workers])
 
   const presentCount = useMemo(
-    () => todayRoster.filter((item) => isPresentStatus(item.status || item.status_key)).length,
+    () => todayRoster.filter((item) => {
+      const status = String(item.status || item.status_key || '').toLowerCase()
+      return status === 'half_day' || status === 'present'
+    }).length,
+    [todayRoster],
+  )
+
+  const lateCount = useMemo(
+    () => todayRoster.filter((item) => String(item.status || item.status_key || '').toLowerCase() === 'late').length,
     [todayRoster],
   )
 
@@ -85,11 +88,6 @@ function Dashboard() {
     () => todayRoster.filter((item) => attendanceRosterCategory(item) === 'absent').length,
     [todayRoster],
   )
-  const halfDayCount = useMemo(
-    () => todayRoster.filter((item) => String(item.status || item.status_key || '').toLowerCase() === 'half_day').length,
-    [todayRoster],
-  )
-
   const notRecordedCount = todayRoster.filter((item) => attendanceRosterCategory(item) === 'not_recorded').length
 
   const urgentBiometric = useMemo(
@@ -111,7 +109,7 @@ function Dashboard() {
 
   const cards = [
     { label: t('dashboard.presentToday'), value: presentCount },
-    { label: t('dashboard.halfDay'), value: halfDayCount },
+    { label: t('attendance.late'), value: lateCount },
     { label: t('dashboard.absentToday'), value: absentCount },
     { label: t('dashboard.notRecorded'), value: notRecordedCount },
     { label: t('dashboard.totalWorkers'), value: todayRoster.length },

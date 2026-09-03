@@ -80,7 +80,7 @@ export const attendanceRosterCategory = (row) => {
   if (row.roster_state === 'not_recorded') return 'not_recorded'
   if (row.roster_state === 'not_applicable') return 'not_applicable'
   if (row.status === 'pending' || row.status === 'in_progress' || hasCheckoutOnlyReview(row)) return 'review'
-  if (row.status === 'present' || row.status === 'half_day') return 'present'
+  if (row.status === 'present' || row.status === 'late' || row.status === 'half_day') return 'present'
   if (row.status === 'absent') return 'absent'
   return 'not_applicable'
 }

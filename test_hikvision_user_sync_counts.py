@@ -2,11 +2,12 @@
 
 import unittest
 import tempfile
+import requests
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from hikvision_user_sync import fetch_current_users, sync_users_dataset
+from hikvision_user_sync import check_hikvision_reachable, fetch_current_users, sync_users_dataset
 
 
 class UserSyncCountTests(unittest.TestCase):
@@ -47,6 +48,47 @@ class UserSyncCountTests(unittest.TestCase):
         self.assertEqual(list(results), ['office-secondary'])
         self.assertEqual(fetch.call_args.args[0].device_id, 'office-secondary')
         self.assertEqual(fetch.call_count, 1)
+
+    def test_secondary_timeout_does_not_discard_successful_main_user_read(self):
+        devices = [
+            SimpleNamespace(device_id='office-main', ip='192.0.2.136'),
+            SimpleNamespace(device_id='office-secondary', ip='192.0.2.137'),
+        ]
+        main_users = [{'_device_id': 'office-main', 'employeeNo': '100', 'name': 'Main'}]
+        with patch('hikvision_user_sync.configured_devices', return_value=devices), patch(
+            'hikvision_user_sync.fetch_current_users_for_device',
+            side_effect=[main_users, requests.ReadTimeout('secondary did not respond')],
+        ):
+            results, failures = fetch_current_users()
+        self.assertEqual(results, {'office-main': main_users})
+        self.assertIn('ReadTimeout', failures['office-secondary'])
+
+    def test_connectivity_probe_continues_after_one_device_timeout(self):
+        devices = [
+            SimpleNamespace(device_id='office-secondary', ip='192.0.2.137', username='u', password='p'),
+            SimpleNamespace(device_id='office-main', ip='192.0.2.136', username='u', password='p'),
+        ]
+
+        class Client:
+            def __init__(self, ip, _username, _password, device_id):
+                self.ip = ip
+                self.device_id = device_id
+            def url(self, path):
+                return f'http://{self.ip}{path}'
+            def request(self, *_args, **_kwargs):
+                if self.device_id == 'office-secondary':
+                    raise requests.ReadTimeout('secondary did not respond')
+                return SimpleNamespace(ok=True)
+            def close(self):
+                return None
+
+        with patch('hikvision_user_sync.configured_devices', return_value=devices), patch(
+            'hikvision_user_sync.HikvisionReadClient', Client,
+        ):
+            reachable, error = check_hikvision_reachable()
+
+        self.assertTrue(reachable)
+        self.assertIsNone(error)
 
     def test_single_device_sync_only_updates_that_device_presence(self):
         cached_users = [

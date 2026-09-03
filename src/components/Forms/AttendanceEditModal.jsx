@@ -16,14 +16,14 @@ function AttendanceEditModal({ row, isOpen, isSaving, onClose, onSave }) {
     setCheckOut(getAttendanceTimeInputValue(row.check_out))
   }, [row])
 
-  const hasCheckIn = status === 'present' || status === 'half_day' || status === 'in_progress'
-  const hasCheckOut = status === 'present'
+  const hasCheckIn = status === 'present' || status === 'late' || status === 'half_day' || status === 'in_progress'
+  const hasCheckOut = status === 'present' || status === 'late'
   const submit = (event) => {
     event.preventDefault()
     onSave({ status, check_in: checkIn, check_out: checkOut })
   }
 
-  const statusOptions = [['present', t('attendance.present')], ['half_day', t('attendance.halfDay')], ['in_progress', t('attendance.inProgress')], ['pending', t('attendance.pending')], ['absent', t('attendance.absent')]]
+  const statusOptions = [['present', t('attendance.present')], ['late', t('attendance.late')], ['half_day', t('attendance.halfDay')], ['in_progress', t('attendance.inProgress')], ['pending', t('attendance.pending')], ['absent', t('attendance.absent')]]
 
   return <Modal isOpen={isOpen} title={t('attendance.manualCorrection')} onClose={onClose}>
     <form onSubmit={submit} className="space-y-4">

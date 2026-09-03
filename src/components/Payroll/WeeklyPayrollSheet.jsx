@@ -11,6 +11,7 @@ const dayLabel = (date, language) => new Intl.DateTimeFormat(
 const statusLabel = (status, t) => ({
   future: '—',
   present: t('attendance.present'),
+  late: t('attendance.late'),
   half_day: t('attendance.halfDay'),
   absent: t('attendance.absent'),
   pending: t('attendance.pending'),

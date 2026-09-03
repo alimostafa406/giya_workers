@@ -6,6 +6,7 @@ import PayrollAdjustmentsSection from './PayrollAdjustmentsSection'
 
 const statusLabel = (status, t) => ({
   present: t('attendance.present'),
+  late: t('attendance.late'),
   half_day: t('attendance.halfDay'),
   absent: t('attendance.absent'),
   pending: t('attendance.pending'),

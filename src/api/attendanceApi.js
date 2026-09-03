@@ -57,7 +57,7 @@ export const buildManualAttendancePayload = (row, values) => {
     return { status, check_in: null, check_out: null, ...manualFields }
   }
 
-  if (status === 'half_day' && !values.check_in && !existingCheckIn) {
+  if ((status === 'half_day' || status === 'late') && !values.check_in && !existingCheckIn) {
     throw new Error('وقت الدخول مطلوب عند اختيار نصف يوم.')
   }
   const checkIn = values.check_in || existingCheckIn || defaults.checkIn
@@ -68,6 +68,15 @@ export const buildManualAttendancePayload = (row, values) => {
       status,
       check_in: normalizeAttendanceTime(checkIn),
       check_out: null,
+      ...manualFields,
+    }
+  }
+
+  if (status === 'late') {
+    return {
+      status,
+      check_in: normalizeAttendanceTime(checkIn),
+      check_out: normalizeAttendanceTime(values.check_out || existingCheckOut),
       ...manualFields,
     }
   }

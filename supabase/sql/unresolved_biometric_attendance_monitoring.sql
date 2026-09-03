@@ -43,7 +43,14 @@ begin
       e.device_id,
       e.device_employee_no,
       e.device_name,
-      ((e.event_timestamp at time zone 'Africa/Kinshasa')::time between time '07:00:00' and time '09:00:00') as valid_morning
+      ((e.event_timestamp at time zone 'Africa/Kinshasa')::time between time '07:00:00' and time '09:00:00') as valid_morning,
+      (
+        extract(isodow from e.attendance_date) between 1 and 6
+        -- Keep this aligned with the agent's default configurable workday
+        -- boundary. The separate valid_morning flag intentionally remains
+        -- 07:00-09:00 for the missing-morning-punch report only.
+        and (e.event_timestamp at time zone 'Africa/Kinshasa')::time >= time '04:00:00'
+      ) as valid_workday_checkin
     from public.biometric_attendance_events as e
     where e.attendance_date = p_attendance_date
       and e.device_employee_no is not null
@@ -88,6 +95,7 @@ begin
       p.device_employee_no,
       p.device_name,
       p.valid_morning,
+      p.valid_workday_checkin,
       count(p.mapping_id) filter (where p.mapping_review_state = 'confirmed') as confirmed_count,
       count(distinct p.mapped_worker_id) filter (where p.mapping_review_state = 'confirmed') as confirmed_owner_count,
       count(distinct p.mapped_worker_id) as evidence_owner_count,
@@ -96,7 +104,7 @@ begin
       (array_agg(p.mapped_worker_id order by p.mapping_priority, p.mapping_id)
         filter (where p.mapping_id is not null))[1] as mapped_worker_id
     from preferred as p
-    group by p.event_id, p.attendance_date, p.event_timestamp, p.device_id, p.device_employee_no, p.device_name, p.valid_morning
+    group by p.event_id, p.attendance_date, p.event_timestamp, p.device_id, p.device_employee_no, p.device_name, p.valid_morning, p.valid_workday_checkin
   ),
   resolved as (
     select
@@ -139,7 +147,7 @@ begin
     r.classification::text,
     r.valid_morning
   from resolved as r
-  where r.valid_morning is true
+  where r.valid_workday_checkin is true
     and r.reason <> 'resolved'
   order by
     case r.reason

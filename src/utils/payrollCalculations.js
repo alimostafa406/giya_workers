@@ -115,14 +115,20 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
     // future row so it cannot become payable, deductible, or manually editable.
     const row = isFuture ? null : attendanceRow
     const status = isFuture ? 'future' : isCurrentDayUnrecorded ? 'not_recorded' : row?.status || 'absent'
-    const factor = status === 'present' ? 1 : status === 'half_day' ? halfMultiplier : 0
+    const lateFactor = status === 'late'
+      ? (Number(row?.attendance_day_fraction) === 1 || row?.check_out ? 1 : halfMultiplier)
+      : 0
+    const factor = status === 'present' ? 1 : status === 'half_day' ? halfMultiplier : lateFactor
     const isHoliday = holidayDates.has(date)
-    if (status === 'present') presentDays += 1
+    if (status === 'present' || (status === 'late' && factor === 1)) presentDays += 1
+    else if (status === 'late') halfDays += 1
     else if (status === 'half_day') halfDays += 1
     else if (status === 'pending' || status === 'in_progress') unresolvedDays += 1
     else if (status === 'future' || status === 'not_recorded') { /* Neutral until attendance is recorded/finalized. */ }
     else absentDays += 1
-    const eligibleTransport = status === 'present' || (status === 'half_day' && rules?.transport_eligibility === 'present_and_half_day')
+    const eligibleTransport = status === 'present'
+      || (status === 'late' && (factor === 1 || rules?.transport_eligibility === 'present_and_half_day'))
+      || (status === 'half_day' && rules?.transport_eligibility === 'present_and_half_day')
     if (eligibleTransport) transportDays += 1
     const baseEffect = paymentType === 'weekly' ? dailyRate * factor : 0
     const holidayEffect = paymentType === 'weekly' && isHoliday ? baseEffect * (Number(rules?.weekly_holiday_multiplier ?? 2) - 1) : 0

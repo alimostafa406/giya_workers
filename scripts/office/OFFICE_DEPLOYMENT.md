@@ -27,6 +27,19 @@ npm.cmd run build
 
 Copy `.env.hikvision_sync` securely, confirm the two device settings, and set `HIKVISION_AGENT_ENABLE_ATTENDANCE_WRITES=true` only after the approved production verification.
 
+The attendance-day boundary and reconciliation cadence are centralized Agent
+settings. Production defaults are safe for the audited device pattern (overnight
+events end before 04:00 and arrivals begin after 07:00):
+
+```dotenv
+HIKVISION_ATTENDANCE_WORKDAY_BOUNDARY=04:00
+HIKVISION_AGENT_RECONCILIATION_INTERVAL_SECONDS=1800
+```
+
+Changing the boundary is a business-rule change and requires a fresh direct
+device audit. It is not the official start time; the official start remains
+08:00 and only determines the informational late indicator.
+
 ## Manual start and stop
 
 ```powershell

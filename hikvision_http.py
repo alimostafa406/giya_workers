@@ -13,12 +13,29 @@ from requests.auth import HTTPDigestAuth
 
 MAX_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 2
+HIKVISION_CONNECT_TIMEOUT_SECONDS = 5
+HIKVISION_READ_TIMEOUT_SECONDS = 20
+HIKVISION_REQUEST_TIMEOUT = (HIKVISION_CONNECT_TIMEOUT_SECONDS, HIKVISION_READ_TIMEOUT_SECONDS)
+HIKVISION_PROBE_TIMEOUT = (3, 5)
 TRANSIENT_EXCEPTIONS = (
     requests.exceptions.ConnectTimeout,
     requests.exceptions.ReadTimeout,
     requests.exceptions.ConnectionError,
     RemoteDisconnected,
 )
+
+
+def _write_diagnostic(message: str) -> None:
+    """Best-effort diagnostics that remain safe under windowless pythonw."""
+    stream = sys.stderr
+    if stream is None:
+        return
+    try:
+        print(message, file=stream)
+    except (AttributeError, OSError, ValueError):
+        # Transport handling must never fail merely because the scheduled task
+        # has no usable console stream.
+        return
 
 
 def _required_env(name: str) -> str:
@@ -38,6 +55,21 @@ def _contains_transient_exception(error: BaseException) -> bool:
             return True
         current = current.__cause__ or current.__context__
     return False
+
+
+def _bounded_timeout(value) -> tuple[float, float]:
+    """Always provide Requests with explicit connect and read deadlines."""
+    if isinstance(value, (tuple, list)) and len(value) == 2:
+        connect_timeout, read_timeout = value
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        connect_timeout, read_timeout = HIKVISION_CONNECT_TIMEOUT_SECONDS, value
+    else:
+        connect_timeout, read_timeout = HIKVISION_REQUEST_TIMEOUT
+    connect_timeout = float(connect_timeout)
+    read_timeout = float(read_timeout)
+    if connect_timeout <= 0 or read_timeout <= 0:
+        return HIKVISION_REQUEST_TIMEOUT
+    return connect_timeout, read_timeout
 
 
 class HikvisionReadClient:
@@ -80,6 +112,7 @@ class HikvisionReadClient:
         self._reset_session()
 
     def request(self, method: str, url: str, **kwargs) -> requests.Response:
+        kwargs['timeout'] = _bounded_timeout(kwargs.get('timeout'))
         for attempt in range(1, MAX_ATTEMPTS + 1):
             # Attach Digest authentication before the request, just like the
             # working requests.post(..., auth=HTTPDigestAuth(...)) path. Keep a
@@ -93,17 +126,21 @@ class HikvisionReadClient:
                 if not transient:
                     raise
                 if attempt == MAX_ATTEMPTS:
+                    _write_diagnostic(
+                        f'[HIKVISION] device={self.device_id} ip={self.device_ip} '
+                        f'request failed after {MAX_ATTEMPTS} bounded attempts: {type(error).__name__}'
+                    )
                     # http.client.RemoteDisconnected is not a requests exception;
                     # normalize it so the scheduled agent cycle can handle it.
                     if isinstance(error, RemoteDisconnected):
                         raise requests.exceptions.ConnectionError('Hikvision disconnected during request') from error
                     raise
-                print(
-                    f'[HIKVISION] transient failure attempt {attempt}/{MAX_ATTEMPTS}: {type(error).__name__}',
-                    file=sys.stderr,
+                _write_diagnostic(
+                    f'[HIKVISION] device={self.device_id} ip={self.device_ip} '
+                    f'transient failure attempt {attempt}/{MAX_ATTEMPTS}: {type(error).__name__}'
                 )
                 self._reset_session()
-                print(f'[HIKVISION] retrying in {RETRY_DELAY_SECONDS}s', file=sys.stderr)
+                _write_diagnostic(f'[HIKVISION] retrying in {RETRY_DELAY_SECONDS}s')
                 time.sleep(RETRY_DELAY_SECONDS)
         raise RuntimeError('Hikvision request retry loop ended unexpectedly')
 

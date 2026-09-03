@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 const labels = {
   ar: {
     title: 'مشكلات البصمة التي تتطلب إجراءً',
-    description: 'بصمات صحيحة ضمن نافذة الصباح لم تتحول إلى حضور وتحتاج مراجعة فورية.',
-    empty: 'لا توجد بصمات صباحية غير مطبقة اليوم.',
+    description: 'بصمات حضور صحيحة لم تتحول إلى حضور وتحتاج مراجعة فورية.',
+    empty: 'لا توجد بصمات حضور غير مطبقة اليوم.',
     unavailable: 'طبّق ملف مراقبة البصمات غير المحلولة لعرض هذه التنبيهات.',
     review: 'مراجعة الربط',
     worker: 'العامل المرتبط',
@@ -16,8 +16,8 @@ const labels = {
   },
   en: {
     title: 'Unresolved Biometric Attendance',
-    description: 'Valid morning-window punches did not become attendance and need immediate review.',
-    empty: 'No unapplied morning punches today.',
+    description: 'Valid biometric check-ins did not become attendance and need immediate review.',
+    empty: 'No unapplied biometric check-ins today.',
     unavailable: 'Apply the unresolved biometric monitoring SQL to enable these alerts.',
     review: 'Review mapping',
     worker: 'Mapped worker',
@@ -29,8 +29,8 @@ const labels = {
   },
   fr: {
     title: 'Présence biométrique non résolue',
-    description: 'Des pointages valides du matin ne sont pas devenus des présences et exigent une vérification.',
-    empty: 'Aucun pointage matinal non appliqué aujourd’hui.',
+    description: 'Des pointages biométriques valides ne sont pas devenus des présences et exigent une vérification.',
+    empty: 'Aucun pointage biométrique non appliqué aujourd’hui.',
     unavailable: 'Appliquez le SQL de suivi biométrique non résolu pour activer ces alertes.',
     review: 'Vérifier la liaison',
     worker: 'Travailleur lié',
