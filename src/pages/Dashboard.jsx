@@ -8,7 +8,7 @@ import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatu
 import UnresolvedBiometricAttendancePanel from '../components/Attendance/UnresolvedBiometricAttendancePanel'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
-import { attendanceRosterCategory, mergeAttendanceRoster } from '../utils/attendanceRoster'
+import { attendanceRosterCategory, mergeAttendanceRoster, operationalAttendanceStatus } from '../utils/attendanceRoster'
 import { splitUnresolvedBiometricAttendance } from '../utils/unresolvedBiometricAttendance'
 
 const asArray = (value) => {
@@ -72,15 +72,12 @@ function Dashboard() {
   }), [attendance, today, workers])
 
   const presentCount = useMemo(
-    () => todayRoster.filter((item) => {
-      const status = String(item.status || item.status_key || '').toLowerCase()
-      return status === 'half_day' || status === 'present'
-    }).length,
+    () => todayRoster.filter((item) => operationalAttendanceStatus(item) === 'present').length,
     [todayRoster],
   )
 
-  const lateCount = useMemo(
-    () => todayRoster.filter((item) => String(item.status || item.status_key || '').toLowerCase() === 'late').length,
+  const halfDayCount = useMemo(
+    () => todayRoster.filter((item) => operationalAttendanceStatus(item) === 'half_day').length,
     [todayRoster],
   )
 
@@ -109,7 +106,7 @@ function Dashboard() {
 
   const cards = [
     { label: t('dashboard.presentToday'), value: presentCount },
-    { label: t('attendance.late'), value: lateCount },
+    { label: t('dashboard.halfDay'), value: halfDayCount },
     { label: t('dashboard.absentToday'), value: absentCount },
     { label: t('dashboard.notRecorded'), value: notRecordedCount },
     { label: t('dashboard.totalWorkers'), value: todayRoster.length },
@@ -136,7 +133,7 @@ function Dashboard() {
     {
       key: 'status',
       header: t('attendance.status'),
-      render: (row) => row.roster_state === 'not_recorded' ? t('attendance.notRecorded') : row.status || '-',
+      render: (row) => row.roster_state === 'not_recorded' ? t('attendance.notRecorded') : operationalAttendanceStatus(row) || '-',
     },
     {
       key: 'check_in',

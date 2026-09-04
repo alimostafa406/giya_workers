@@ -15,7 +15,7 @@ import {
   kinshasaClock,
   prepareAttendanceOutput,
 } from '../utils/attendanceOperationalGate'
-import { attendanceRosterCategory, mergeAttendanceRoster, summarizeAttendanceRoster } from '../utils/attendanceRoster'
+import { attendanceRosterCategory, mergeAttendanceRoster, operationalAttendanceStatus, summarizeAttendanceRoster } from '../utils/attendanceRoster'
 
 const asArray = (value) => {
   if (Array.isArray(value)) return value
@@ -29,8 +29,9 @@ const renderAttendanceStatus = (row, t) => {
   if (row.roster_state === 'not_recorded') return <span className="status-badge status-badge--neutral">{t('attendance.notRecorded')}</span>
   if (row.roster_state === 'not_applicable') return '—'
   const checkoutOnly = getCheckoutOnlyInfo(row)
-  const labels = { present: t('attendance.present'), late: t('attendance.late'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), pending: t('attendance.pending'), in_progress: t('attendance.inProgress') }
-  if (!checkoutOnly) return labels[row.status] || row.status || '-'
+  const labels = { present: t('attendance.present'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), pending: t('attendance.pending'), in_progress: t('attendance.inProgress') }
+  const status = operationalAttendanceStatus(row)
+  if (!checkoutOnly) return labels[status] || status || '-'
   return <div><span className="status-badge status-badge--warning">{t('attendance.checkoutOnly')}</span>{checkoutOnly.eveningPunchTime ? <p className="mt-1 text-xs text-(--muted)">{t('attendance.eveningPunch')}: {checkoutOnly.eveningPunchTime}</p> : null}</div>
 }
 

@@ -805,9 +805,15 @@ def biometric_mapping_is_ignored(resolution: dict, mapping: dict) -> bool:
 
 
 def day_has_finalized(target_date: date_type, finalization_time: time | None) -> bool:
-    """Absence is final only once the target date is a completed past day."""
+    """Finalize a missing workday at its configured same-day safe cutoff."""
+    if finalization_time is None:
+        return True
     now = local_now()
-    return target_date < now.date()
+    if target_date < now.date():
+        return True
+    if target_date > now.date():
+        return False
+    return now.time() >= finalization_time
 
 
 def existing_biometric_check_in(existing: dict | None, target_date: date_type) -> datetime | None:
@@ -832,20 +838,13 @@ def proposed_status(target_date: date_type, check_in: datetime | None, check_out
     if schedule is None:
         return 'non_working_day', None
     if check_in:
-        arrival_time = check_in.timetz().replace(tzinfo=None)
-        if arrival_time > ON_TIME_CHECKIN_END:
-            # A genuine late arrival proves attendance. Preserve the existing
-            # incomplete-day fraction until a real checkout is observed, but
-            # never allow finalization to turn this worker into absent.
-            return 'late', 1.0 if check_out else 0.5
         if check_out:
             return 'present', 1.0
-        # An on-time arrival is visible as half day immediately, then upgraded
-        # when a valid checkout is later found.
+        # Every accepted real arrival starts as half day, regardless of clock
+        # time, then becomes present only after a qualifying checkout.
         return 'half_day', 0.5
-    # Missing attendance remains
-    # temporary for the entire current business date. The raw evening event is
-    # preserved as metadata by the caller, never as check_out.
+    # A checkout-only event is preserved as audit metadata, never as attendance.
+    # Missing attendance remains pending until the configured same-day cutoff.
     if not day_has_finalized(target_date, schedule['finalization_time']):
         return 'pending', None
     return 'absent', 0.0
@@ -1007,7 +1006,7 @@ def is_manual_protected(row: dict | None) -> bool:
 
 
 def is_writeable_plan(plan: dict) -> bool:
-    return plan.get('proposed_status') in {'half_day', 'present', 'late', 'absent'}
+    return plan.get('proposed_status') in {'half_day', 'present', 'absent'}
 
 
 def earlier_time(first: str | None, second: str | None) -> str | None:
@@ -1039,11 +1038,12 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
         existing_status = existing.get('status')
         if existing_status in {'present', 'late'} and existing.get('check_in') and existing.get('check_out'):
             # A partial/replayed read cannot replace the established biometric
-            # arrival or downgrade a completed day.
-            status = 'present' if existing_status == 'present' or status == 'present' else 'late'
+            # arrival or downgrade a completed day. Legacy late rows normalize
+            # to the simple completed-day status when safely processed again.
+            status = 'present'
             check_in = existing.get('check_in')
             check_out = later_time(existing.get('check_out'), check_out)
-        elif status in {'present', 'late'}:
+        elif status == 'present':
             check_in = existing.get('check_in') or check_in
             check_out = later_time(existing.get('check_out'), check_out)
         elif status == 'half_day':
@@ -1059,19 +1059,12 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
         metadata = normalized_metadata(existing.get('biometric_sync_metadata'))
 
     if status in {'present', 'late', 'half_day'} and check_in:
-        # Recompute from the final merged earliest arrival. A partial device
-        # response containing only a later punch must not downgrade an already
-        # known on-time biometric arrival to late.
-        status = (
-            'late'
-            if str(check_in)[:8] > ON_TIME_CHECKIN_END.strftime('%H:%M:%S')
-            else ('present' if check_out else 'half_day')
-        )
+        # Normalize legacy automatic late rows without changing their real
+        # timestamps: checkout means present; otherwise the day is half day.
+        status = 'present' if check_out else 'half_day'
 
     if status == 'present':
         day_fraction = 1.0
-    elif status == 'late':
-        day_fraction = 1.0 if check_out else 0.5
     elif status == 'half_day':
         day_fraction = 0.5
     elif status == 'absent':
@@ -1141,7 +1134,7 @@ def write_summary(plans: list[dict], existing_attendance: dict, counters: Counte
     # These are derived from the final plans, rather than re-evaluating any
     # attendance rule for reporting. A checkout-only plan remains absent and
     # is counted separately as additional diagnostic information.
-    for status in ('present', 'late', 'half_day', 'absent', 'pending'):
+    for status in ('present', 'half_day', 'absent', 'pending'):
         summary[status] = sum(1 for plan in plans if plan.get('proposed_status') == status)
     summary['checkout_only'] = sum(1 for plan in plans if plan.get('checkout_only') is True)
     summary['confirmed_workers_considered'] = len(plans)

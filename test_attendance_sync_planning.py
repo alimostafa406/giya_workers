@@ -79,7 +79,7 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(plan['biometric_sync_metadata']['check_out_employee_no'], '8')
         self.assertEqual(plan['biometric_sync_metadata']['check_out_event_timestamp'], '2026-08-11T17:22:09+01:00')
 
-    def test_existing_late_checkin_is_preserved_when_checkout_completes_day(self):
+    def test_existing_late_checkin_becomes_present_when_checkout_completes_day(self):
         existing = {
             'attendance_date': TARGET_DATE.isoformat(),
             'status': 'half_day',
@@ -92,7 +92,7 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         plans, _ = plan_attendance([attendance_event('16:58:46', serial=205389)], resolution_with(existing), TARGET_DATE)
         payload = biometric_payload(plans[0], existing)
 
-        self.assertEqual(payload['status'], 'late')
+        self.assertEqual(payload['status'], 'present')
         self.assertEqual(payload['check_in'], '10:31:15')
         self.assertEqual(payload['check_out'], '16:58:46')
         self.assertEqual(payload['attendance_day_fraction'], 1.0)
@@ -165,17 +165,17 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertIsNone(plans[0]['check_out'])
         self.assertEqual(counters['unmapped'], 1)
 
-    def test_checkin_boundaries_accept_late_arrivals_without_an_upper_cutoff(self):
+    def test_checkin_boundaries_accept_all_arrivals_as_half_day_without_an_upper_cutoff(self):
         cases = (
             ('06:45:00', 'half_day'),
             ('07:00:00', 'half_day'),
             ('07:59:00', 'half_day'),
             ('08:00:00', 'half_day'),
-            ('08:01:00', 'late'),
-            ('08:59:00', 'late'),
-            ('09:00:00', 'late'),
-            ('09:01:00', 'late'),
-            ('10:30:00', 'late'),
+            ('08:01:00', 'half_day'),
+            ('08:59:00', 'half_day'),
+            ('09:00:00', 'half_day'),
+            ('09:01:00', 'half_day'),
+            ('10:30:00', 'half_day'),
         )
         for clock, expected_status in cases:
             with self.subTest(clock=clock):
@@ -184,11 +184,11 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
                 self.assertEqual(plans[0]['proposed_status'], expected_status)
                 self.assertEqual(plans[0]['day_fraction'], 0.5)
 
-    def test_late_checkin_and_real_checkout_complete_without_becoming_absent(self):
+    def test_later_checkin_and_real_checkout_complete_as_present(self):
         events = [attendance_event('10:30:00', serial=1), attendance_event('17:05:00', serial=2)]
         plans, _ = plan_attendance(events, resolution_with(None), TARGET_DATE)
         plan = plans[0]
-        self.assertEqual(plan['proposed_status'], 'late')
+        self.assertEqual(plan['proposed_status'], 'present')
         self.assertEqual(plan['check_in'], '10:30:00')
         self.assertEqual(plan['check_out'], '17:05:00')
         self.assertEqual(plan['day_fraction'], 1.0)
@@ -225,10 +225,10 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(plans[0]['proposed_status'], 'present')
 
     @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 12, 0, 1))
-    def test_late_checkin_without_checkout_never_finalizes_as_absent(self, _local_now):
+    def test_later_checkin_without_checkout_remains_half_day(self, _local_now):
         self.assertEqual(
             proposed_status(TARGET_DATE, datetime(2026, 8, 11, 10, 30), None),
-            ('late', 0.5),
+            ('half_day', 0.5),
         )
 
     def test_non_attendance_event_is_not_accepted_as_checkin(self):
@@ -250,14 +250,14 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         events = [attendance_event('00:29:00', serial=1), attendance_event('09:05:00', serial=2)]
         plans, _ = plan_attendance(events, resolution_with(None), TARGET_DATE)
         self.assertEqual(plans[0]['check_in'], '09:05:00')
-        self.assertEqual(plans[0]['proposed_status'], 'late')
+        self.assertEqual(plans[0]['proposed_status'], 'half_day')
 
     def test_configured_workday_boundary_is_central_and_respected(self):
         with patch.dict('os.environ', {'HIKVISION_ATTENDANCE_WORKDAY_BOUNDARY': '06:30'}):
             plans, _ = plan_attendance([attendance_event('06:45:00')], resolution_with(None), TARGET_DATE)
         self.assertEqual(plans[0]['check_in'], '06:45:00')
 
-    def test_repeated_late_event_processing_is_idempotent(self):
+    def test_repeated_later_event_processing_is_idempotent(self):
         events = [attendance_event('09:05:00', serial=1), attendance_event('17:05:00', serial=2)]
         plans, _ = plan_attendance(events, resolution_with(None), TARGET_DATE)
         first_payload = biometric_payload(plans[0], None)
@@ -283,7 +283,7 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         }
         self.assertIsNone(biometric_payload(plan, existing))
 
-    def test_partial_late_read_cannot_downgrade_known_on_time_arrival(self):
+    def test_partial_later_read_cannot_replace_known_earliest_arrival(self):
         existing = {
             'status': 'half_day',
             'check_in': '08:00:00',
@@ -291,15 +291,23 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
             'attendance_source': 'biometric',
             'manual_override': False,
         }
-        late_plan, _ = plan_attendance([attendance_event('09:05:00')], resolution_with(existing), TARGET_DATE)
-        payload = biometric_payload(late_plan[0], existing)
+        later_plan, _ = plan_attendance([attendance_event('09:05:00')], resolution_with(existing), TARGET_DATE)
+        payload = biometric_payload(later_plan[0], existing)
         self.assertEqual(payload['status'], 'half_day')
         self.assertEqual(payload['check_in'], '08:00:00')
 
-    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 11, 23, 0))
-    def test_current_date_without_morning_punch_never_finalizes_as_absent(self, _local_now):
+    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 11, 17, 14, 59))
+    def test_current_date_without_checkin_stays_pending_before_cutoff(self, _local_now):
         self.assertEqual(proposed_status(TARGET_DATE, None, None), ('pending', None))
-        self.assertEqual(proposed_status(TARGET_DATE, None, datetime(2026, 8, 11, 17, 20)), ('pending', None))
+
+    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 11, 17, 15))
+    def test_weekday_without_checkin_becomes_absent_at_safe_cutoff(self, _local_now):
+        self.assertEqual(proposed_status(TARGET_DATE, None, None), ('absent', 0.0))
+        self.assertEqual(proposed_status(TARGET_DATE, None, datetime(2026, 8, 11, 17, 20)), ('absent', 0.0))
+
+    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 15, 14, 45))
+    def test_saturday_without_checkin_becomes_absent_at_saturday_cutoff(self, _local_now):
+        self.assertEqual(proposed_status(date(2026, 8, 15), None, None), ('absent', 0.0))
 
     @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 12, 0, 1))
     def test_completed_past_workday_without_morning_punch_is_absent(self, _local_now):
@@ -323,7 +331,7 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
                 plans, _ = plan_attendance(EVENTS, resolution_with(existing_row), TARGET_DATE)
                 self.assertEqual(plans[0]["existing_attendance_protection"], expected)
 
-    def test_manual_override_is_never_written_by_late_biometric_processing(self):
+    def test_manual_override_is_never_written_by_biometric_processing(self):
         class NoWriteClient:
             def insert_attendance(self, _payload):
                 raise AssertionError('manual row must not be inserted')
@@ -360,12 +368,12 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
     def test_dry_run_status_counters_come_from_final_plans(self):
         plans = [
             {
-                'worker_id': 'late',
-                'proposed_status': 'late',
+                'worker_id': 'half-day-later-arrival',
+                'proposed_status': 'half_day',
                 'check_in': '09:05:00',
                 'check_out': None,
                 'day_fraction': 0.5,
-                'sync_key': 'hikvision:late:2026-08-11',
+                'sync_key': 'hikvision:half-day:2026-08-11',
                 'biometric_sync_metadata': {},
                 'checkout_only': False,
             },
@@ -412,12 +420,11 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         ]
         summary = write_summary(plans, {}, Counter())
         self.assertEqual(summary['present'], 1)
-        self.assertEqual(summary['late'], 1)
-        self.assertEqual(summary['half_day'], 1)
+        self.assertEqual(summary['half_day'], 2)
         self.assertEqual(summary['absent'], 1)
         self.assertEqual(summary['pending'], 1)
         self.assertEqual(summary['checkout_only'], 1)
-        self.assertEqual(sum(summary[status] for status in ('present', 'late', 'half_day', 'absent', 'pending')), len(plans))
+        self.assertEqual(sum(summary[status] for status in ('present', 'half_day', 'absent', 'pending')), len(plans))
 
 
 class SupabaseStructuralErrorTests(unittest.TestCase):

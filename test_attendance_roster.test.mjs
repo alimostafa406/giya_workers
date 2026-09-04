@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { attendanceRosterCategory, mergeAttendanceRoster, summarizeAttendanceRoster } from './src/utils/attendanceRoster.js'
+import { attendanceRosterCategory, mergeAttendanceRoster, operationalAttendanceStatus, summarizeAttendanceRoster } from './src/utils/attendanceRoster.js'
 
 const workers = Array.from({ length: 20 }, (_, index) => ({
   id: `worker-${index + 1}`,
@@ -50,13 +50,13 @@ test('future rows stay neutral while missing completed workdays derive confirmed
   assert.equal(attendanceRosterCategory(finalizedPast[0]), 'absent')
 })
 
-test('today biometric absence is neutral but an explicit manual absence remains confirmed', () => {
+test('today finalized biometric and manual absences remain confirmed', () => {
   const biometric = mergeAttendanceRoster({
     workers: workers.slice(0, 1),
     attendance: [{ ...attendance[0], status: 'absent', check_in: null, check_out: null, attendance_source: 'biometric', manual_override: false }],
     date: '2026-08-24', businessDate: '2026-08-24',
   })
-  assert.equal(attendanceRosterCategory(biometric[0]), 'not_recorded')
+  assert.equal(attendanceRosterCategory(biometric[0]), 'absent')
 
   const manual = mergeAttendanceRoster({
     workers: workers.slice(0, 1),
@@ -64,6 +64,10 @@ test('today biometric absence is neutral but an explicit manual absence remains 
     date: '2026-08-24', businessDate: '2026-08-24',
   })
   assert.equal(attendanceRosterCategory(manual[0]), 'absent')
+
+  assert.equal(attendanceRosterCategory({
+    ...biometric[0], biometric_sync_metadata: { checkout_only: true },
+  }), 'absent')
 })
 
 test('today checked-in worker without checkout is present/reviewable, never absent', () => {
@@ -76,14 +80,17 @@ test('today checked-in worker without checkout is present/reviewable, never abse
   assert.notEqual(attendanceRosterCategory(rows[0]), 'absent')
 })
 
-test('a genuine late check-in is represented as attended and never absent', () => {
+test('legacy late rows use simple operational half-day/present semantics', () => {
   const rows = mergeAttendanceRoster({
     workers: workers.slice(0, 1),
     attendance: [{ ...attendance[0], status: 'late', check_in: '10:30:00', check_out: null, attendance_source: 'biometric', manual_override: false }],
     date: '2026-08-24', businessDate: '2026-08-24',
   })
   assert.equal(attendanceRosterCategory(rows[0]), 'present')
+  assert.equal(operationalAttendanceStatus(rows[0]), 'half_day')
   assert.notEqual(attendanceRosterCategory(rows[0]), 'absent')
+
+  assert.equal(operationalAttendanceStatus({ ...rows[0], check_out: '17:00:00' }), 'present')
 })
 
 test('Dashboard counts confirmed absence through the shared roster category', () => {
@@ -91,18 +98,23 @@ test('Dashboard counts confirmed absence through the shared roster category', ()
   assert.match(dashboard, /attendanceRosterCategory\(item\) === 'absent'/)
   assert.match(dashboard, /attendanceRosterCategory\(item\) === 'not_recorded'/)
   assert.match(dashboard, /row\.roster_state === 'not_recorded' \? t\('attendance\.notRecorded'\)/)
+  assert.match(dashboard, /operationalAttendanceStatus\(item\) === 'present'/)
+  assert.match(dashboard, /operationalAttendanceStatus\(item\) === 'half_day'/)
+  assert.doesNotMatch(dashboard, /lateCount/)
   assert.doesNotMatch(dashboard, /isAbsentStatus/)
 })
 
-test('Agent keeps current no-punch plans pending and preserves safe biometric merging', () => {
+test('Agent restores same-day absence cutoff and preserves safe biometric merging', () => {
   const sync = readFileSync('./hikvision_attendance_sync.py', 'utf8')
   const proposed = sync.slice(sync.indexOf('def proposed_status'), sync.indexOf('def plan_attendance'))
   assert.match(proposed, /if not day_has_finalized[\s\S]*return 'pending', None[\s\S]*return 'absent', 0\.0/)
+  assert.doesNotMatch(proposed, /return 'late'/)
   assert.doesNotMatch(proposed, /if check_out:\s*return 'absent'/)
   assert.match(sync, /row\.get\('attendance_source'\) != 'biometric'[\s\S]*row\.get\('manual_override'\) is True/)
   assert.match(sync, /check_in = existing\.get\('check_in'\) or check_in/)
   assert.match(sync, /check_out = later_time\(existing\.get\('check_out'\), check_out\)/)
   assert.match(sync, /existing_status in \{'present', 'late'\}[\s\S]*status = 'present'/)
+  assert.match(sync, /return now\.time\(\) >= finalization_time/)
 })
 
 test('team switching uses only the selected active normal roster', () => {

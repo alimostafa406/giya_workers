@@ -129,7 +129,7 @@ class AttendanceAgentHeartbeatTests(unittest.TestCase):
         self.assertEqual(agent.last_attendance_sync_at, '2026-08-11T09:00:00+00:00')
 
     def test_incomplete_coverage_filter_never_allows_absence(self):
-        positive = {'worker_id': 'positive', 'proposed_status': 'late', 'check_in': '09:05:00'}
+        positive = {'worker_id': 'positive', 'proposed_status': 'half_day', 'check_in': '09:05:00'}
         absent = {'worker_id': 'negative', 'proposed_status': 'absent', 'check_in': None}
         pending = {'worker_id': 'pending', 'proposed_status': 'pending', 'check_in': None}
         self.assertEqual(positive_evidence_plans([positive, absent, pending]), [positive, pending])
@@ -290,7 +290,7 @@ class PreviousWorkdayCompletionTests(unittest.TestCase):
         self.assertEqual(completion_plans([absent_plan], {}), [])
 
     def test_recovery_does_not_create_a_missing_historical_row(self):
-        checkin_plan = {'worker_id': 'worker-with-device-proof', 'proposed_status': 'late', 'check_in': '09:05:00'}
+        checkin_plan = {'worker_id': 'worker-with-device-proof', 'proposed_status': 'half_day', 'check_in': '09:05:00'}
         self.assertEqual(completion_plans([checkin_plan], {}), [])
 
     def test_recovery_selects_only_unprotected_biometric_row_missing_checkout(self):

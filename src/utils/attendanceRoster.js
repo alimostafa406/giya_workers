@@ -6,13 +6,6 @@ const isCompanyWorkday = (date) => {
   return weekday >= 1 && weekday <= 6
 }
 
-const isUnconfirmedBiometricAbsence = (row) => (
-  row?.attendance_source === 'biometric'
-  && row?.manual_override !== true
-  && !row?.check_in
-  && (row?.status === 'absent' || row?.status === 'pending')
-)
-
 const isLaterRow = (candidate, current) => {
   if (!current) return true
   const candidateTimestamp = candidate.updated_at || candidate.created_at || ''
@@ -45,8 +38,7 @@ export const mergeAttendanceRoster = ({
     .map((worker) => {
       const attendanceRow = attendanceByWorkerId.get(workerKey(worker.id)) || null
       if (attendanceRow) {
-        const isCurrentUnconfirmed = date === businessDate && isUnconfirmedBiometricAbsence(attendanceRow)
-        return { ...attendanceRow, worker, team: worker.team || attendanceRow.team, is_virtual: false, roster_state: isCurrentUnconfirmed ? 'not_recorded' : attendanceRow.roster_state }
+        return { ...attendanceRow, worker, team: worker.team || attendanceRow.team, is_virtual: false }
       }
       const isPastWorkday = date < businessDate && isCompanyWorkday(date)
       return {
@@ -69,20 +61,18 @@ export const mergeAttendanceRoster = ({
     .sort((left, right) => String(left.worker_name || left.worker?.full_name || '').localeCompare(String(right.worker_name || right.worker?.full_name || '')))
 }
 
-const hasCheckoutOnlyReview = (row) => {
-  const metadata = typeof row?.biometric_sync_metadata === 'string'
-    ? (() => { try { return JSON.parse(row.biometric_sync_metadata) } catch { return null } })()
-    : row?.biometric_sync_metadata
-  return row?.status === 'absent' && Boolean(metadata?.checkout_only)
-}
-
 export const attendanceRosterCategory = (row) => {
   if (row.roster_state === 'not_recorded') return 'not_recorded'
   if (row.roster_state === 'not_applicable') return 'not_applicable'
-  if (row.status === 'pending' || row.status === 'in_progress' || hasCheckoutOnlyReview(row)) return 'review'
+  if (row.status === 'pending' || row.status === 'in_progress') return 'review'
   if (row.status === 'present' || row.status === 'late' || row.status === 'half_day') return 'present'
   if (row.status === 'absent') return 'absent'
   return 'not_applicable'
+}
+
+export const operationalAttendanceStatus = (row = {}) => {
+  if (row.status !== 'late') return row.status
+  return row.check_out ? 'present' : 'half_day'
 }
 
 export const summarizeAttendanceRoster = (rows = []) => rows.reduce((summary, row) => {

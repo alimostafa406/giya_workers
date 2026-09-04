@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
@@ -8,6 +6,15 @@ import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
+import {
+  buildWeeklyReportDateRange,
+  getDefaultWeeklyReportRange,
+  getWeeklyReportRange,
+  getWeeklyReportBusinessDate,
+  normalizeWeeklyAttendanceStatus,
+  shiftWeeklyReportRange,
+  summarizeWeeklyAttendanceDays,
+} from '../utils/weeklyAttendanceReport'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -19,67 +26,10 @@ const asArray = (value) => {
   return []
 }
 
-const getDateInputValue = (date) => {
-  const local = new Date(date)
-  local.setMinutes(local.getMinutes() - local.getTimezoneOffset())
-  return local.toISOString().slice(0, 10)
-}
-
-const getDefaultWeekRange = () => {
-  const today = new Date()
-  const day = today.getDay()
-  const offsetToSaturday = (day + 1) % 7
-  const start = new Date(today)
-  // On Saturday a new workweek has just begun. Open the report on the most
-  // recently completed Saturday–Friday week so Friday's finalized attendance
-  // is visible immediately; managers can still select any range manually.
-  start.setDate(today.getDate() - offsetToSaturday - (day === 6 ? 7 : 0))
-  const end = new Date(start)
-  end.setDate(start.getDate() + 6)
-
-  return {
-    startDate: getDateInputValue(start),
-    endDate: getDateInputValue(end),
-  }
-}
-
 const toMidnightDate = (dateText) => new Date(`${dateText}T00:00:00`)
-
-const buildDateRange = (startDate, endDate) => {
-  if (!startDate || !endDate) {
-    return []
-  }
-
-  const start = toMidnightDate(startDate)
-  const end = toMidnightDate(endDate)
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
-    return []
-  }
-
-  const dates = []
-  const cursor = new Date(start)
-  while (cursor <= end) {
-    dates.push(getDateInputValue(cursor))
-    cursor.setDate(cursor.getDate() + 1)
-  }
-
-  return dates
-}
 
 const getAttendanceDate = (row) => row.attendance_date || row.date || '-'
 const getAttendanceKey = (row) => row.worker_id || row.id
-
-const getReportDayStatus = (status) => {
-  const normalized = String(status || '').toLowerCase()
-  if (normalized === 'present' || normalized === 'حاضر') {
-    return 'present'
-  }
-  if (normalized === 'half_day') {
-    return 'half_day'
-  }
-  return 'absent'
-}
 
 const getDayLabel = (dateText, language) => {
   const date = toMidnightDate(dateText)
@@ -90,12 +40,14 @@ const getDayLabel = (dateText, language) => {
 
 function WeeklyAttendanceReport() {
   const { t, language } = useTranslation()
-  const statusToLabel = (status) => {
-    if (status === 'present') return t('reports.present')
-    if (status === 'half_day') return '½'
-    return '-'
-  }
-  const defaultWeekRange = useMemo(() => getDefaultWeekRange(), [])
+  const statusToLabel = useCallback((status) => {
+    if (status === 'present' || status === 'sunday_present') return t('reports.present')
+    if (status === 'half_day' || status === 'sunday_half_day') return '½'
+    if (status === 'absent') return '-'
+    return '—'
+  }, [t])
+  const defaultWeekRange = useMemo(() => getDefaultWeeklyReportRange(), [])
+  const businessDate = useMemo(() => getWeeklyReportBusinessDate(), [])
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -108,6 +60,23 @@ function WeeklyAttendanceReport() {
     teamId: '',
     supervisorId: '',
   })
+  const weekNavigationLabels = {
+    ar: { previous: 'الأسبوع السابق', current: 'الأسبوع الحالي', next: 'الأسبوع التالي' },
+    en: { previous: 'Previous week', current: 'Current week', next: 'Next week' },
+    fr: { previous: 'Semaine précédente', current: 'Semaine actuelle', next: 'Semaine suivante' },
+  }[language] || { previous: 'Previous week', current: 'Current week', next: 'Next week' }
+
+  const setReportWeek = (range) => {
+    setWeeklyFilters((prev) => ({ ...prev, ...range }))
+  }
+
+  const selectWeekContaining = (date) => {
+    if (date) setReportWeek(getWeeklyReportRange(date))
+  }
+
+  const moveReportWeek = (weekOffset) => {
+    setReportWeek(shiftWeeklyReportRange(weeklyFilters.startDate, weekOffset))
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -150,7 +119,7 @@ function WeeklyAttendanceReport() {
   }, [teams, t])
 
   const weeklyDates = useMemo(
-    () => buildDateRange(weeklyFilters.startDate, weeklyFilters.endDate),
+    () => buildWeeklyReportDateRange(weeklyFilters.startDate, weeklyFilters.endDate),
     [weeklyFilters.startDate, weeklyFilters.endDate],
   )
 
@@ -159,9 +128,10 @@ function WeeklyAttendanceReport() {
     [teams, weeklyFilters.teamId],
   )
 
-  const reportTitle = selectedTeam
+  const reportBaseTitle = selectedTeam
     ? t('reports.weeklyTitleForTeam', { team: selectedTeam.name })
     : t('reports.weeklyTitle')
+  const reportTitle = `${reportBaseTitle} — ${weeklyFilters.startDate} → ${weeklyFilters.endDate}`
 
   const weeklyReportRows = useMemo(() => {
     if (!weeklyFilters.teamId || weeklyDates.length === 0) {
@@ -181,10 +151,11 @@ function WeeklyAttendanceReport() {
       const workerId = String(getAttendanceKey(row))
       const mapKey = `${workerId}|${date}`
       const prev = attendanceByWorkerDay.get(mapKey)
-      const nextStatus = getReportDayStatus(row.status || row.status_key)
+      const nextAttendance = { ...row, status: normalizeWeeklyAttendanceStatus(row.status || row.status_key) }
+      const priority = { unresolved: 0, absent: 1, half_day: 2, late: 3, present: 4 }
 
-      if (!prev || (prev !== 'present' && nextStatus === 'present')) {
-        attendanceByWorkerDay.set(mapKey, nextStatus)
+      if (!prev || priority[nextAttendance.status] > priority[prev.status]) {
+        attendanceByWorkerDay.set(mapKey, nextAttendance)
       }
     })
 
@@ -219,26 +190,21 @@ function WeeklyAttendanceReport() {
         supervisorName: team?.supervisor?.full_name || team?.supervisor_name || t('common.noSupervisor'),
       }
 
-      let presentDays = 0
-      let absentDays = 0
-
-      weeklyDates.forEach((date, index) => {
-        const status = attendanceByWorkerDay.get(`${String(worker.id)}|${date}`) || 'absent'
-        row[`day_${index}`] = status
-
-        if (status === 'present') {
-          presentDays += 1
-        } else {
-          absentDays += 1
-        }
+      const summary = summarizeWeeklyAttendanceDays({
+        dates: weeklyDates,
+        businessDate,
+        getAttendance: (date) => attendanceByWorkerDay.get(`${String(worker.id)}|${date}`),
       })
 
-      row.presentDays = presentDays
-      row.absentDays = absentDays
+      summary.days.forEach((day, index) => {
+        row[`day_${index}`] = day.status
+      })
+      row.presentDays = summary.presentDays
+      row.absentDays = summary.absentDays
 
       return row
     })
-  }, [attendance, teams, weeklyDates, weeklyFilters.supervisorId, weeklyFilters.teamId, workers, t])
+  }, [attendance, businessDate, teams, weeklyDates, weeklyFilters.supervisorId, weeklyFilters.teamId, workers, t])
 
   const weeklyColumns = useMemo(() => {
     const baseColumns = [
@@ -279,7 +245,7 @@ function WeeklyAttendanceReport() {
         render: (row) => row.absentDays,
       },
     ]
-  }, [weeklyDates, language, t])
+  }, [weeklyDates, language, statusToLabel, t])
 
   const exportHeaders = useMemo(
     () => [
@@ -302,7 +268,7 @@ function WeeklyAttendanceReport() {
       row.presentDays,
       row.absentDays,
     ])),
-    [weeklyDates, weeklyReportRows],
+    [statusToLabel, weeklyDates, weeklyReportRows],
   )
 
   const handlePrintWeeklyReport = () => {
@@ -320,13 +286,13 @@ function WeeklyAttendanceReport() {
       .join('')
 
     printWindow.document.write(`
-      <html>
+      <html dir="${language === 'ar' ? 'rtl' : 'ltr'}">
         <head>
           <title>${reportTitle}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
             table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #ccc; padding: 6px; text-align: left; font-size: 12px; }
+            th, td { border: 1px solid #ccc; padding: 6px; text-align: ${language === 'ar' ? 'right' : 'left'}; font-size: 12px; }
             h2 { margin-bottom: 12px; }
           </style>
         </head>
@@ -350,18 +316,7 @@ function WeeklyAttendanceReport() {
     if (!selectedTeam) {
       return
     }
-
-    const doc = new jsPDF({ orientation: 'landscape' })
-    doc.setFontSize(14)
-    doc.text(reportTitle, 14, 14)
-    autoTable(doc, {
-      head: [exportHeaders],
-      body: exportRows,
-      startY: 20,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [39, 39, 42] },
-    })
-    doc.save(`weekly-attendance-${weeklyFilters.startDate}-to-${weeklyFilters.endDate}.pdf`)
+    handlePrintWeeklyReport()
   }
 
   const handleExportWeeklyExcel = () => {
@@ -387,13 +342,25 @@ function WeeklyAttendanceReport() {
         </p>
       ) : null}
 
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button type="button" className="btn-secondary px-3 py-2" onClick={() => moveReportWeek(-1)}>
+          {weekNavigationLabels.previous}
+        </button>
+        <button type="button" className="btn-secondary px-3 py-2" onClick={() => setReportWeek(getWeeklyReportRange(businessDate))}>
+          {weekNavigationLabels.current}
+        </button>
+        <button type="button" className="btn-secondary px-3 py-2" onClick={() => moveReportWeek(1)}>
+          {weekNavigationLabels.next}
+        </button>
+      </div>
+
       <div className="surface-card mb-4 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
         <div>
           <label className="mb-1 block text-sm font-semibold">{t('reports.from')}</label>
           <input
             type="date"
             value={weeklyFilters.startDate}
-            onChange={(e) => setWeeklyFilters((prev) => ({ ...prev, startDate: e.target.value }))}
+            onChange={(e) => selectWeekContaining(e.target.value)}
             className="input-base"
           />
         </div>
@@ -403,7 +370,7 @@ function WeeklyAttendanceReport() {
           <input
             type="date"
             value={weeklyFilters.endDate}
-            onChange={(e) => setWeeklyFilters((prev) => ({ ...prev, endDate: e.target.value }))}
+            onChange={(e) => selectWeekContaining(e.target.value)}
             className="input-base"
           />
         </div>
