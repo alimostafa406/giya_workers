@@ -30,6 +30,7 @@ from attendance_business_rules import (
     VALID_ATTENDANCE_MINOR,
     workday_schedule,
 )
+from early_morning_attendance_review import is_early_morning_review_time
 
 
 ON_TIME_CHECKIN_END = OFFICIAL_START
@@ -861,6 +862,16 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             if event.get('major') != VALID_ATTENDANCE_MAJOR or event.get('minor') != VALID_ATTENDANCE_MINOR:
                 counters['ignored_non_attendance_event'] += 1
                 continue
+        try:
+            event_timestamp = parse_monitoring_event_time(str(event.get('time') or ''))
+        except ValueError:
+            counters['invalid_event_timestamp'] += 1
+            continue
+        if is_early_morning_review_time(event_timestamp):
+            # The raw event is persisted before planning.  A database trigger
+            # creates one pending review item; no attendance role is inferred.
+            counters['early_morning_needs_review'] += 1
+            continue
         employee_no = str(event.get('employeeNoString') or '').strip()
         if biometric_identity_is_ignored(resolution, event):
             counters['ignored_old_user'] += 1

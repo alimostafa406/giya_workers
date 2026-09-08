@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatus'
 import BiometricAttendanceSyncPanel from '../components/Attendance/BiometricAttendanceSyncPanel'
+import EarlyMorningAttendanceReviewPanel from '../components/Attendance/EarlyMorningAttendanceReviewPanel'
 import { useTranslation } from '../i18n/LanguageContext'
 
 export default function AdvancedSettings() {
@@ -14,5 +15,6 @@ export default function AdvancedSettings() {
     </div>
     <div className="mt-5"><AttendanceAgentStatus /></div>
     <div className="mt-5"><BiometricAttendanceSyncPanel /></div>
+    <div className="mt-5"><EarlyMorningAttendanceReviewPanel /></div>
   </section>
 }
