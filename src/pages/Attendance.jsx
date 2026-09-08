@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { getAttendanceRequest, getCheckoutOnlyInfo, saveAttendanceManuallyRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
+import { getCurrentAttendanceEvidenceRequest } from '../api/currentAttendanceEvidenceApi'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
 import AttendanceFilters from '../components/Forms/AttendanceFilters'
@@ -27,6 +28,7 @@ const currentBusinessDate = () => kinshasaClock().date
 
 const renderAttendanceStatus = (row, t) => {
   if (row.roster_state === 'not_recorded') return <span className="status-badge status-badge--neutral">{t('attendance.notRecorded')}</span>
+  if (row.roster_state === 'biometric_pending') return <span className="status-badge status-badge--warning">{t('attendance.pending')}</span>
   if (row.roster_state === 'not_applicable') return '—'
   const checkoutOnly = getCheckoutOnlyInfo(row)
   const labels = { present: t('attendance.present'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), pending: t('attendance.pending'), in_progress: t('attendance.inProgress') }
@@ -40,6 +42,7 @@ const filteredRosterRows = ({ snapshot, filters, businessDate }) => {
   const rows = mergeAttendanceRoster({
     workers: snapshot.workers,
     attendance: snapshot.attendance,
+    biometricEvidence: snapshot.biometricEvidence,
     date: filters.date,
     teamId: filters.team_id,
     workerId: filters.worker_id,
@@ -57,7 +60,7 @@ const filteredRosterRows = ({ snapshot, filters, businessDate }) => {
 function Attendance() {
   const { t } = useTranslation()
   const [teams, setTeams] = useState([])
-  const [snapshot, setSnapshot] = useState({ date: '', workers: [], attendance: [], fetchedAt: null })
+  const [snapshot, setSnapshot] = useState({ date: '', workers: [], attendance: [], biometricEvidence: [], fetchedAt: null })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [editingRow, setEditingRow] = useState(null)
@@ -92,11 +95,13 @@ function Attendance() {
     const request = Promise.all([
       getWorkersRequest(),
       getAttendanceRequest({ date: requestedDate, staff_classification: 'normal' }),
-    ]).then(([workersResult, attendanceResult]) => {
+      getCurrentAttendanceEvidenceRequest(requestedDate),
+    ]).then(([workersResult, attendanceResult, biometricEvidenceResult]) => {
       const nextSnapshot = {
         date: requestedDate,
         workers: asArray(workersResult.data),
         attendance: asArray(attendanceResult.data),
+        biometricEvidence: asArray(biometricEvidenceResult.data),
         fetchedAt: new Date(),
       }
       if (mountedRef.current && filtersRef.current.date === requestedDate) setSnapshot(nextSnapshot)
@@ -193,7 +198,9 @@ function Attendance() {
         const sheet = XLSX.utils.json_to_sheet(freshRows.map((row) => ({
           [t('attendance.worker')]: row.worker?.full_name || row.worker_name || '-',
           [t('attendance.team')]: row.team?.name || row.team_name || '-',
-          [t('attendance.status')]: row.roster_state === 'not_recorded' ? t('attendance.notRecorded') : (row.status || '-'),
+          [t('attendance.status')]: row.roster_state === 'not_recorded'
+            ? t('attendance.notRecorded')
+            : row.roster_state === 'biometric_pending' ? t('attendance.pending') : (row.status || '-'),
           [t('attendance.checkIn')]: row.check_in || '-',
           [t('attendance.checkOut')]: row.check_out || '-',
           [t('attendance.notes')]: row.note || '-',

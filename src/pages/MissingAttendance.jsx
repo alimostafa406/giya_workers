@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
+import { getCurrentAttendanceEvidenceRequest } from '../api/currentAttendanceEvidenceApi'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
 import Modal from '../components/Modal/Modal'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
+import { attendanceRosterCategory, mergeAttendanceRoster } from '../utils/attendanceRoster'
+import { kinshasaClock } from '../utils/attendanceOperationalGate'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -17,14 +20,7 @@ const asArray = (value) => {
   return []
 }
 
-const getTodayLocalDate = () => {
-  const date = new Date()
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
-  return date.toISOString().slice(0, 10)
-}
-
-const getAttendanceDate = (row) => row.attendance_date || row.date || ''
-const getAttendanceKey = (row) => String(row.worker_id || row.id || '')
+const getTodayLocalDate = () => kinshasaClock().date
 
 const formatSupervisorPhone = (phone, t) => {
   const normalized = String(phone || '').trim()
@@ -38,6 +34,7 @@ function MissingAttendance() {
   const [teams, setTeams] = useState([])
   const [workers, setWorkers] = useState([])
   const [attendance, setAttendance] = useState([])
+  const [biometricEvidence, setBiometricEvidence] = useState([])
   const [selectedTeam, setSelectedTeam] = useState(null)
 
   useEffect(() => {
@@ -45,15 +42,18 @@ function MissingAttendance() {
       setLoading(true)
       setError('')
       try {
-        const [teamsRes, workersRes, attendanceRes] = await Promise.all([
+        const attendanceDate = getTodayLocalDate()
+        const [teamsRes, workersRes, attendanceRes, biometricEvidenceRes] = await Promise.all([
           getTeamsRequest(),
           getWorkersRequest(),
           getAttendanceRequest(),
+          getCurrentAttendanceEvidenceRequest(attendanceDate),
         ])
 
         setTeams(asArray(teamsRes.data))
         setWorkers(asArray(workersRes.data))
         setAttendance(asArray(attendanceRes.data))
+        setBiometricEvidence(asArray(biometricEvidenceRes.data))
       } catch (err) {
         setError(getErrorMessage(err))
       } finally {
@@ -66,42 +66,37 @@ function MissingAttendance() {
 
   const today = getTodayLocalDate()
 
-  const recordedWorkerIds = useMemo(() => {
-    const todaysRows = attendance.filter((row) => getAttendanceDate(row) === today)
-    return new Set(todaysRows.map((row) => getAttendanceKey(row)).filter(Boolean))
-  }, [attendance, today])
+  const roster = useMemo(() => mergeAttendanceRoster({
+    workers,
+    attendance,
+    biometricEvidence,
+    date: today,
+    businessDate: today,
+  }), [attendance, biometricEvidence, today, workers])
 
   const missingTeams = useMemo(() => {
-    return teams
-      .filter((team) => team.is_active !== false)
-      .map((team) => {
-        const teamWorkers = workers.filter(
-          (worker) => String(worker.team_id || '') === String(team.id) && worker.is_active !== false,
-        )
-
-        if (teamWorkers.length === 0) {
-          return null
+    const teamsById = new Map(teams.map((team) => [String(team.id), team]))
+    const grouped = new Map()
+    roster
+      .filter((row) => attendanceRosterCategory(row) === 'not_recorded')
+      .forEach((row) => {
+        const teamId = String(row.worker?.team_id || '')
+        const team = teamsById.get(teamId) || null
+        const key = teamId || 'unassigned'
+        const group = grouped.get(key) || {
+          id: key,
+          teamName: team?.name || '-',
+          supervisorName: team?.supervisor?.full_name || team?.supervisor_name || t('common.noSupervisor'),
+          supervisorPhone: formatSupervisorPhone(team?.supervisor?.phone, t),
+          missingWorkers: [],
         }
-
-        const missingWorkers = teamWorkers.filter(
-          (worker) => !recordedWorkerIds.has(String(worker.id || '')),
-        )
-
-        if (missingWorkers.length === 0) {
-          return null
-        }
-
-        return {
-          id: team.id,
-          teamName: team.name || '-',
-          supervisorName: team.supervisor?.full_name || team.supervisor_name || t('common.noSupervisor'),
-          supervisorPhone: formatSupervisorPhone(team.supervisor?.phone, t),
-          missingCount: missingWorkers.length,
-          missingWorkers,
-        }
+        group.missingWorkers.push(row.worker)
+        grouped.set(key, group)
       })
-      .filter(Boolean)
-  }, [teams, workers, recordedWorkerIds, t])
+    return [...grouped.values()]
+      .map((group) => ({ ...group, missingCount: group.missingWorkers.length }))
+      .sort((left, right) => left.teamName.localeCompare(right.teamName))
+  }, [roster, teams, t])
 
   const missingWorkersColumns = [
     {

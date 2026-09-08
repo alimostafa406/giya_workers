@@ -19,7 +19,7 @@ const isLaterRow = (candidate, current) => {
 }
 
 export const mergeAttendanceRoster = ({
-  workers = [], attendance = [], date, teamId = '', workerId = '', businessDate,
+  workers = [], attendance = [], biometricEvidence = [], date, teamId = '', workerId = '', businessDate,
 }) => {
   const attendanceByWorkerId = new Map()
   attendance.forEach((row) => {
@@ -27,6 +27,12 @@ export const mergeAttendanceRoster = ({
     const key = workerKey(row.worker_id || row.worker?.id)
     if (key && isLaterRow(row, attendanceByWorkerId.get(key))) attendanceByWorkerId.set(key, row)
   })
+  const biometricEvidenceWorkerIds = new Set(
+    biometricEvidence
+      .filter((row) => (row.attendance_date || row.date) === date)
+      .map((row) => workerKey(row.worker_id || row.workerId))
+      .filter(Boolean),
+  )
 
   return workers
     .filter((worker) => (
@@ -41,6 +47,7 @@ export const mergeAttendanceRoster = ({
         return { ...attendanceRow, worker, team: worker.team || attendanceRow.team, is_virtual: false }
       }
       const isPastWorkday = date < businessDate && isCompanyWorkday(date)
+      const hasPendingBiometricEvidence = date === businessDate && biometricEvidenceWorkerIds.has(workerKey(worker.id))
       return {
         id: `roster-${worker.id}-${date}`,
         worker_id: worker.id,
@@ -55,7 +62,9 @@ export const mergeAttendanceRoster = ({
         check_out: null,
         note: null,
         is_virtual: true,
-        roster_state: date === businessDate ? 'not_recorded' : isPastWorkday ? 'confirmed_absent' : 'not_applicable',
+        roster_state: date === businessDate
+          ? hasPendingBiometricEvidence ? 'biometric_pending' : 'not_recorded'
+          : isPastWorkday ? 'confirmed_absent' : 'not_applicable',
       }
     })
     .sort((left, right) => String(left.worker_name || left.worker?.full_name || '').localeCompare(String(right.worker_name || right.worker?.full_name || '')))
@@ -63,6 +72,7 @@ export const mergeAttendanceRoster = ({
 
 export const attendanceRosterCategory = (row) => {
   if (row.roster_state === 'not_recorded') return 'not_recorded'
+  if (row.roster_state === 'biometric_pending') return 'review'
   if (row.roster_state === 'not_applicable') return 'not_applicable'
   if (row.status === 'pending' || row.status === 'in_progress') return 'review'
   if (row.status === 'present' || row.status === 'late' || row.status === 'half_day') return 'present'

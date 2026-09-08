@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
 import { getRecentUnmappedBiometricIdentitiesRequest, getUnresolvedBiometricAttendanceRequest } from '../api/biometricMappingApi'
+import { getCurrentAttendanceEvidenceRequest } from '../api/currentAttendanceEvidenceApi'
 import { getWorkersRequest } from '../api/workersApi'
 import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatus'
 import UnresolvedBiometricAttendancePanel from '../components/Attendance/UnresolvedBiometricAttendancePanel'
@@ -31,6 +32,7 @@ function Dashboard() {
   const [error, setError] = useState('')
   const [workers, setWorkers] = useState([])
   const [attendance, setAttendance] = useState([])
+  const [biometricEvidence, setBiometricEvidence] = useState([])
   const [recentUnmappedCount, setRecentUnmappedCount] = useState(null)
   const [unresolvedBiometric, setUnresolvedBiometric] = useState([])
   const [unresolvedBiometricUnavailable, setUnresolvedBiometricUnavailable] = useState(false)
@@ -41,15 +43,17 @@ function Dashboard() {
       setError('')
       try {
         const attendanceDate = getTodayLocalDate()
-        const [workersRes, attendanceRes, recentUnmappedRes, unresolvedRes] = await Promise.all([
+        const [workersRes, attendanceRes, biometricEvidenceRes, recentUnmappedRes, unresolvedRes] = await Promise.all([
           getWorkersRequest(),
           getAttendanceRequest(),
+          getCurrentAttendanceEvidenceRequest(attendanceDate),
           getRecentUnmappedBiometricIdentitiesRequest({ days: 7 }).catch(() => ({ data: [], unavailable: true })),
           getUnresolvedBiometricAttendanceRequest({ attendanceDate }).catch(() => ({ data: [], unavailable: true })),
         ])
 
         setWorkers(asArray(workersRes.data))
         setAttendance(asArray(attendanceRes.data))
+        setBiometricEvidence(asArray(biometricEvidenceRes.data))
         setRecentUnmappedCount(recentUnmappedRes.unavailable ? null : asArray(recentUnmappedRes.data).length)
         setUnresolvedBiometric(asArray(unresolvedRes.data))
         setUnresolvedBiometricUnavailable(Boolean(unresolvedRes.unavailable))
@@ -67,9 +71,10 @@ function Dashboard() {
   const todayRoster = useMemo(() => mergeAttendanceRoster({
     workers,
     attendance,
+    biometricEvidence,
     date: today,
     businessDate: today,
-  }), [attendance, today, workers])
+  }), [attendance, biometricEvidence, today, workers])
 
   const presentCount = useMemo(
     () => todayRoster.filter((item) => operationalAttendanceStatus(item) === 'present').length,
@@ -133,7 +138,9 @@ function Dashboard() {
     {
       key: 'status',
       header: t('attendance.status'),
-      render: (row) => row.roster_state === 'not_recorded' ? t('attendance.notRecorded') : operationalAttendanceStatus(row) || '-',
+      render: (row) => row.roster_state === 'not_recorded'
+        ? t('attendance.notRecorded')
+        : row.roster_state === 'biometric_pending' ? t('attendance.pending') : operationalAttendanceStatus(row) || '-',
     },
     {
       key: 'check_in',
