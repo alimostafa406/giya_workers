@@ -2,13 +2,13 @@
 
 import unittest
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 import requests
 
-from hikvision_attendance_sync import apply_biometric_attendance, biometric_payload, is_manual_protected, payload_changed, plan_attendance, proposed_status, safe_postgrest_error_details, write_summary
+from hikvision_attendance_sync import apply_biometric_attendance, biometric_payload, eligible_for_automatic_absence, is_manual_protected, payload_changed, plan_attendance, proposed_status, safe_postgrest_error_details, write_summary
 
 
 TARGET_DATE = date(2026, 8, 11)  # Tuesday
@@ -296,22 +296,38 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(payload['status'], 'half_day')
         self.assertEqual(payload['check_in'], '08:00:00')
 
-    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 11, 17, 14, 59))
-    def test_current_date_without_checkin_stays_pending_before_cutoff(self, _local_now):
-        self.assertEqual(proposed_status(TARGET_DATE, None, None), ('pending', None))
+    def test_current_date_without_checkin_stays_pending_all_day(self):
+        for clock in ('08:00:00', '17:00:00', '17:15:00', '17:30:00', '23:59:59'):
+            with self.subTest(clock=clock), patch(
+                'hikvision_attendance_sync.local_now',
+                return_value=datetime.fromisoformat(f'2026-08-11T{clock}+01:00'),
+            ):
+                self.assertEqual(proposed_status(TARGET_DATE, None, None), ('pending', None))
 
-    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 11, 17, 15))
-    def test_weekday_without_checkin_becomes_absent_at_safe_cutoff(self, _local_now):
-        self.assertEqual(proposed_status(TARGET_DATE, None, None), ('absent', 0.0))
-        self.assertEqual(proposed_status(TARGET_DATE, None, datetime(2026, 8, 11, 17, 20)), ('absent', 0.0))
+    def test_saturday_without_checkin_stays_pending_after_old_cutoff(self):
+        saturday = date(2026, 8, 15)
+        with patch(
+            'hikvision_attendance_sync.local_now',
+            return_value=datetime.fromisoformat('2026-08-15T14:45:00+01:00'),
+        ):
+            self.assertEqual(proposed_status(saturday, None, None), ('pending', None))
 
-    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 15, 14, 45))
-    def test_saturday_without_checkin_becomes_absent_at_saturday_cutoff(self, _local_now):
-        self.assertEqual(proposed_status(date(2026, 8, 15), None, None), ('absent', 0.0))
+    def test_automatic_absence_uses_explicit_kinshasa_calendar_boundary(self):
+        utc = timezone.utc
+        self.assertFalse(eligible_for_automatic_absence(
+            date(2026, 9, 8), datetime(2026, 9, 8, 22, 59, 59, tzinfo=utc),
+        ))
+        self.assertTrue(eligible_for_automatic_absence(
+            date(2026, 9, 8), datetime(2026, 9, 8, 23, 0, 0, tzinfo=utc),
+        ))
 
     @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 12, 0, 1))
     def test_completed_past_workday_without_morning_punch_is_absent(self, _local_now):
         self.assertEqual(proposed_status(TARGET_DATE, None, None), ('absent', 0.0))
+
+    @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 9, 9, 0, 0, 1, tzinfo=timezone(timedelta(hours=1))))
+    def test_september_eight_regression_finalizes_only_after_calendar_advance(self, _local_now):
+        self.assertEqual(proposed_status(date(2026, 9, 8), None, None), ('absent', 0.0))
 
     def test_protection_rules(self):
         self.assertFalse(is_manual_protected(None))

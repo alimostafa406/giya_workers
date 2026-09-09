@@ -108,14 +108,15 @@ test('Dashboard counts confirmed absence through the shared roster category', ()
 test('Agent restores same-day absence cutoff and preserves safe biometric merging', () => {
   const sync = readFileSync('./hikvision_attendance_sync.py', 'utf8')
   const proposed = sync.slice(sync.indexOf('def proposed_status'), sync.indexOf('def plan_attendance'))
-  assert.match(proposed, /if not day_has_finalized[\s\S]*return 'pending', None[\s\S]*return 'absent', 0\.0/)
+  assert.match(proposed, /if not eligible_for_automatic_absence[\s\S]*return 'pending', None[\s\S]*return 'absent', 0\.0/)
   assert.doesNotMatch(proposed, /return 'late'/)
   assert.doesNotMatch(proposed, /if check_out:\s*return 'absent'/)
   assert.match(sync, /row\.get\('attendance_source'\) != 'biometric'[\s\S]*row\.get\('manual_override'\) is True/)
   assert.match(sync, /check_in = existing\.get\('check_in'\) or check_in/)
   assert.match(sync, /check_out = later_time\(existing\.get\('check_out'\), check_out\)/)
   assert.match(sync, /existing_status in \{'present', 'late'\}[\s\S]*status = 'present'/)
-  assert.match(sync, /return now\.time\(\) >= finalization_time/)
+  assert.match(sync, /return target_date < current\.date\(\)/)
+  assert.doesNotMatch(sync, /return now\.time\(\) >= finalization_time/)
 })
 
 test('team switching uses only the selected active normal roster', () => {

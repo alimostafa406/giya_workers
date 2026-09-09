@@ -85,7 +85,7 @@ def require_env(name: str) -> str:
 
 
 def local_now() -> datetime:
-    return datetime.now().astimezone()
+    return datetime.now(MONITORING_TIME_ZONE)
 
 
 def parse_event_time(value: str) -> datetime:
@@ -805,16 +805,17 @@ def biometric_mapping_is_ignored(resolution: dict, mapping: dict) -> bool:
     return (device_id, employee_no) in ignored or (None, employee_no) in ignored or employee_no in ignored
 
 
-def day_has_finalized(target_date: date_type, finalization_time: time | None) -> bool:
-    """Finalize a missing workday at its configured same-day safe cutoff."""
-    if finalization_time is None:
-        return True
-    now = local_now()
-    if target_date < now.date():
-        return True
-    if target_date > now.date():
-        return False
-    return now.time() >= finalization_time
+def eligible_for_automatic_absence(
+    target_date: date_type,
+    now_kinshasa: datetime | None = None,
+) -> bool:
+    """Allow biometric absence only after the Kinshasa calendar day ends."""
+    current = now_kinshasa or local_now()
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=MONITORING_TIME_ZONE)
+    else:
+        current = current.astimezone(MONITORING_TIME_ZONE)
+    return target_date < current.date()
 
 
 def existing_biometric_check_in(existing: dict | None, target_date: date_type) -> datetime | None:
@@ -845,8 +846,10 @@ def proposed_status(target_date: date_type, check_in: datetime | None, check_out
         # time, then becomes present only after a qualifying checkout.
         return 'half_day', 0.5
     # A checkout-only event is preserved as audit metadata, never as attendance.
-    # Missing attendance remains pending until the configured same-day cutoff.
-    if not day_has_finalized(target_date, schedule['finalization_time']):
+    # The current Kinshasa day is always provisional. Schedule finalization
+    # times may still drive other reconciliation work, but never same-day
+    # automatic biometric absence.
+    if not eligible_for_automatic_absence(target_date):
         return 'pending', None
     return 'absent', 0.0
 
@@ -1310,7 +1313,7 @@ def main() -> int:
         'schedule': {
             'weekday': target_date.strftime('%A'),
             'checkout_acceptance': 'Mon-Fri 16:30-23:59:59; Saturday 14:00-23:59:59',
-            'finalization': 'Mon-Fri 17:15; Saturday 14:45',
+            'automatic_absence_finalization': 'past Africa/Kinshasa calendar workdays only',
         },
         'counts': dict(counters),
         'write_preflight': planned_writes,
