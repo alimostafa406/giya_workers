@@ -3,17 +3,18 @@ import { Link } from 'react-router-dom'
 import { getPayrollSettingsWorkersRequest } from '../api/payrollSettingsApi'
 import { useTranslation } from '../i18n/LanguageContext'
 import { getErrorMessage } from '../api/axios'
-import { buildCompensationReviewSections } from '../utils/compensationReview'
+import { buildCompensationReviewSections, hasConfiguredBaseCompensation, hasStoredTransportAllowance } from '../utils/compensationReview'
 import { formatPayrollMoney } from '../utils/payrollCurrency'
 
-const displayMoney = (value, currency) => (
-  value == null ? '—' : formatPayrollMoney(value, { currency })
-)
+function StoredCompensationValue({ value, currency, configured, t }) {
+  if (!configured) return <strong dir="auto">{t('payroll.unspecified')}</strong>
+  return formatPayrollMoney(value, { currency })
+}
 
 function CompensationTeamTable({ group, paymentType, t }) {
   const isMonthly = paymentType === 'monthly'
   return <section className="compensation-review-team">
-    <h3>{t('common.team')}: {group.name}</h3>
+    <h3>{t('common.team')}: {group.name || t('biometricMapping.noTeam')}</h3>
     <table>
       <colgroup>
         <col className="compensation-review-worker-column" />
@@ -29,8 +30,8 @@ function CompensationTeamTable({ group, paymentType, t }) {
       </tr></thead>
       <tbody>{group.workers.map((worker) => <tr key={worker.id}>
         <td><strong>{worker.name}</strong>{worker.employeeCode ? <small>#{worker.employeeCode}</small> : null}</td>
-        <td dir="ltr">{displayMoney(isMonthly ? worker.monthlySalary : worker.dailyRate, worker.currency)}</td>
-        <td dir="ltr">{displayMoney(worker.transportAllowance, worker.currency)}</td>
+        <td dir="ltr"><StoredCompensationValue value={isMonthly ? worker.monthlySalary : worker.dailyRate} currency={worker.currency} configured={hasConfiguredBaseCompensation({ payment_type: paymentType, payroll_compensation: { daily_rate: worker.dailyRate, monthly_salary: worker.monthlySalary } })} t={t} /></td>
+        <td dir="ltr"><StoredCompensationValue value={worker.transportAllowance} currency={worker.currency} configured={hasStoredTransportAllowance({ payroll_compensation: { daily_transport_allowance: worker.transportAllowance } })} t={t} /></td>
         <td aria-label={t('payroll.reviewNotes')} />
       </tr>)}</tbody>
     </table>
