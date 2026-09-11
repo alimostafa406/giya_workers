@@ -288,6 +288,9 @@ Object.assign(translations.ar.payroll, {
   printCompensationReview: 'طباعة مراجعة التعويضات',
   transportAllowance: 'بدل النقل',
   reviewNotes: 'ملاحظات / مراجعة',
+  weeklyWorkersReview: 'العمال الأسبوعيون',
+  monthlyWorkersReview: 'العمال الشهريون',
+  noMonthlyWorkersReview: 'لا يوجد عمال شهريون ضمن هذه المراجعة.',
 })
 Object.assign(translations.en.payroll, {
   compensationReview: 'Worker Compensation Review',
@@ -297,6 +300,9 @@ Object.assign(translations.en.payroll, {
   printCompensationReview: 'Print Compensation Review',
   transportAllowance: 'Transport allowance',
   reviewNotes: 'Notes / review',
+  weeklyWorkersReview: 'Weekly Workers',
+  monthlyWorkersReview: 'Monthly Workers',
+  noMonthlyWorkersReview: 'No monthly workers in this review.',
 })
 Object.assign(translations.fr.payroll, {
   compensationReview: 'Révision de la rémunération des travailleurs',
@@ -306,4 +312,7 @@ Object.assign(translations.fr.payroll, {
   printCompensationReview: 'Imprimer la révision des rémunérations',
   transportAllowance: 'Indemnité de transport',
   reviewNotes: 'Notes / révision',
+  weeklyWorkersReview: 'Travailleurs hebdomadaires',
+  monthlyWorkersReview: 'Travailleurs mensuels',
+  noMonthlyWorkersReview: 'Aucun travailleur mensuel dans cette révision.',
 })

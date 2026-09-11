@@ -2,10 +2,14 @@ import { activeWorkersOnly } from './activeWorkers.js'
 
 const text = (value) => String(value || '').trim()
 
-export const buildCompensationReviewGroups = (workers = []) => {
+export const isCompensationReviewWorker = (worker) => (
+  worker?.staff_classification !== 'special_staff'
+)
+
+const groupByTeam = (workers) => {
   const groups = new Map()
 
-  activeWorkersOnly(workers).forEach((worker) => {
+  workers.forEach((worker) => {
     const paymentType = worker.payment_type === 'monthly' ? 'monthly' : 'weekly'
     const compensation = worker.payroll_compensation || null
     const teamId = text(worker.team_id) || 'unassigned'
@@ -31,4 +35,18 @@ export const buildCompensationReviewGroups = (workers = []) => {
       workers: group.workers.sort((left, right) => left.name.localeCompare(right.name)),
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export const buildCompensationReviewSections = (workers = []) => {
+  const reviewWorkers = activeWorkersOnly(workers).filter(isCompensationReviewWorker)
+  const weeklyWorkers = reviewWorkers.filter((worker) => worker.payment_type !== 'monthly')
+  const monthlyWorkers = reviewWorkers.filter((worker) => worker.payment_type === 'monthly')
+
+  return {
+    weeklyGroups: groupByTeam(weeklyWorkers),
+    monthlyGroups: groupByTeam(monthlyWorkers),
+    weeklyCount: weeklyWorkers.length,
+    monthlyCount: monthlyWorkers.length,
+    workerCount: reviewWorkers.length,
+  }
 }

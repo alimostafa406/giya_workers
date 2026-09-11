@@ -266,11 +266,11 @@ textarea {
 }
 
 .compensation-review-print-root {
-  @apply rounded-2xl border border-(--border) bg-white p-5 shadow-sm;
+  @apply border border-slate-400 bg-white p-5 text-slate-950;
 }
 
 .compensation-review-header {
-  @apply mb-5 border-b-2 border-slate-700 pb-3 text-center;
+  @apply mb-5 border-b-2 border-slate-900 pb-3 text-center;
 }
 
 .compensation-review-header h1 {
@@ -278,7 +278,20 @@ textarea {
 }
 
 .compensation-review-header p {
-  @apply mt-1 text-xs text-(--muted);
+  @apply mt-1 text-xs text-slate-600;
+}
+
+.compensation-review-section {
+  @apply mb-6;
+}
+
+.compensation-review-section > h2 {
+  @apply mb-3 border-b border-slate-900 pb-1.5 text-base font-black uppercase tracking-wide;
+  break-after: avoid;
+}
+
+.compensation-review-section--empty p {
+  @apply border border-slate-300 px-3 py-2 text-sm text-slate-600;
 }
 
 .compensation-review-team {
@@ -286,8 +299,8 @@ textarea {
   break-inside: auto;
 }
 
-.compensation-review-team h2 {
-  @apply mb-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-sm font-extrabold;
+.compensation-review-team h3 {
+  @apply mb-1 bg-slate-200 px-2.5 py-1.5 text-sm font-extrabold;
   break-after: avoid;
 }
 
@@ -301,7 +314,7 @@ textarea {
 }
 
 .compensation-review-team th {
-  @apply bg-slate-50 font-extrabold;
+  @apply bg-slate-100 font-extrabold;
 }
 
 .compensation-review-team td:first-child small {
@@ -309,7 +322,26 @@ textarea {
 }
 
 .compensation-review-team td:last-child {
-  min-width: 24mm;
+  height: 10mm;
+}
+
+.compensation-review-worker-column {
+  width: 29%;
+}
+
+.compensation-review-amount-column {
+  width: 18%;
+}
+
+.compensation-review-notes-column {
+  width: 35%;
+}
+
+.compensation-review-team th:nth-child(2),
+.compensation-review-team th:nth-child(3),
+.compensation-review-team td:nth-child(2),
+.compensation-review-team td:nth-child(3) {
+  @apply text-center;
 }
 
 .compensation-review-empty {
@@ -360,6 +392,16 @@ textarea {
     font-size: 16pt;
   }
 
+  .compensation-review-section {
+    margin-bottom: 4mm;
+  }
+
+  .compensation-review-section > h2 {
+    margin-bottom: 2mm;
+    padding-bottom: 1mm;
+    font-size: 11pt;
+  }
+
   .compensation-review-team {
     margin-bottom: 3mm;
     break-before: auto;
@@ -367,7 +409,7 @@ textarea {
     break-inside: auto;
   }
 
-  .compensation-review-team h2 {
+  .compensation-review-team h3 {
     margin-bottom: 1mm;
     padding: 1.5mm 2mm;
     break-after: avoid;

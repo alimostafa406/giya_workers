@@ -3,12 +3,47 @@ import { Link } from 'react-router-dom'
 import { getPayrollSettingsWorkersRequest } from '../api/payrollSettingsApi'
 import { useTranslation } from '../i18n/LanguageContext'
 import { getErrorMessage } from '../api/axios'
-import { buildCompensationReviewGroups } from '../utils/compensationReview'
+import { buildCompensationReviewSections } from '../utils/compensationReview'
 import { formatPayrollMoney } from '../utils/payrollCurrency'
 
 const displayMoney = (value, currency) => (
   value == null ? '—' : formatPayrollMoney(value, { currency })
 )
+
+function CompensationTeamTable({ group, paymentType, t }) {
+  const isMonthly = paymentType === 'monthly'
+  return <section className="compensation-review-team">
+    <h3>{t('common.team')}: {group.name}</h3>
+    <table>
+      <colgroup>
+        <col className="compensation-review-worker-column" />
+        <col className="compensation-review-amount-column" />
+        <col className="compensation-review-amount-column" />
+        <col className="compensation-review-notes-column" />
+      </colgroup>
+      <thead><tr>
+        <th>{t('common.worker')}</th>
+        <th>{t(isMonthly ? 'payroll.monthlySalary' : 'payroll.dailyRate')}</th>
+        <th>{t('payroll.transportAllowance')}</th>
+        <th>{t('payroll.reviewNotes')}</th>
+      </tr></thead>
+      <tbody>{group.workers.map((worker) => <tr key={worker.id}>
+        <td><strong>{worker.name}</strong>{worker.employeeCode ? <small>#{worker.employeeCode}</small> : null}</td>
+        <td dir="ltr">{displayMoney(isMonthly ? worker.monthlySalary : worker.dailyRate, worker.currency)}</td>
+        <td dir="ltr">{displayMoney(worker.transportAllowance, worker.currency)}</td>
+        <td aria-label={t('payroll.reviewNotes')} />
+      </tr>)}</tbody>
+    </table>
+  </section>
+}
+
+function CompensationSection({ title, groups, paymentType, emptyMessage, t }) {
+  if (!groups.length) return emptyMessage ? <section className="compensation-review-section compensation-review-section--empty"><h2>{title}</h2><p>{emptyMessage}</p></section> : null
+  return <section className="compensation-review-section">
+    <h2>{title}</h2>
+    {groups.map((group) => <CompensationTeamTable key={`${paymentType}-${group.id}`} group={group} paymentType={paymentType} t={t} />)}
+  </section>
+}
 
 export default function CompensationReviewReport() {
   const { t, direction } = useTranslation()
@@ -31,8 +66,7 @@ export default function CompensationReviewReport() {
     return () => { mounted = false }
   }, [])
 
-  const groups = useMemo(() => buildCompensationReviewGroups(workers), [workers])
-  const workerCount = groups.reduce((total, group) => total + group.workers.length, 0)
+  const report = useMemo(() => buildCompensationReviewSections(workers), [workers])
 
   return <section dir={direction}>
     <div className="compensation-review-screen-only mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -42,7 +76,7 @@ export default function CompensationReviewReport() {
       </div>
       <div className="flex gap-2">
         <Link className="btn-secondary" to="/payroll">{t('payroll.back')}</Link>
-        <button type="button" className="btn-primary" disabled={loading || Boolean(error) || !workerCount} onClick={() => window.print()}>{t('payroll.printCompensationReview')}</button>
+        <button type="button" className="btn-primary" disabled={loading || Boolean(error) || !report.workerCount} onClick={() => window.print()}>{t('payroll.printCompensationReview')}</button>
       </div>
     </div>
 
@@ -53,32 +87,12 @@ export default function CompensationReviewReport() {
       <header className="compensation-review-header">
         <h1>{t('payroll.compensationReview')}</h1>
         <p>{t('payroll.compensationReviewPurpose')}</p>
-        <p>{t('payroll.compensationReviewWorkerCount', { count: workerCount })}</p>
+        <p>{t('payroll.compensationReviewWorkerCount', { count: report.workerCount })}</p>
       </header>
 
-      {groups.map((group) => <section className="compensation-review-team" key={group.id}>
-        <h2>{t('common.team')}: {group.name}</h2>
-        <table>
-          <thead><tr>
-            <th>{t('common.worker')}</th>
-            <th>{t('payroll.paymentType')}</th>
-            <th>{t('payroll.dailyRate')}</th>
-            <th>{t('payroll.monthlySalary')}</th>
-            <th>{t('payroll.transportAllowance')}</th>
-            <th>{t('payroll.reviewNotes')}</th>
-          </tr></thead>
-          <tbody>{group.workers.map((worker) => <tr key={worker.id}>
-            <td><strong>{worker.name}</strong>{worker.employeeCode ? <small>#{worker.employeeCode}</small> : null}</td>
-            <td>{t(`payroll.${worker.paymentType}`)}</td>
-            <td dir="ltr">{displayMoney(worker.dailyRate, worker.currency)}</td>
-            <td dir="ltr">{displayMoney(worker.monthlySalary, worker.currency)}</td>
-            <td dir="ltr">{displayMoney(worker.transportAllowance, worker.currency)}</td>
-            <td aria-label={t('payroll.reviewNotes')} />
-          </tr>)}</tbody>
-        </table>
-      </section>)}
-
-      {!groups.length ? <p className="compensation-review-empty">{t('payroll.noWorkers')}</p> : null}
+      <CompensationSection title={t('payroll.weeklyWorkersReview')} groups={report.weeklyGroups} paymentType="weekly" t={t} />
+      <CompensationSection title={t('payroll.monthlyWorkersReview')} groups={report.monthlyGroups} paymentType="monthly" emptyMessage={t('payroll.noMonthlyWorkersReview')} t={t} />
+      {!report.workerCount ? <p className="compensation-review-empty">{t('payroll.noWorkers')}</p> : null}
     </article> : null}
   </section>
 }
