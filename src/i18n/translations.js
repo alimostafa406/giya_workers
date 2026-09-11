@@ -279,3 +279,31 @@ Object.assign(translations.fr, {
     title: 'Rapport des pointages matinaux manquants', description: 'Rapport en lecture seule des travailleurs sans pointage biométrique matinal valide, regroupés par équipe.', today: 'Aujourd’hui', week: 'Cette semaine', allTeams: 'Toutes les équipes', print: 'Imprimer le rapport', companyTitle: 'Rapport biométrique de l’entreprise', todayTitle: 'Pointages matinaux manquants aujourd’hui', weekTitle: 'Pointages matinaux manquants cette semaine', generatedAt: 'Généré le', teamsWithMissingMorning: 'Équipes avec un pointage matinal manquant', missingMorningWorkers: 'Travailleurs sans pointage matinal', missingMorningDays: 'Jours sans pointage matinal', missingMorningCount: 'Sans pointage matinal', missingMorningTotal: 'Total', morningRecorded: 'Pointage matinal enregistré', morningMissing: 'Pointage matinal manquant', empty: 'Tous les travailleurs ont enregistré leur pointage matinal pour la période choisie.',
   },
 })
+
+Object.assign(translations.ar.payroll, {
+  compensationReview: 'تقرير مراجعة تعويضات العمال',
+  compensationReviewDescription: 'مراجعة بيانات الأجر وبدل النقل المخزنة للعمال النشطين.',
+  compensationReviewPurpose: 'للمراجعة فقط — لا يتضمن هذا التقرير أي حساب للرواتب أو الحضور.',
+  compensationReviewWorkerCount: 'عدد العمال النشطين: {count}',
+  printCompensationReview: 'طباعة مراجعة التعويضات',
+  transportAllowance: 'بدل النقل',
+  reviewNotes: 'ملاحظات / مراجعة',
+})
+Object.assign(translations.en.payroll, {
+  compensationReview: 'Worker Compensation Review',
+  compensationReviewDescription: 'Review stored wage and transport information for active workers.',
+  compensationReviewPurpose: 'Review only — this report performs no payroll or attendance calculation.',
+  compensationReviewWorkerCount: 'Active workers: {count}',
+  printCompensationReview: 'Print Compensation Review',
+  transportAllowance: 'Transport allowance',
+  reviewNotes: 'Notes / review',
+})
+Object.assign(translations.fr.payroll, {
+  compensationReview: 'Révision de la rémunération des travailleurs',
+  compensationReviewDescription: 'Vérifier les salaires et indemnités de transport enregistrés des travailleurs actifs.',
+  compensationReviewPurpose: 'Révision uniquement — ce rapport ne calcule ni paie ni présence.',
+  compensationReviewWorkerCount: 'Travailleurs actifs : {count}',
+  printCompensationReview: 'Imprimer la révision des rémunérations',
+  transportAllowance: 'Indemnité de transport',
+  reviewNotes: 'Notes / révision',
+})

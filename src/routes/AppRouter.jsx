@@ -21,6 +21,7 @@ import Teams from '../pages/Teams'
 import Supervisors from '../pages/Supervisors'
 import Workers from '../pages/Workers'
 import InactiveWorkers from '../pages/InactiveWorkers'
+import CompensationReviewReport from '../pages/CompensationReviewReport'
 import AdvancedSettings from '../pages/AdvancedSettings'
 import Payroll from '../pages/Payroll'
 import ForeignAttendance from '../pages/ForeignAttendance'
@@ -127,6 +128,7 @@ function AppRouter() {
             <Route path="/reports/weekly-attendance" element={<WeeklyAttendanceReport />} />
             <Route path="/advanced-settings" element={<AdvancedSettings />} />
             <Route path="/payroll" element={<Payroll />} />
+            <Route path="/payroll/compensation-review" element={<CompensationReviewReport />} />
           </Route>
         </Route>
 
