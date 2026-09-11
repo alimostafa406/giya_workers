@@ -45,7 +45,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
     setDailyRate(line?.term?.daily_rate ?? '')
     setMonthlySalary(line?.term?.monthly_salary ?? line?.worker?.monthly_salary ?? '')
     setMonthlyCycleStart(line?.term?.monthly_payroll_cycle_start_date || '')
-    setDailyTransportAllowance(line?.term?.daily_transport_allowance ?? 0)
+    setDailyTransportAllowance(line?.term?.daily_transport_allowance ?? '')
     setOvertimeRate(line?.term?.overtime_rate_per_hour ?? '')
     setOvertimeStartTime(line?.term?.overtime_start_time || '')
     setEffectiveFrom(localIsoDate())
@@ -59,12 +59,13 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
   const selectPaymentType = (nextType) => {
     const savedTerm = latestTermForType(line, nextType)
     setPaymentType(nextType)
+    setCurrencyCode(savedTerm?.currency_code || '')
     setDailyRate(nextType === 'weekly' ? savedTerm?.daily_rate ?? '' : '')
-    setMonthlySalary(nextType === 'monthly' ? savedTerm?.monthly_salary ?? line?.worker?.monthly_salary ?? '' : '')
+    setMonthlySalary(nextType === 'monthly' ? savedTerm?.monthly_salary ?? '' : '')
     setMonthlyCycleStart(nextType === 'monthly' ? savedTerm?.monthly_payroll_cycle_start_date || '' : '')
-    setDailyTransportAllowance(savedTerm?.daily_transport_allowance ?? line?.term?.daily_transport_allowance ?? 0)
-    setOvertimeRate(savedTerm?.overtime_rate_per_hour ?? line?.term?.overtime_rate_per_hour ?? '')
-    setOvertimeStartTime(savedTerm?.overtime_start_time || line?.term?.overtime_start_time || '')
+    setDailyTransportAllowance(savedTerm?.daily_transport_allowance ?? '')
+    setOvertimeRate(savedTerm?.overtime_rate_per_hour ?? '')
+    setOvertimeStartTime(savedTerm?.overtime_start_time || '')
   }
   const save = (event) => {
     event.preventDefault()
@@ -98,12 +99,12 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
       <section className="border-t border-(--border) pt-4">
         <h3 className="font-extrabold">{t('payroll.settingsTitle')}</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="text-sm font-bold">{t('payroll.currency')}<select className="input-base mt-1" value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)} required><option value="">—</option><option value="CDF">CDF</option><option value="USD">USD</option></select></label>
-          {paymentType === 'weekly' ? <label className="text-sm font-bold">{t('payroll.dailyRate')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyRate} onChange={(event) => setDailyRate(event.target.value)} required /></label> : <>
-            <label className="text-sm font-bold">{t('payroll.monthlySalary')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={monthlySalary} onChange={(event) => setMonthlySalary(event.target.value)} required /></label>
-            <label className="text-sm font-bold">{t('payroll.cycleStart')}<input className="input-base mt-1" type="date" value={monthlyCycleStart} onChange={(event) => setMonthlyCycleStart(event.target.value)} required /></label>
+          <label className="text-sm font-bold">{t('payroll.currency')}<select className="input-base mt-1" value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)}><option value="">—</option><option value="CDF">CDF</option><option value="USD">USD</option></select></label>
+          {paymentType === 'weekly' ? <label className="text-sm font-bold">{t('payroll.dailyRate')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyRate} onChange={(event) => setDailyRate(event.target.value)} /></label> : <>
+            <label className="text-sm font-bold">{t('payroll.monthlySalary')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={monthlySalary} onChange={(event) => setMonthlySalary(event.target.value)} /></label>
+            <label className="text-sm font-bold">{t('payroll.cycleStart')}<input className="input-base mt-1" type="date" value={monthlyCycleStart} onChange={(event) => setMonthlyCycleStart(event.target.value)} /></label>
           </>}
-          <label className="text-sm font-bold">{t('payroll.transport')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyTransportAllowance} onChange={(event) => setDailyTransportAllowance(event.target.value)} required /></label>
+          <label className="text-sm font-bold">{t('payroll.transport')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={dailyTransportAllowance} onChange={(event) => setDailyTransportAllowance(event.target.value)} /></label>
           <label className="text-sm font-bold">{t('payroll.overtimeRate')}<input className="input-base mt-1" type="number" min="0" step="0.01" value={overtimeRate} onChange={(event) => setOvertimeRate(event.target.value)} /></label>
           <label className="text-sm font-bold">{t('payroll.overtimeStart')}<input className="input-base mt-1" type="time" value={overtimeStartTime} onChange={(event) => setOvertimeStartTime(event.target.value)} /></label>
           <label className="text-sm font-bold">{t('payroll.effectiveFrom')}<input className="input-base mt-1" type="date" min={localIsoDate()} value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} required /></label>

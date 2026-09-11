@@ -316,3 +316,7 @@ Object.assign(translations.fr.payroll, {
   monthlyWorkersReview: 'Travailleurs mensuels',
   noMonthlyWorkersReview: 'Aucun travailleur mensuel dans cette révision.',
 })
+
+Object.assign(translations.ar.payroll, { monthlyTransport: 'بدل النقل الشهري' })
+Object.assign(translations.en.payroll, { monthlyTransport: 'Monthly transport allowance' })
+Object.assign(translations.fr.payroll, { monthlyTransport: 'Indemnité mensuelle de transport' })

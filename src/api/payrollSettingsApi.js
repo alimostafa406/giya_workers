@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '../lib/supabase'
 import { getWorkersRequest, saveWorkerPayrollProfileRequest } from './workersApi'
+import { buildWorkerPayrollSettingsSavePlan } from '../utils/payrollSettings'
 
 const asArray = (value) => (Array.isArray(value) ? value : [])
 
@@ -9,8 +10,6 @@ const localIsoDate = (date = new Date()) => {
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
-
-const numberOrNull = (value) => value === '' || value == null ? null : Number(value)
 
 const currentTermFor = (terms, today) => terms
   .filter((term) => term.effective_from <= today && (!term.effective_to || term.effective_to >= today))
@@ -57,65 +56,20 @@ export const getPayrollSettingsWorkersRequest = async () => {
 }
 
 export const saveWorkerPayrollSettingsRequest = async (worker, values) => {
-  const effectiveFrom = values.effective_from || localIsoDate()
-  const paymentType = values.payment_type
-  const currencyCode = String(values.currency_code || '').trim().toUpperCase()
-  const monthlySalary = numberOrNull(values.monthly_salary)
-  const dailyRate = numberOrNull(values.daily_rate)
-  const dailyTransportAllowance = numberOrNull(values.daily_transport_allowance) ?? 0
-  const overtimeRate = numberOrNull(values.overtime_rate_per_hour)
-
-  if (!['weekly', 'monthly'].includes(paymentType)) {
-    throw new Error('Payment type must be explicitly set to weekly or monthly.')
-  }
-  if (!['CDF', 'USD'].includes(currencyCode)) {
-    throw new Error('Currency must be explicitly set to CDF or USD.')
-  }
-  if (effectiveFrom < localIsoDate()) {
-    throw new Error('Effective date cannot be in the past.')
-  }
-  if (worker.payment_type && paymentType !== worker.payment_type && effectiveFrom !== localIsoDate()) {
-    throw new Error('A payment-type change must take effect today so the worker profile and active compensation stay consistent.')
-  }
-  if (paymentType === 'weekly' && (dailyRate == null || dailyRate < 0)) {
-    throw new Error('A non-negative daily rate is required for weekly workers.')
-  }
-  if (paymentType === 'monthly' && (monthlySalary == null || monthlySalary < 0)) {
-    throw new Error('A non-negative monthly salary is required for monthly workers.')
-  }
-  if (paymentType === 'monthly' && !values.monthly_payroll_cycle_start_date) {
-    throw new Error('Monthly payroll cycle start date is required for monthly workers.')
-  }
-  if ([dailyTransportAllowance, overtimeRate].some((amount) => amount != null && amount < 0)) {
-    throw new Error('Payroll amounts cannot be negative.')
-  }
-
+  const plan = buildWorkerPayrollSettingsSavePlan(worker, values, localIsoDate())
   const client = getSupabaseClient()
-  const compensationPayload = {
-    worker_id: worker.id,
-    payment_type: paymentType,
-    effective_from: effectiveFrom,
-    currency_code: currencyCode,
-    daily_rate: paymentType === 'weekly' ? dailyRate : null,
-    daily_transport_allowance: dailyTransportAllowance,
-    overtime_rate_per_hour: overtimeRate,
-    overtime_start_time: values.overtime_start_time || null,
-    monthly_salary: paymentType === 'monthly' ? monthlySalary : null,
-    monthly_payroll_cycle_start_date: paymentType === 'monthly' ? values.monthly_payroll_cycle_start_date : null,
-  }
 
   // A term is keyed by worker/effective date. Re-saving a planned current or
   // future date corrects that term; a later effective date always preserves it.
-  const { error: termError } = await client
-    .from('worker_payroll_compensation')
-    .upsert(compensationPayload, { onConflict: 'worker_id,effective_from' })
+  if (plan.compensationPayload) {
+    const { error: termError } = await client
+      .from('worker_payroll_compensation')
+      .upsert(plan.compensationPayload, { onConflict: 'worker_id,effective_from' })
 
-  if (termError) throw termError
+    if (termError) throw termError
+  }
 
-  await saveWorkerPayrollProfileRequest(worker.id, {
-    payment_type: paymentType,
-    monthly_salary: paymentType === 'monthly' ? monthlySalary : null,
-  })
+  return saveWorkerPayrollProfileRequest(worker.id, plan.profilePayload)
 }
 
 export { localIsoDate }

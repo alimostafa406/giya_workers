@@ -43,35 +43,47 @@ function PayrollSettingsForm({ worker, rules, onSave, saving }) {
     currency_code: term.currency_code || '',
     daily_rate: term.daily_rate ?? '',
     monthly_salary: worker.monthly_salary ?? term.monthly_salary ?? '',
-    daily_transport_allowance: term.daily_transport_allowance ?? 0,
+    daily_transport_allowance: term.daily_transport_allowance ?? '',
     overtime_rate_per_hour: term.overtime_rate_per_hour ?? '',
     overtime_start_time: term.overtime_start_time || '',
     monthly_payroll_cycle_start_date: term.monthly_payroll_cycle_start_date || '',
     effective_from: localIsoDate(),
   })
+  const [compensationDirty, setCompensationDirty] = useState(false)
 
   const isMonthly = values.payment_type === 'monthly'
   const cycle = monthlyCycleSummary(values.monthly_payroll_cycle_start_date)
   const divisor = Number(rules?.monthly_working_day_divisor || 26)
   const derivedDailyValue = isMonthly ? monthlyDailyValue(values.monthly_salary, divisor) : null
   const paymentTypeChanged = Boolean(worker.payment_type && values.payment_type && worker.payment_type !== values.payment_type)
-  const update = (name) => (event) => setValues((current) => ({ ...current, [name]: event.target.value }))
+  const update = (name) => (event) => {
+    setCompensationDirty(true)
+    setValues((current) => ({ ...current, [name]: event.target.value }))
+  }
   const selectPaymentType = (paymentType) => {
     const savedTerm = latestTermForType(worker, paymentType)
+    setCompensationDirty(false)
     setValues((current) => ({
       ...current,
       payment_type: paymentType,
-      currency_code: current.currency_code,
+      currency_code: savedTerm?.currency_code || '',
       daily_rate: paymentType === 'weekly' ? savedTerm?.daily_rate ?? '' : '',
       monthly_salary: paymentType === 'monthly' ? savedTerm?.monthly_salary ?? worker.monthly_salary ?? '' : '',
       monthly_payroll_cycle_start_date: paymentType === 'monthly' ? savedTerm?.monthly_payroll_cycle_start_date || '' : '',
-      daily_transport_allowance: savedTerm?.daily_transport_allowance ?? current.daily_transport_allowance ?? 0,
-      overtime_rate_per_hour: savedTerm?.overtime_rate_per_hour ?? current.overtime_rate_per_hour ?? '',
-      overtime_start_time: savedTerm?.overtime_start_time || current.overtime_start_time || '',
+      daily_transport_allowance: savedTerm?.daily_transport_allowance ?? '',
+      overtime_rate_per_hour: savedTerm?.overtime_rate_per_hour ?? '',
+      overtime_start_time: savedTerm?.overtime_start_time || '',
     }))
   }
 
-  return <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); onSave(values) }}>
+  const baseAmount = isMonthly ? values.monthly_salary : values.daily_rate
+  const compensationIncomplete = !values.currency_code
+    || !Number.isFinite(Number(baseAmount))
+    || Number(baseAmount) <= 0
+    || values.daily_transport_allowance === ''
+    || (isMonthly && !values.monthly_payroll_cycle_start_date)
+
+  return <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); onSave({ ...values, save_compensation: !paymentTypeChanged || compensationDirty }) }}>
     <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-(--muted)">{worker.full_name} · {worker.team_name || '-'}</p>
     <fieldset className="rounded-xl border-2 border-(--primary) bg-blue-50/40 p-4">
       <legend className="px-2 text-base font-extrabold">{t('payroll.paymentType')}</legend>
@@ -81,14 +93,15 @@ function PayrollSettingsForm({ worker, rules, onSave, saving }) {
       {!values.payment_type ? <p className="mt-2 text-sm font-bold text-amber-700">{t('payroll.paymentTypeRequired')}</p> : null}
     </fieldset>
     {values.payment_type ? <div className="grid gap-4 sm:grid-cols-2">
-      <label className="text-sm font-semibold">{t('payroll.currency')}<select className="input-base mt-1" value={values.currency_code} onChange={update('currency_code')} required><option value="">—</option><option value="CDF">CDF</option><option value="USD">USD</option></select></label>
+      <label className="text-sm font-semibold">{t('payroll.currency')}<select className="input-base mt-1" value={values.currency_code} onChange={update('currency_code')}><option value="">—</option><option value="CDF">CDF</option><option value="USD">USD</option></select></label>
       <label className="text-sm font-semibold">{t('payroll.effectiveFrom')}<input type="date" min={localIsoDate()} max={paymentTypeChanged ? localIsoDate() : undefined} className="input-base mt-1" value={values.effective_from} onChange={update('effective_from')} required />{paymentTypeChanged ? <span className="mt-1 block text-xs text-amber-700">{t('payroll.paymentTypeChangeToday')}</span> : null}</label>
-      <label className="text-sm font-semibold">{t('payroll.transport')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.daily_transport_allowance} onChange={update('daily_transport_allowance')} required /></label>
-      {isMonthly ? <label className="text-sm font-semibold">{t('payroll.monthlySalary')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.monthly_salary} onChange={update('monthly_salary')} required /></label> : <label className="text-sm font-semibold">{t('payroll.dailyRate')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.daily_rate} onChange={update('daily_rate')} required /></label>}
+      <label className="text-sm font-semibold">{t(isMonthly ? 'payroll.monthlyTransport' : 'payroll.transport')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.daily_transport_allowance} onChange={update('daily_transport_allowance')} /></label>
+      {isMonthly ? <label className="text-sm font-semibold">{t('payroll.monthlySalary')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.monthly_salary} onChange={update('monthly_salary')} /></label> : <label className="text-sm font-semibold">{t('payroll.dailyRate')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.daily_rate} onChange={update('daily_rate')} /></label>}
       <label className="text-sm font-semibold">{t('payroll.overtimeRate')}<input type="number" min="0" step="0.01" className="input-base mt-1" value={values.overtime_rate_per_hour} onChange={update('overtime_rate_per_hour')} /></label>
       <label className="text-sm font-semibold">{t('payroll.overtimeStart')}<input type="time" className="input-base mt-1" value={values.overtime_start_time} onChange={update('overtime_start_time')} /></label>
-      {isMonthly ? <label className="text-sm font-semibold">{t('payroll.cycleStart')}<input type="date" className="input-base mt-1" value={values.monthly_payroll_cycle_start_date} onChange={update('monthly_payroll_cycle_start_date')} required /></label> : null}
+      {isMonthly ? <label className="text-sm font-semibold">{t('payroll.cycleStart')}<input type="date" className="input-base mt-1" value={values.monthly_payroll_cycle_start_date} onChange={update('monthly_payroll_cycle_start_date')} /></label> : null}
     </div> : null}
+    {values.payment_type && compensationIncomplete ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{t('payroll.missingConfiguration')}</p> : null}
     {isMonthly && derivedDailyValue != null ? <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm"><p className="font-bold">{t('payroll.derivedDailyValue')}: {formatPayrollMoney(derivedDailyValue, { currency: values.currency_code, paymentType: 'monthly' })}</p><p className="mt-1 text-xs text-(--muted)">{t('payroll.derivedDailyValueHelp', { divisor })}</p></div> : null}
     {isMonthly && cycle ? <div className="rounded-xl border border-(--border) bg-slate-50 p-3 text-sm"><p>{t('payroll.cycleDay')}: {cycle.day}</p><p>{t('payroll.currentPeriod')}: {formatDate(cycle.start)} — {formatDate(cycle.end)}</p><p>{t('payroll.nextDueDate')}: {formatDate(cycle.due)}</p></div> : null}
     <p className="text-xs text-(--muted)">{t('payroll.effectiveHelp')}</p>
