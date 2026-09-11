@@ -6,6 +6,20 @@ export const isCompensationReviewWorker = (worker) => (
   worker?.staff_classification !== 'special_staff'
 )
 
+const positiveStoredAmount = (value) => {
+  if (value == null || value === '') return false
+  const amount = Number(value)
+  return Number.isFinite(amount) && amount > 0
+}
+
+export const hasConfiguredBaseCompensation = (worker) => {
+  const compensation = worker?.payroll_compensation
+  if (!compensation) return false
+  if (worker.payment_type === 'weekly') return positiveStoredAmount(compensation.daily_rate)
+  if (worker.payment_type === 'monthly') return positiveStoredAmount(compensation.monthly_salary)
+  return false
+}
+
 const groupByTeam = (workers) => {
   const groups = new Map()
 
@@ -38,8 +52,10 @@ const groupByTeam = (workers) => {
 }
 
 export const buildCompensationReviewSections = (workers = []) => {
-  const reviewWorkers = activeWorkersOnly(workers).filter(isCompensationReviewWorker)
-  const weeklyWorkers = reviewWorkers.filter((worker) => worker.payment_type !== 'monthly')
+  const reviewWorkers = activeWorkersOnly(workers)
+    .filter(isCompensationReviewWorker)
+    .filter(hasConfiguredBaseCompensation)
+  const weeklyWorkers = reviewWorkers.filter((worker) => worker.payment_type === 'weekly')
   const monthlyWorkers = reviewWorkers.filter((worker) => worker.payment_type === 'monthly')
 
   return {

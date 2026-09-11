@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-import { buildCompensationReviewSections } from './src/utils/compensationReview.js'
+import { buildCompensationReviewSections, hasConfiguredBaseCompensation } from './src/utils/compensationReview.js'
 
 const workers = [
   { id: 'weekly', full_name: 'Weekly Worker', employee_code: '10', team_id: 'b', team_name: 'Beta', is_active: true, payment_type: 'weekly', payroll_compensation: { currency_code: 'CDF', daily_rate: 22000, monthly_salary: 999999, daily_transport_allowance: 5000 } },
@@ -11,6 +11,18 @@ const workers = [
   { id: 'foreign-weekly', full_name: 'Foreign Weekly', team_id: 'a', team_name: 'Alpha', is_active: true, staff_classification: 'special_staff', payment_type: 'weekly', payroll_compensation: { daily_rate: 300, daily_transport_allowance: 30 } },
   { id: 'foreign-monthly', full_name: 'Foreign Monthly', team_id: 'b', team_name: 'Beta', is_active: true, staff_classification: 'special_staff', payment_type: 'monthly', payroll_compensation: { monthly_salary: 9000, daily_transport_allowance: 90 } },
 ]
+
+const configuredWorker = (overrides = {}) => ({
+  id: overrides.id || 'fixture',
+  full_name: 'Configured Worker',
+  team_id: 'team',
+  team_name: 'Team',
+  is_active: true,
+  staff_classification: 'normal',
+  payment_type: 'weekly',
+  payroll_compensation: { currency_code: 'CDF', daily_rate: 100, monthly_salary: null, daily_transport_allowance: 0 },
+  ...overrides,
+})
 
 test('compensation review excludes inactive and special staff before separating payment types', () => {
   const report = buildCompensationReviewSections(workers)
@@ -29,6 +41,47 @@ test('weekly and monthly workers remain grouped by team with stored values only'
   const monthly = report.monthlyGroups[0].workers[0]
   assert.deepEqual({ dailyRate: weekly.dailyRate, monthlySalary: weekly.monthlySalary, transport: weekly.transportAllowance }, { dailyRate: 22000, monthlySalary: null, transport: 5000 })
   assert.deepEqual({ dailyRate: monthly.dailyRate, monthlySalary: monthly.monthlySalary, transport: monthly.transportAllowance }, { dailyRate: null, monthlySalary: 750000, transport: 80000 })
+})
+
+test('weekly eligibility requires a real positive configured daily rate', () => {
+  assert.equal(hasConfiguredBaseCompensation(configuredWorker()), true)
+  for (const dailyRate of [null, undefined, '', 0, '0.00', -1, 'not-a-number']) {
+    assert.equal(hasConfiguredBaseCompensation(configuredWorker({ payroll_compensation: { daily_rate: dailyRate, daily_transport_allowance: 50 } })), false)
+  }
+  assert.equal(hasConfiguredBaseCompensation(configuredWorker({ payroll_compensation: null })), false)
+})
+
+test('monthly eligibility requires a real positive configured monthly salary', () => {
+  const monthly = (monthlySalary, compensation = true) => configuredWorker({
+    payment_type: 'monthly',
+    payroll_compensation: compensation ? { monthly_salary: monthlySalary, daily_transport_allowance: 50 } : null,
+  })
+  assert.equal(hasConfiguredBaseCompensation(monthly(800)), true)
+  for (const salary of [null, undefined, '', 0, '0.00', -1, Number.NaN]) {
+    assert.equal(hasConfiguredBaseCompensation(monthly(salary)), false)
+  }
+  assert.equal(hasConfiguredBaseCompensation(monthly(800, false)), false)
+})
+
+test('zero transport remains eligible while transport alone cannot make a worker eligible', () => {
+  const report = buildCompensationReviewSections([
+    configuredWorker({ id: 'zero-transport', payroll_compensation: { daily_rate: 20, daily_transport_allowance: 0 } }),
+    configuredWorker({ id: 'transport-only', payroll_compensation: { daily_rate: 0, daily_transport_allowance: 5 } }),
+  ])
+  assert.deepEqual(report.weeklyGroups.flatMap((group) => group.workers.map((worker) => worker.id)), ['zero-transport'])
+  assert.equal(report.weeklyGroups[0].workers[0].transportAllowance, 0)
+})
+
+test('included report rows can never have a missing or non-positive base amount', () => {
+  const badRows = [
+    configuredWorker({ id: 'chadrack-108', full_name: 'CHADRACK', payroll_compensation: null }),
+    configuredWorker({ id: 'heart-317', full_name: 'heart', payroll_compensation: { daily_rate: 0, daily_transport_allowance: 0 } }),
+    configuredWorker({ id: 'joseph-105', full_name: 'JOSEPH', payroll_compensation: { daily_rate: null, daily_transport_allowance: 0 } }),
+  ]
+  const report = buildCompensationReviewSections([...workers, ...badRows])
+  report.weeklyGroups.flatMap((group) => group.workers).forEach((worker) => assert.ok(Number(worker.dailyRate) > 0))
+  report.monthlyGroups.flatMap((group) => group.workers).forEach((worker) => assert.ok(Number(worker.monthlySalary) > 0))
+  assert.equal([...report.weeklyGroups, ...report.monthlyGroups].flatMap((group) => group.workers).some((worker) => badRows.some((bad) => bad.id === worker.id)), false)
 })
 
 test('weekly and monthly sections render only their relevant compensation columns', async () => {

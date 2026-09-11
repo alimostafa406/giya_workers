@@ -37,8 +37,8 @@ function CompensationTeamTable({ group, paymentType, t }) {
   </section>
 }
 
-function CompensationSection({ title, groups, paymentType, emptyMessage, t }) {
-  if (!groups.length) return emptyMessage ? <section className="compensation-review-section compensation-review-section--empty"><h2>{title}</h2><p>{emptyMessage}</p></section> : null
+function CompensationSection({ title, groups, paymentType, t }) {
+  if (!groups.length) return null
   return <section className="compensation-review-section">
     <h2>{title}</h2>
     {groups.map((group) => <CompensationTeamTable key={`${paymentType}-${group.id}`} group={group} paymentType={paymentType} t={t} />)}
@@ -91,7 +91,7 @@ export default function CompensationReviewReport() {
       </header>
 
       <CompensationSection title={t('payroll.weeklyWorkersReview')} groups={report.weeklyGroups} paymentType="weekly" t={t} />
-      <CompensationSection title={t('payroll.monthlyWorkersReview')} groups={report.monthlyGroups} paymentType="monthly" emptyMessage={t('payroll.noMonthlyWorkersReview')} t={t} />
+      <CompensationSection title={t('payroll.monthlyWorkersReview')} groups={report.monthlyGroups} paymentType="monthly" t={t} />
       {!report.workerCount ? <p className="compensation-review-empty">{t('payroll.noWorkers')}</p> : null}
     </article> : null}
   </section>
