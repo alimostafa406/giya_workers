@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { canPublishCurrentWeeklyPayroll, isPublishedWeeklyPayrollActiveOn, normalizeCurrentWeeklyPayrollPublication } from './src/utils/payrollPublication.js'
+import { resolveCurrentWeeklyPayrollRun, summarizeCurrentWeeklyPayrollWorkflow } from './src/utils/currentWeeklyPayrollWorkflow.js'
 
 const current = normalizeCurrentWeeklyPayrollPublication({
   weekStart: '2026-09-07', weekEnd: '2026-09-12', finalizedRunCount: 2,
@@ -59,4 +60,67 @@ test('publishing confirms snapshot totals and does not recalculate payroll', () 
   assert.equal(current.teamCount, 3)
   assert.equal(current.totals[0].amount, 100)
   assert.doesNotMatch(source, /persistPayrollDraft|calculatePayroll|setWeeklyPayrollRunStatus/)
+})
+
+test('publication resolves the same canonical current-week run as Weekly Payroll', () => {
+  const runs = [
+    { id: 'monthly', payment_type: 'monthly', weekly_period_start: null, weekly_period_end: null, scheduled_payment_date: '2026-09-12', status: 'finalized' },
+    { id: 'weekly', payment_type: 'weekly', weekly_period_start: '2026-09-07', weekly_period_end: '2026-09-12', scheduled_payment_date: '2026-09-12', status: 'finalized', currency_code: 'CDF' },
+  ]
+  assert.equal(resolveCurrentWeeklyPayrollRun(runs, '2026-09-07', '2026-09-12')?.id, 'weekly')
+  const weeklyPage = fs.readFileSync('src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  const publicationPage = fs.readFileSync('src/pages/PayrollPublication.jsx', 'utf8')
+  assert.match(weeklyPage, /getPayrollOperationsDataRequest/)
+  assert.match(weeklyPage, /run\.payment_type === 'weekly'.*run\.weekly_period_start === monday.*run\.weekly_period_end === saturday.*run\.scheduled_payment_date === saturday/)
+  assert.match(publicationPage, /getPayrollOperationsDataRequest/)
+  assert.match(publicationPage, /summarizeCurrentWeeklyPayrollWorkflow/)
+})
+
+test('unsaved current week shows real weekly population but never exposes draft totals', () => {
+  const summary = summarizeCurrentWeeklyPayrollWorkflow({
+    weekStart: '2026-09-07', weekEnd: '2026-09-12',
+    data: {
+      runs: [], payrollLines: [],
+      workers: [
+        { id: 'w1', is_active: true, payment_type: 'weekly', team_id: 't1' },
+        { id: 'w2', is_active: true, payment_type: 'weekly', team_id: 't2' },
+        { id: 'w3', is_active: true, payment_type: 'monthly', team_id: 't2' },
+        { id: 'w4', is_active: false, payment_type: 'weekly', team_id: 't2' },
+      ],
+    },
+  })
+  assert.equal(summary.runStatus, 'not_saved')
+  assert.equal(summary.workerCount, 2)
+  assert.equal(summary.teamCount, 2)
+  assert.deepEqual(summary.totals, [])
+  assert.equal(summary.publishable, false)
+  assert.equal(canPublishCurrentWeeklyPayroll(summary), false)
+})
+
+test('only stored finalized weekly lines provide publication totals', () => {
+  const data = {
+    runs: [{ id: 'r1', payment_type: 'weekly', weekly_period_start: '2026-09-07', weekly_period_end: '2026-09-12', scheduled_payment_date: '2026-09-12', status: 'finalized', currency_code: 'CDF' }],
+    workers: [
+      { id: 'w1', is_active: true, payment_type: 'weekly', team_id: 't1' },
+      { id: 'w2', is_active: true, payment_type: 'weekly', team_id: 't1' },
+      { id: 'm1', is_active: true, payment_type: 'monthly', team_id: 't1' },
+    ],
+    payrollLines: [
+      { payroll_run_id: 'r1', worker_id: 'w1', payment_type_snapshot: 'weekly', currency_code_snapshot: 'CDF', final_amount: 100 },
+      { payroll_run_id: 'r1', worker_id: 'w2', payment_type_snapshot: 'weekly', currency_code_snapshot: 'CDF', final_amount: 50 },
+      { payroll_run_id: 'r1', worker_id: 'm1', payment_type_snapshot: 'monthly', currency_code_snapshot: 'CDF', final_amount: 999 },
+    ],
+  }
+  const summary = summarizeCurrentWeeklyPayrollWorkflow({ data, weekStart: '2026-09-07', weekEnd: '2026-09-12' })
+  assert.equal(summary.workerCount, 2)
+  assert.equal(summary.teamCount, 1)
+  assert.deepEqual(summary.totals, [{ currency: 'CDF', amount: 150 }])
+  assert.equal(summary.publishable, true)
+  assert.equal(canPublishCurrentWeeklyPayroll(summary), true)
+
+  data.runs[0].status = 'reviewed'
+  const reviewed = summarizeCurrentWeeklyPayrollWorkflow({ data, weekStart: '2026-09-07', weekEnd: '2026-09-12' })
+  assert.equal(reviewed.runStatus, 'reviewed')
+  assert.deepEqual(reviewed.totals, [])
+  assert.equal(canPublishCurrentWeeklyPayroll(reviewed), false)
 })

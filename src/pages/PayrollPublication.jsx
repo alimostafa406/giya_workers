@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getErrorMessage } from '../api/axios'
 import { getCurrentWeeklyPayrollPublicationRequest, setCurrentWeeklyPayrollPublicationRequest } from '../api/payrollPublicationApi'
+import { getPayrollOperationsDataRequest } from '../api/payrollOperationsApi'
 import { useTranslation } from '../i18n/LanguageContext'
 import { formatPayrollMoney } from '../utils/payrollCurrency'
 import { canPublishCurrentWeeklyPayroll, normalizeCurrentWeeklyPayrollPublication } from '../utils/payrollPublication'
+import { summarizeCurrentWeeklyPayrollWorkflow } from '../utils/currentWeeklyPayrollWorkflow'
 
 const formatDate = (value) => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'Africa/Kinshasa' }).format(new Date(`${value}T12:00:00+01:00`)) : '—'
 
@@ -19,7 +21,20 @@ export default function PayrollPublication() {
     setLoading(true)
     setError('')
     try {
-      setPeriod(normalizeCurrentWeeklyPayrollPublication(await getCurrentWeeklyPayrollPublicationRequest()))
+      const [publicationPayload, payrollData] = await Promise.all([
+        getCurrentWeeklyPayrollPublicationRequest(),
+        getPayrollOperationsDataRequest(),
+      ])
+      const publication = normalizeCurrentWeeklyPayrollPublication(publicationPayload)
+      const workflow = summarizeCurrentWeeklyPayrollWorkflow({ data: payrollData, weekStart: publication.weekStart, weekEnd: publication.weekEnd })
+      setPeriod({
+        ...publication,
+        ...workflow,
+        // Publication visibility remains server-authoritative. Financial/count
+        // summary comes from the exact run/line source used by Weekly Payroll.
+        publicationStatus: publication.publicationStatus,
+        viewerVisible: publication.viewerVisible,
+      })
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {
@@ -30,6 +45,9 @@ export default function PayrollPublication() {
   useEffect(() => { load() }, [load])
   const sent = period?.viewerVisible === true
   const publishable = canPublishCurrentWeeklyPayroll(period)
+  const finalizationLabel = !period ? '' : period.runStatus === 'not_saved'
+    ? t('payrollPublication.unfinished')
+    : t(`payroll.status${period.runStatus.charAt(0).toUpperCase()}${period.runStatus.slice(1)}`)
 
   const changePublication = async () => {
     if (!period || saving || (!sent && !publishable)) return
@@ -64,11 +82,11 @@ export default function PayrollPublication() {
       <div className="grid gap-px bg-(--border) sm:grid-cols-2 lg:grid-cols-4">
         <div className="bg-white p-4"><span className="text-sm text-(--muted)">{t('payrollPublication.workers')}</span><strong className="mt-1 block text-2xl">{period.workerCount}</strong></div>
         <div className="bg-white p-4"><span className="text-sm text-(--muted)">{t('payrollPublication.teams')}</span><strong className="mt-1 block text-2xl">{period.teamCount}</strong></div>
-        <div className="bg-white p-4"><span className="text-sm text-(--muted)">{t('payrollPublication.finalization')}</span><strong className="mt-1 block">{publishable ? t('payrollPublication.finalized') : t('payrollPublication.unfinished')}</strong></div>
+        <div className="bg-white p-4"><span className="text-sm text-(--muted)">{t('payrollPublication.finalization')}</span><strong className="mt-1 block">{finalizationLabel}</strong></div>
         <div className="bg-white p-4"><span className="text-sm text-(--muted)">{t('payrollPublication.total')}</span><div className="mt-1 space-y-1 font-extrabold">{period.totals.length ? period.totals.map((item) => <div key={item.currency} dir="ltr">{formatPayrollMoney(item.amount, { currency: item.currency, paymentType: 'weekly' })}</div>) : '—'}</div></div>
       </div>
       <div className="p-5">
-        {!sent && !publishable ? <p className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{t('payrollPublication.finalizeFirst')}</p> : null}
+        {!sent && !publishable ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800"><span>{t('payrollPublication.finalizeFirst')}</span><Link className="underline" to="/payroll">{t('payroll.operations')}</Link></div> : null}
         <button className={sent ? 'btn-secondary' : 'btn-primary'} disabled={saving || (!sent && !publishable)} onClick={changePublication}>{saving ? t('common.saving') : t(`payrollPublication.${sent ? 'stopDisplay' : 'send'}`)}</button>
         <p className="mt-3 text-xs text-(--muted)">{t('payrollPublication.expirationNote')}</p>
       </div>
