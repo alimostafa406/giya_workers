@@ -6,6 +6,7 @@ import { saveWorkerPayrollSettingsRequest } from '../../api/payrollSettingsApi'
 import { applyPayrollAdjustments, calculatePayrollLine, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
+import { isWeeklyPayrollEligibleWorker } from '../../utils/weeklyPayrollEligibility'
 import { useTranslation } from '../../i18n/LanguageContext'
 import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import Table from '../Table/Table'
@@ -21,7 +22,7 @@ const weeklyLinesFor = (data, monday) => {
   const sundayDate = sundayBefore(monday)
   const run = (data?.runs || []).find((item) => item.payment_type === 'weekly' && item.weekly_period_start === monday && item.weekly_period_end === saturday)
   return (data?.workers || [])
-    .filter((worker) => worker.is_active !== false && worker.payment_type === 'weekly')
+    .filter(isWeeklyPayrollEligibleWorker)
     .map((worker) => {
       const sundayPayment = (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(worker.id) && payment.work_date === sundayDate) || null
       return { ...calculatePayrollLine({

@@ -3,6 +3,7 @@ import { getAttendanceRequest } from './attendanceApi'
 import { getPayrollSettingsWorkersRequest } from './payrollSettingsApi'
 import { applyPayrollAdjustments } from '../utils/payrollCalculations'
 import { assertPayrollLineCurrencies, payrollLineCurrencySnapshot } from '../utils/payrollLineCurrency'
+import { payrollDraftEligibleLines } from '../utils/weeklyPayrollEligibility'
 
 const isMissingSundayPaymentsError = (error) => (
   error?.code === '42P01'
@@ -73,7 +74,8 @@ const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
 })
 
 export const persistPayrollDraftRequest = async ({ paymentType, periodStart = null, periodEnd = null, dueDate, currency, ruleSetId, lines }) => {
-  assertPayrollLineCurrencies(lines)
+  const eligibleLines = payrollDraftEligibleLines(paymentType, lines)
+  assertPayrollLineCurrencies(eligibleLines)
   const client = getSupabaseClient()
   let protectedRunQuery = client.from('payroll_run').select('id,status').eq('payment_type', paymentType).eq('scheduled_payment_date', dueDate).eq('currency_code', currency).neq('status', 'draft')
   protectedRunQuery = paymentType === 'weekly' ? protectedRunQuery.eq('weekly_period_start', periodStart).eq('weekly_period_end', periodEnd) : protectedRunQuery.is('weekly_period_start', null).is('weekly_period_end', null)
@@ -106,7 +108,7 @@ export const persistPayrollDraftRequest = async ({ paymentType, periodStart = nu
     items.push(adjustment)
     adjustmentsByLineId.set(String(adjustment.payroll_line_id), items)
   })
-  const payload = lines.map((line) => {
+  const payload = eligibleLines.map((line) => {
     const existingLineId = lineIdByWorkerId.get(String(line.worker.id))
     const adjustedLine = applyPayrollAdjustments(line, existingLineId ? adjustmentsByLineId.get(String(existingLineId)) || [] : [])
     return linePayload(run.id, adjustedLine, line.cycle?.start || periodStart, line.cycle?.end || periodEnd, line.cycle?.due || dueDate)
