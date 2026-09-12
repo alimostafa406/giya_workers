@@ -95,6 +95,15 @@ export const buildManualAttendancePayload = (row, values) => {
 }
 
 const readAttendance = async (client, params = {}) => {
+  if (params.paginate === true) {
+    const rows = []
+    const pageSize = 1000
+    for (let start = 0; ; start += pageSize) {
+      const page = await readAttendance(client, { ...params, paginate: false, range_from: start, range_to: start + pageSize - 1 })
+      rows.push(...page)
+      if (page.length < pageSize) return rows
+    }
+  }
   let query = client
     .from('attendance')
     .select(`${attendanceFields},biometric_sync_metadata,manual_override,attendance_source`)
@@ -103,6 +112,7 @@ const readAttendance = async (client, params = {}) => {
   if (params.date_from) query = query.gte('attendance_date', params.date_from)
   if (params.date_to) query = query.lte('attendance_date', params.date_to)
   if (params.worker_id) query = query.eq('worker_id', params.worker_id)
+  if (Number.isInteger(params.range_from) && Number.isInteger(params.range_to)) query = query.range(params.range_from, params.range_to)
   const { data, error } = await query
 
   if (error && isMissingManualSyncColumnError(error)) {
@@ -114,6 +124,7 @@ const readAttendance = async (client, params = {}) => {
     if (params.date_from) fallbackQuery = fallbackQuery.gte('attendance_date', params.date_from)
     if (params.date_to) fallbackQuery = fallbackQuery.lte('attendance_date', params.date_to)
     if (params.worker_id) fallbackQuery = fallbackQuery.eq('worker_id', params.worker_id)
+    if (Number.isInteger(params.range_from) && Number.isInteger(params.range_to)) fallbackQuery = fallbackQuery.range(params.range_from, params.range_to)
     const fallback = await fallbackQuery
     if (fallback.error) throw fallback.error
     return toArray(fallback.data)

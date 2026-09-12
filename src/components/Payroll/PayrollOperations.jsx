@@ -42,8 +42,8 @@ const numeric = (value) => Math.round((Number(value) || 0) * 100) / 100
 export default function PayrollOperations() {
   const { t, language, direction } = useTranslation()
   const [data, setData] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [monday, setMonday] = useState(mondayFor()); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(''); const [selectedTeamId, setSelectedTeamId] = useState(''); const [editingWorkerId, setEditingWorkerId] = useState(''); const [editingAttendance, setEditingAttendance] = useState(null); const [savingAttendance, setSavingAttendance] = useState(false); const [savingSheetWorkerId, setSavingSheetWorkerId] = useState(''); const [runActionSaving, setRunActionSaving] = useState(false); const [reviewErrors, setReviewErrors] = useState([])
-  const load = async () => { setLoading(true); try { const result = await getPayrollOperationsDataRequest(); setData(result); setError(''); return result } catch (e) { setError(getErrorMessage(e)); return null } finally { setLoading(false) } }
-  useEffect(() => { load() }, [])
+  const load = async (weekStart = monday) => { setLoading(true); try { const result = await getPayrollOperationsDataRequest({ date_from: weekStart, date_to: weeklyDates(weekStart).at(-1), paginate: true }); setData(result); setError(''); return result } catch (e) { setError(getErrorMessage(e)); return null } finally { setLoading(false) } }
+  useEffect(() => { load(monday) }, [monday])
   const saturday = weeklyDates(monday).at(-1)
   const weeklyRun = useMemo(() => data?.runs?.find((run) => run.payment_type === 'weekly' && run.weekly_period_start === monday && run.weekly_period_end === saturday && run.scheduled_payment_date === saturday) || null, [data, monday, saturday])
   const draftRun = weeklyRun?.status === 'draft' ? weeklyRun : null

@@ -33,10 +33,10 @@ const readSundayPayments = async (client) => {
   return { data: result.data || [], available: true }
 }
 
-export const getPayrollOperationsDataRequest = async () => {
+export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => {
   const client = getSupabaseClient()
   const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult] = await Promise.all([
-    getPayrollSettingsWorkersRequest(), getAttendanceRequest(),
+    getPayrollSettingsWorkersRequest(), getAttendanceRequest(attendanceParams),
     client.from('payroll_rule_set').select('*').eq('is_active', true).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
     client.from('company_holiday').select('holiday_date,name').eq('is_active', true),
     client.from('payroll_run').select('id,payment_type,status,scheduled_payment_date,weekly_period_start,weekly_period_end,currency_code,created_at,reviewed_by,reviewed_at,finalized_by,finalized_at,paid_by,paid_at').order('created_at', { ascending: false }),
