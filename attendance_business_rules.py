@@ -15,6 +15,11 @@ VALID_ATTENDANCE_MAJOR = 5
 VALID_ATTENDANCE_MINOR = 75
 DEFAULT_WORKDAY_BOUNDARY = time(4, 0)
 OFFICIAL_START = time(8, 0)
+# Retained original biometric morning window. Normal Monday-Friday attendance
+# may accept a later real arrival, but only this bounded window earns the
+# Saturday no-checkout full-day exception.
+MORNING_CHECKIN_START = time(7, 0)
+MORNING_CHECKIN_END = time(9, 0)
 WEEKDAY_OFFICIAL_END = time(17, 0)
 SATURDAY_OFFICIAL_END = time(14, 30)
 WEEKDAY_CHECKOUT_START = time(16, 30)
@@ -44,6 +49,8 @@ def workday_schedule(target_date: date) -> dict | None:
     common = {
         "workday_boundary": workday_boundary(),
         "official_start": OFFICIAL_START,
+        "morning_checkin_start": MORNING_CHECKIN_START,
+        "morning_checkin_end": MORNING_CHECKIN_END,
         "valid_event_major": VALID_ATTENDANCE_MAJOR,
         "valid_event_minor": VALID_ATTENDANCE_MINOR,
         "checkout_end": END_OF_DAY,

@@ -842,8 +842,15 @@ def proposed_status(target_date: date_type, check_in: datetime | None, check_out
     if check_in:
         if check_out:
             return 'present', 1.0
+        check_in_time = check_in.timetz().replace(tzinfo=None)
+        if (
+            schedule['label'] == 'saturday'
+            and schedule['morning_checkin_start'] <= check_in_time <= schedule['morning_checkin_end']
+        ):
+            return 'present', 1.0
         # Every accepted real arrival starts as half day, regardless of clock
-        # time, then becomes present only after a qualifying checkout.
+        # time, then becomes present only after a qualifying checkout. Saturday
+        # alone grants a full day for an arrival in the bounded morning window.
         return 'half_day', 0.5
     # A checkout-only event is preserved as audit metadata, never as attendance.
     # The current Kinshasa day is always provisional. Schedule finalization
@@ -937,6 +944,12 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
         checkout_event = checkout[-1] if checkout else None
         checkout_time = checkout_event[0] if checkout_event else None
         status, fraction = proposed_status(target_date, check_in, checkout_time)
+        saturday_morning_full_day = bool(
+            schedule
+            and schedule['label'] == 'saturday'
+            and check_in
+            and schedule['morning_checkin_start'] <= check_in.timetz().replace(tzinfo=None) <= schedule['morning_checkin_end']
+        )
         checkout_only = bool(not check_in and checkout_time)
         # Existing attendance is keyed by worker and the selected attendance date.
         # Only explicitly biometric, non-overridden records can be revised later.
@@ -992,6 +1005,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             'check_out': attendance_time_value(checkout_time) if check_in else None,
             'proposed_status': status,
             'day_fraction': fraction,
+            'saturday_morning_full_day': saturday_morning_full_day,
             'checkout_only': checkout_only,
             # Metadata is also populated for normal check-in/check-out audit data;
             # evening-only fields exist only for checkout-only attendance.
@@ -1075,7 +1089,7 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
     if status in {'present', 'late', 'half_day'} and check_in:
         # Normalize legacy automatic late rows without changing their real
         # timestamps: checkout means present; otherwise the day is half day.
-        status = 'present' if check_out else 'half_day'
+        status = 'present' if check_out or plan.get('saturday_morning_full_day') is True else 'half_day'
 
     if status == 'present':
         day_fraction = 1.0

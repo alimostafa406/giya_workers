@@ -224,6 +224,76 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(plans[0]['check_out'], '14:31:00')
         self.assertEqual(plans[0]['proposed_status'], 'present')
 
+    def test_saturday_morning_checkin_without_checkout_is_full_day(self):
+        saturday = date(2026, 8, 15)
+        for clock in ('07:00:00', '08:15:00', '09:00:00'):
+            with self.subTest(clock=clock):
+                plans, _ = plan_attendance(
+                    [attendance_event(clock, event_date='2026-08-15')],
+                    resolution_with(None), saturday,
+                )
+                plan = plans[0]
+                payload = biometric_payload(plan, None)
+                self.assertEqual(plan['proposed_status'], 'present')
+                self.assertEqual(plan['day_fraction'], 1.0)
+                self.assertEqual(payload['status'], 'present')
+                self.assertEqual(payload['attendance_day_fraction'], 1.0)
+                self.assertIsNone(payload['check_out'])
+
+    def test_saturday_non_morning_checkin_without_checkout_remains_half_day(self):
+        saturday = date(2026, 8, 15)
+        plans, _ = plan_attendance(
+            [attendance_event('09:01:00', event_date='2026-08-15')],
+            resolution_with(None), saturday,
+        )
+        self.assertEqual(plans[0]['proposed_status'], 'half_day')
+        self.assertEqual(plans[0]['day_fraction'], 0.5)
+
+    def test_monday_and_friday_without_checkout_remain_half_day(self):
+        for target_date, event_date in ((date(2026, 8, 10), '2026-08-10'), (date(2026, 8, 14), '2026-08-14')):
+            with self.subTest(target_date=target_date):
+                plans, _ = plan_attendance(
+                    [attendance_event('08:00:00', event_date=event_date)],
+                    resolution_with(None), target_date,
+                )
+                self.assertEqual(plans[0]['proposed_status'], 'half_day')
+                self.assertEqual(plans[0]['day_fraction'], 0.5)
+
+    def test_saturday_without_checkin_is_not_automatically_present(self):
+        saturday = date(2026, 8, 15)
+        with patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 15, 12, 0)):
+            self.assertEqual(proposed_status(saturday, None, None), ('pending', None))
+
+    def test_saturday_manual_override_remains_authoritative(self):
+        class NoWriteClient:
+            def insert_attendance(self, _payload):
+                raise AssertionError('manual row must not be inserted')
+
+            def update_attendance(self, _attendance_id, _payload):
+                raise AssertionError('manual row must not be updated')
+
+        saturday = date(2026, 8, 15)
+        existing = {
+            'id': 'attendance-saturday', 'attendance_date': '2026-08-15',
+            'status': 'absent', 'check_in': None, 'check_out': None,
+            'attendance_source': 'manual', 'manual_override': True,
+        }
+        plans, _ = plan_attendance(
+            [attendance_event('08:00:00', event_date='2026-08-15')],
+            resolution_with(existing), saturday,
+        )
+        result = apply_biometric_attendance(NoWriteClient(), plans, {WORKER_ID: existing})
+        self.assertEqual(result['skipped_manual_protected'], 1)
+
+    def test_saturday_full_day_without_checkout_creates_no_overtime(self):
+        saturday = date(2026, 8, 15)
+        plans, _ = plan_attendance(
+            [attendance_event('08:00:00', event_date='2026-08-15')],
+            resolution_with(None), saturday,
+        )
+        self.assertIsNone(plans[0]['check_out'])
+        self.assertNotIn('check_out_event_timestamp', plans[0]['biometric_sync_metadata'])
+
     @patch('hikvision_attendance_sync.local_now', return_value=datetime(2026, 8, 12, 0, 1))
     def test_later_checkin_without_checkout_remains_half_day(self, _local_now):
         self.assertEqual(

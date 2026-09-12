@@ -380,3 +380,30 @@ test('monthly payroll groups and draft runs use the worker currency instead of U
   assert.match(monthly, /line\.cycle\.due === due && line\.currency === currency/)
   assert.doesNotMatch(monthly, /currency:\s*'USD'|currency_code === 'USD'/)
 })
+
+test('Saturday biometric full-day status pays one weekly day without invented overtime', () => {
+  const line = calculatePayrollLine({
+    worker: { id: 'weekly-saturday' },
+    term: { daily_rate: 20000, daily_transport_allowance: 1000, overtime_rate_per_hour: 5000, overtime_start_time: '14:30:00' },
+    attendanceByDate: new Map([['weekly-saturday|2026-09-12', { status: 'present', check_in: '08:00:00', check_out: null, attendance_day_fraction: 1 }]]),
+    dates: ['2026-09-12'], rules: { transport_eligibility: 'present_and_half_day' }, holidayDates: new Set(), paymentType: 'weekly', businessDate: '2026-09-12',
+  })
+  assert.equal(line.presentDays, 1)
+  assert.equal(line.attendanceWage, 20000)
+  assert.equal(line.transportAmount, 1000)
+  assert.equal(line.overtimeHours, 0)
+})
+
+test('Saturday biometric full-day status accrues one monthly attendance day', () => {
+  const line = calculatePayrollLine({
+    worker: { id: 'monthly-saturday' },
+    term: { monthly_salary: 260000, daily_transport_allowance: 26000 },
+    attendanceByDate: new Map([['monthly-saturday|2026-09-12', { status: 'present', check_in: '08:00:00', check_out: null, attendance_day_fraction: 1 }]]),
+    dates: ['2026-09-12'], rules: { monthly_working_day_divisor: 26 }, holidayDates: new Set(), paymentType: 'monthly', businessDate: '2026-09-12',
+  })
+  assert.equal(line.presentDays, 1)
+  assert.equal(line.halfDays, 0)
+  assert.equal(line.absentDays, 0)
+  assert.equal(line.absenceDeduction, 0)
+  assert.equal(line.halfDayDeduction, 0)
+})

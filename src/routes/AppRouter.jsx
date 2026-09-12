@@ -24,6 +24,7 @@ import InactiveWorkers from '../pages/InactiveWorkers'
 import CompensationReviewReport from '../pages/CompensationReviewReport'
 import AdvancedSettings from '../pages/AdvancedSettings'
 import Payroll from '../pages/Payroll'
+import PayrollPublication from '../pages/PayrollPublication'
 import ForeignAttendance from '../pages/ForeignAttendance'
 import { useAuthStore } from '../store/authStore'
 
@@ -128,6 +129,7 @@ function AppRouter() {
             <Route path="/reports/weekly-attendance" element={<WeeklyAttendanceReport />} />
             <Route path="/advanced-settings" element={<AdvancedSettings />} />
             <Route path="/payroll" element={<Payroll />} />
+            <Route path="/payroll/publication" element={<PayrollPublication />} />
             <Route path="/payroll/compensation-review" element={<CompensationReviewReport />} />
           </Route>
         </Route>
