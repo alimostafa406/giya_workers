@@ -118,17 +118,19 @@ export default function PayrollOperations() {
     if (kind === 'excel') exportPayrollExcel({ ...config, filename: `${config.filename}.xlsx` })
     if (kind === 'pdf' && !exportPayrollPdf({ ...config, filename: `${config.filename}.pdf` }).supported) setError(t('payroll.pdfArabicUnsupported'))
   }
-  const saveDraft = async () => { if (!data?.rules || (weeklyRun && weeklyRun.status !== 'draft')) return; setSaving(true); setError(''); setMessage(''); try { const saturday = weeklyDates(monday).at(-1); await persistPayrollDraftRequest({ paymentType: 'weekly', periodStart: monday, periodEnd: saturday, dueDate: saturday, currency: 'CDF', ruleSetId: data.rules.id, lines: weeklyLinesFor(data, monday).filter((line) => line.term?.daily_rate != null) }); await load(); setMessage(t('payroll.draftSaved')) } catch (e) { setError(getErrorMessage(e)) } finally { setSaving(false) } }
+  const saveDraft = async () => { if (!data?.rules || (weeklyRun && weeklyRun.status !== 'draft')) return; setSaving(true); setError(''); setMessage(''); try { const saturday = weeklyDates(monday).at(-1); await persistPayrollDraftRequest({ paymentType: 'weekly', periodStart: monday, periodEnd: saturday, dueDate: saturday, currency: 'CDF', ruleSetId: data.rules.id, lines: weeklyLinesFor(data, monday) }); await load(); setMessage(t('payroll.draftSaved')) } catch (e) { setError(getErrorMessage(e)) } finally { setSaving(false) } }
   const validateDraftForReview = () => {
     const errors = []
+    const currentWeeklyWorkerIds = new Set(calculatedLines.map((line) => String(line.worker.id)))
+    const currentStoredLines = storedLines.filter((line) => currentWeeklyWorkerIds.has(String(line.worker.id)))
     if (!draftRun || draftRun.payment_type !== 'weekly') errors.push(t('payroll.reviewValidationRun'))
     if (draftRun?.weekly_period_start !== monday || draftRun?.weekly_period_end !== saturday || new Date(`${monday}T12:00:00`).getDay() !== 1 || draftRun?.scheduled_payment_date !== saturday) errors.push(t('payroll.reviewValidationPeriod'))
-    if (!storedLines.length) errors.push(t('payroll.reviewValidationLines'))
+    if (!currentStoredLines.length) errors.push(t('payroll.reviewValidationLines'))
     if (calculatedLines.some((line) => line.term?.daily_rate == null || Number(line.term.daily_rate) < 0)) errors.push(t('payroll.reviewValidationCompensation'))
-    if (storedLines.length !== calculatedLines.length || storedLines.some((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)) errors.push(t('payroll.reviewValidationAmounts'))
+    if (currentStoredLines.some((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)) errors.push(t('payroll.reviewValidationAmounts'))
     const activeAdjustmentLineIds = new Set((data?.payrollAdjustments || []).filter((adjustment) => !adjustment.voided_at).map((adjustment) => String(adjustment.payroll_line_id)))
-    if (storedLines.some((line) => activeAdjustmentLineIds.has(String(payrollLineByWorkerId.get(String(line.worker.id))?.id)) && !line.calculationSnapshotHasAdjustments)) errors.push(t('payroll.reviewValidationAdjustments'))
-    const storedTotal = numeric(storedLines.reduce((sum, line) => sum + Number(line.finalAmount || 0), 0))
+    if (currentStoredLines.some((line) => activeAdjustmentLineIds.has(String(payrollLineByWorkerId.get(String(line.worker.id))?.id)) && !line.calculationSnapshotHasAdjustments)) errors.push(t('payroll.reviewValidationAdjustments'))
+    const storedTotal = numeric(currentStoredLines.reduce((sum, line) => sum + Number(line.finalAmount || 0), 0))
     if (storedTotal !== numeric(totals.finalAmount)) errors.push(t('payroll.reviewValidationTotals'))
     return errors
   }
@@ -165,7 +167,7 @@ export default function PayrollOperations() {
       dueDate: refreshedSaturday,
       currency: 'CDF',
       ruleSetId: refreshed.rules.id,
-      lines: weeklyLinesFor(refreshed, monday).filter((line) => line.term?.daily_rate != null),
+      lines: weeklyLinesFor(refreshed, monday),
     })
     return load()
   }
