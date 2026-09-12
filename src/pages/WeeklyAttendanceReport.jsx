@@ -86,7 +86,11 @@ function WeeklyAttendanceReport() {
         const [teamsRes, workersRes, attendanceRes] = await Promise.all([
           getTeamsRequest(),
           getWorkersRequest(),
-          getAttendanceRequest(),
+          getAttendanceRequest({
+            date_from: weeklyFilters.startDate,
+            date_to: weeklyFilters.endDate,
+            paginate: true,
+          }),
         ])
 
         setTeams(asArray(teamsRes.data))
@@ -100,7 +104,7 @@ function WeeklyAttendanceReport() {
     }
 
     load()
-  }, [])
+  }, [weeklyFilters.startDate, weeklyFilters.endDate])
 
   const supervisorsOptions = useMemo(() => {
     const byId = new Map()
