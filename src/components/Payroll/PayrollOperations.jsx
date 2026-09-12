@@ -79,7 +79,7 @@ export default function PayrollOperations() {
   }), [data, weeklyRun])
   const lines = weeklyRun && weeklyRun.status !== 'draft' ? storedLines : calculatedLines
   const totals = totalLines(lines)
-  const runStatusLabel = weeklyRun?.status === 'reviewed' ? t('payroll.statusReviewed') : weeklyRun?.status === 'finalized' ? t('payroll.statusFinalized') : weeklyRun?.status === 'paid' ? t('payroll.statusPaid') : t('payroll.statusDraft')
+  const runStatusLabel = !weeklyRun ? t('payroll.statusNotSaved') : weeklyRun.status === 'reviewed' ? t('payroll.statusReviewed') : weeklyRun.status === 'finalized' ? t('payroll.statusFinalized') : weeklyRun.status === 'paid' ? t('payroll.statusPaid') : t('payroll.statusDraft')
   const teamGroups = useMemo(() => {
     const groups = new Map()
     lines.forEach((line) => {
@@ -126,14 +126,17 @@ export default function PayrollOperations() {
     if (!draftRun || draftRun.payment_type !== 'weekly') errors.push(t('payroll.reviewValidationRun'))
     if (draftRun?.weekly_period_start !== monday || draftRun?.weekly_period_end !== saturday || new Date(`${monday}T12:00:00`).getDay() !== 1 || draftRun?.scheduled_payment_date !== saturday) errors.push(t('payroll.reviewValidationPeriod'))
     if (!currentStoredLines.length) errors.push(t('payroll.reviewValidationLines'))
-    if (calculatedLines.some((line) => line.term?.daily_rate == null || Number(line.term.daily_rate) < 0)) errors.push(t('payroll.reviewValidationCompensation'))
-    if (currentStoredLines.some((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)) errors.push(t('payroll.reviewValidationAmounts'))
+    const invalidCompensationLines = calculatedLines.filter((line) => line.term?.daily_rate == null || Number(line.term.daily_rate) < 0 || !line.currency)
+    const invalidAmountLines = currentStoredLines.filter((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)
+    if (invalidCompensationLines.length) errors.push(`${t('payroll.reviewValidationCompensation')}: ${invalidCompensationLines.map((line) => `${line.worker.full_name} #${line.worker.employee_code}`).join(', ')}`)
+    if (invalidAmountLines.length) errors.push(`${t('payroll.reviewValidationAmounts')}: ${invalidAmountLines.map((line) => `${line.worker.full_name} #${line.worker.employee_code}`).join(', ')}`)
     const activeAdjustmentLineIds = new Set((data?.payrollAdjustments || []).filter((adjustment) => !adjustment.voided_at).map((adjustment) => String(adjustment.payroll_line_id)))
     if (currentStoredLines.some((line) => activeAdjustmentLineIds.has(String(payrollLineByWorkerId.get(String(line.worker.id))?.id)) && !line.calculationSnapshotHasAdjustments)) errors.push(t('payroll.reviewValidationAdjustments'))
     const storedTotal = numeric(currentStoredLines.reduce((sum, line) => sum + Number(line.finalAmount || 0), 0))
     if (storedTotal !== numeric(totals.finalAmount)) errors.push(t('payroll.reviewValidationTotals'))
     return errors
   }
+  const weekValidationErrors = draftRun ? validateDraftForReview() : []
   const changeRunStatus = async (nextStatus) => {
     if (!weeklyRun) return
     if (nextStatus === 'reviewed') {
@@ -299,18 +302,26 @@ export default function PayrollOperations() {
   return <section>
     {error ? <p className="mb-3 rounded bg-red-50 p-3 text-red-700">{error}</p> : null}
     {message ? <p className="mb-3 rounded bg-emerald-50 p-3 text-emerald-700">{message}</p> : null}
-    <div className="surface-card mb-3 grid gap-3 p-4 md:grid-cols-2">
+    <div data-weekly-payroll-workflow className="surface-card mb-3 space-y-4 p-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div><p className="text-xs font-bold text-(--muted)">{t('payroll.payrollPeriod')}</p><p className="font-extrabold">{monday} → {saturday}</p></div>
+        <div><p className="text-xs font-bold text-(--muted)">{t('common.status')}</p><p className="font-extrabold">{runStatusLabel}</p></div>
+        <div><p className="text-xs font-bold text-(--muted)">{t('payroll.workerCount')}</p><p className="font-extrabold">{calculatedLines.length}</p></div>
+        <div><p className="text-xs font-bold text-(--muted)">{t('payroll.teamCount')}</p><p className="font-extrabold">{teamGroups.length}</p></div>
+        <div><p className="text-xs font-bold text-(--muted)">{t('payroll.remainingBlockers')}</p><p className="font-extrabold">{weekValidationErrors.length}</p></div>
+      </div><div className="grid gap-3 md:grid-cols-2">
       <label>{t('payroll.monday')}<input type="date" className="input-base mt-1" value={monday} onChange={(event) => { setMonday(mondayFor(`${event.target.value}T12:00:00`)); setSelectedTeamId(''); setEditingWorkerId(''); setReviewErrors([]) }} /></label>
       <div className="flex flex-wrap items-end gap-2">
         <span className={`status-badge ${weeklyRun?.status === 'finalized' ? 'status-badge--success' : weeklyRun?.status === 'reviewed' ? 'status-badge--warning' : 'status-badge--neutral'}`}>{runStatusLabel}</span>
-        {!weeklyRun || weeklyRun.status === 'draft' ? <><button className="btn-primary" disabled={saving || loading || runActionSaving} onClick={saveDraft}>{saving ? t('payroll.saving') : t('payroll.saveWeeklyDraft')}</button>{draftRun ? <button className="btn-secondary" disabled={saving || runActionSaving} onClick={() => changeRunStatus('reviewed')}>{t('payroll.submitForReview')}</button> : null}</> : null}
+        {!weeklyRun ? <button className="btn-primary" disabled={saving || loading || runActionSaving} onClick={saveDraft}>{saving ? t('payroll.saving') : t('payroll.saveWeeklyDraft')}</button> : null}
+        {draftRun ? <button className="btn-primary" disabled={saving || runActionSaving || weekValidationErrors.length > 0} onClick={() => changeRunStatus('reviewed')}>{t('payroll.submitForReview')}</button> : null}
         {weeklyRun?.status === 'reviewed' ? <><button className="btn-secondary" disabled={runActionSaving} onClick={() => changeRunStatus('draft')}>{t('payroll.returnToDraft')}</button><button className="btn-primary" disabled={runActionSaving} onClick={() => changeRunStatus('finalized')}>{t('payroll.finalize')}</button></> : null}
         {weeklyRun?.status === 'finalized' ? <button className="btn-primary" disabled={runActionSaving} onClick={() => changeRunStatus('paid')}>{t('payroll.markPaid')}</button> : null}
         <button className="btn-secondary" disabled={loading || runActionSaving} onClick={load}>{t('payroll.refresh')}</button>
       </div>
-    </div>
-    {reviewErrors.length ? <div className="mb-3 rounded bg-amber-50 p-3 text-amber-900"><p className="font-bold">{t('payroll.reviewValidationFailed')}</p><ul className="mt-2 list-inside list-disc text-sm">{reviewErrors.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
-    {selectedTeam ? <><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} /><div className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>{t('payroll.presentDays')}:</strong> {selectedTeam.totals.presentDays + (selectedTeam.totals.halfDays * 0.5)}</p><p><strong>{t('payroll.candidateOvertimeHours')}:</strong> {selectedTeam.totals.overtimeHours}</p><p><strong>{t('payroll.transport')}:</strong> {money(selectedTeam.totals.transportAmount, 'CDF')}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {money(selectedTeam.totals.finalAmount, 'CDF')}</p></div></> : <><div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div><Table columns={teamColumns} data={teamGroups} loading={loading} emptyMessage={t('payroll.noTeams')} /></>}
+    </div></div>
+    {(reviewErrors.length || weekValidationErrors.length) ? <div className="mb-3 rounded bg-amber-50 p-3 text-amber-900"><p className="font-bold">{t('payroll.reviewValidationFailed')}</p><ul className="mt-2 list-inside list-disc text-sm">{(reviewErrors.length ? reviewErrors : weekValidationErrors).map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+    {selectedTeam ? <div data-weekly-team-review><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} /><div className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>{t('payroll.presentDays')}:</strong> {selectedTeam.totals.presentDays + (selectedTeam.totals.halfDays * 0.5)}</p><p><strong>{t('payroll.candidateOvertimeHours')}:</strong> {selectedTeam.totals.overtimeHours}</p><p><strong>{t('payroll.transport')}:</strong> {money(selectedTeam.totals.transportAmount, 'CDF')}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {money(selectedTeam.totals.finalAmount, 'CDF')}</p></div></div> : <><div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div><Table columns={teamColumns} data={teamGroups} loading={loading} emptyMessage={t('payroll.noTeams')} /></>}
     <p className="mt-3 font-extrabold">{t('payroll.allTeamsTotal')}: {money(totals.finalAmount, 'CDF')}</p>
     <WeeklyPayrollWorkerEditPanel line={editingLine} dates={weeklyDates(monday)} hasDraft={Boolean(draftRun)} saving={Boolean(savingSheetWorkerId)} onClose={() => setEditingWorkerId('')} onSave={saveSheetEdit} onMarkSundayPaid={markSundayPaid} onCorrectPaidSunday={correctPaidSunday} />
     <AttendanceEditModal row={editingAttendance} isOpen={Boolean(editingAttendance)} isSaving={savingAttendance} onClose={() => setEditingAttendance(null)} onSave={saveAttendanceCorrection} />
