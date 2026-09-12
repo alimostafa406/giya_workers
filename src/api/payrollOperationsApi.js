@@ -3,7 +3,7 @@ import { getAttendanceRequest } from './attendanceApi'
 import { getPayrollSettingsWorkersRequest } from './payrollSettingsApi'
 import { applyPayrollAdjustments } from '../utils/payrollCalculations'
 import { assertPayrollLineCurrencies, payrollLineCurrencySnapshot } from '../utils/payrollLineCurrency'
-import { payrollDraftEligibleLines } from '../utils/weeklyPayrollEligibility'
+import { payrollDraftEligibleLines, removableStaleWeeklyPayrollLineIds } from '../utils/weeklyPayrollEligibility'
 
 const isMissingSundayPaymentsError = (error) => (
   error?.code === '42P01'
@@ -115,6 +115,11 @@ export const persistPayrollDraftRequest = async ({ paymentType, periodStart = nu
   })
   const { data: savedLines, error: lineError } = await client.from('payroll_line').upsert(payload, { onConflict: 'payroll_run_id,worker_id' }).select('id,worker_id')
   if (lineError) throw lineError
+  const removableStaleLineIds = removableStaleWeeklyPayrollLineIds(existingLines, eligibleLines, adjustmentsByLineId)
+  if (removableStaleLineIds.length) {
+    const { error: staleLineError } = await client.from('payroll_line').delete().in('id', removableStaleLineIds)
+    if (staleLineError) throw staleLineError
+  }
   return run
 }
 

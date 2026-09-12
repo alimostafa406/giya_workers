@@ -27,7 +27,7 @@ test('weekly review validates the complete current weekly worker set', () => {
   assert.match(source, /invalidCompensationLines = calculatedLines\.filter/)
   assert.match(source, /currentStoredLines = storedLines\.filter/)
   assert.match(source, /invalidAmountLines = currentStoredLines\.filter/)
-  assert.match(source, /invalidCompensationLines\.map\(\(line\) => `\$\{line\.worker\.(?:name|full_name)\} #\$\{line\.worker\.employee_code\}`\)/)
+  assert.match(source, /invalidCompensationLines\.map\(payrollWorkerLabel\)/)
   assert.doesNotMatch(source, /selectedTeam[^\n]*validateDraftForReview/)
 })
 

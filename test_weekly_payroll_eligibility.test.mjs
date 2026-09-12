@@ -5,9 +5,11 @@ import test from 'node:test'
 import {
   isWeeklyPayrollEligibleWorker,
   payrollDraftEligibleLines,
+  removableStaleWeeklyPayrollLineIds,
   weeklyPayrollEligibleLines,
+  weeklyPayrollCurrencyTotalsMatch,
 } from './src/utils/weeklyPayrollEligibility.js'
-import { assertPayrollLineCurrencies } from './src/utils/payrollLineCurrency.js'
+import { assertPayrollLineCurrencies, payrollWorkerLabel } from './src/utils/payrollLineCurrency.js'
 
 const worker = (overrides = {}) => ({
   id: 'worker-1',
@@ -66,4 +68,41 @@ test('weekly selection, validation, persistence, and counts use the shared rule'
   assert.match(api, /eligibleLines = payrollDraftEligibleLines\(paymentType, lines\)/)
   assert.match(api, /assertPayrollLineCurrencies\(eligibleLines\)/)
   assert.match(api, /const payload = eligibleLines\.map/)
+  assert.match(api, /removableStaleLineIds/)
+  assert.match(api, /from\('payroll_line'\)\.delete\(\)\.in\('id', removableStaleLineIds\)/)
+})
+
+test('blocker labels use the canonical worker full name', () => {
+  assert.equal(payrollWorkerLabel(line({ full_name: 'JOEL', employee_code: '56' }, null)), 'JOEL #56')
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  assert.match(operations, /invalidCompensationLines\.map\(payrollWorkerLabel\)/)
+})
+
+test('draft totals reconcile independently by currency', () => {
+  assert.equal(weeklyPayrollCurrencyTotalsMatch(
+    [{ currency: 'CDF', finalAmount: 100 }, { currency: 'USD', finalAmount: 10 }],
+    [{ currency: 'USD', finalAmount: 10 }, { currency: 'CDF', finalAmount: 100 }],
+  ), true)
+  assert.equal(weeklyPayrollCurrencyTotalsMatch(
+    [{ currency: 'CDF', finalAmount: 110 }],
+    [{ currency: 'CDF', finalAmount: 100 }, { currency: 'USD', finalAmount: 10 }],
+  ), false)
+})
+
+test('review validation requires the current eligible persisted worker set', () => {
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  assert.match(operations, /currentStoredLines\.length !== calculatedLines\.length/)
+  assert.match(operations, /weeklyPayrollCurrencyTotalsMatch\(currentStoredLines, calculatedLines\)/)
+})
+
+test('draft refresh removes only obsolete adjustment-free payroll lines', () => {
+  const existing = [
+    { id: 'eligible-line', worker_id: 'eligible' },
+    { id: 'obsolete-line', worker_id: 'monthly-now' },
+    { id: 'audited-line', worker_id: 'special-now' },
+  ]
+  const eligible = [line({ id: 'eligible' })]
+  const adjustments = new Map([['audited-line', [{ id: 'adjustment' }]]])
+  assert.deepEqual(removableStaleWeeklyPayrollLineIds(existing, eligible, adjustments), ['obsolete-line'])
+  assert.deepEqual(removableStaleWeeklyPayrollLineIds(existing, eligible, adjustments), ['obsolete-line'])
 })

@@ -6,7 +6,8 @@ import { saveWorkerPayrollSettingsRequest } from '../../api/payrollSettingsApi'
 import { applyPayrollAdjustments, calculatePayrollLine, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
-import { isWeeklyPayrollEligibleWorker } from '../../utils/weeklyPayrollEligibility'
+import { payrollWorkerLabel } from '../../utils/payrollLineCurrency'
+import { isWeeklyPayrollEligibleWorker, weeklyPayrollCurrencyTotalsMatch } from '../../utils/weeklyPayrollEligibility'
 import { useTranslation } from '../../i18n/LanguageContext'
 import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import Table from '../Table/Table'
@@ -126,15 +127,14 @@ export default function PayrollOperations() {
     const currentStoredLines = storedLines.filter((line) => currentWeeklyWorkerIds.has(String(line.worker.id)))
     if (!draftRun || draftRun.payment_type !== 'weekly') errors.push(t('payroll.reviewValidationRun'))
     if (draftRun?.weekly_period_start !== monday || draftRun?.weekly_period_end !== saturday || new Date(`${monday}T12:00:00`).getDay() !== 1 || draftRun?.scheduled_payment_date !== saturday) errors.push(t('payroll.reviewValidationPeriod'))
-    if (!currentStoredLines.length) errors.push(t('payroll.reviewValidationLines'))
+    if (!currentStoredLines.length || currentStoredLines.length !== calculatedLines.length) errors.push(t('payroll.reviewValidationLines'))
     const invalidCompensationLines = calculatedLines.filter((line) => line.term?.daily_rate == null || Number(line.term.daily_rate) < 0 || !line.currency)
     const invalidAmountLines = currentStoredLines.filter((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)
-    if (invalidCompensationLines.length) errors.push(`${t('payroll.reviewValidationCompensation')}: ${invalidCompensationLines.map((line) => `${line.worker.full_name} #${line.worker.employee_code}`).join(', ')}`)
-    if (invalidAmountLines.length) errors.push(`${t('payroll.reviewValidationAmounts')}: ${invalidAmountLines.map((line) => `${line.worker.full_name} #${line.worker.employee_code}`).join(', ')}`)
+    if (invalidCompensationLines.length) errors.push(`${t('payroll.reviewValidationCompensation')}: ${invalidCompensationLines.map(payrollWorkerLabel).join(', ')}`)
+    if (invalidAmountLines.length) errors.push(`${t('payroll.reviewValidationAmounts')}: ${invalidAmountLines.map(payrollWorkerLabel).join(', ')}`)
     const activeAdjustmentLineIds = new Set((data?.payrollAdjustments || []).filter((adjustment) => !adjustment.voided_at).map((adjustment) => String(adjustment.payroll_line_id)))
     if (currentStoredLines.some((line) => activeAdjustmentLineIds.has(String(payrollLineByWorkerId.get(String(line.worker.id))?.id)) && !line.calculationSnapshotHasAdjustments)) errors.push(t('payroll.reviewValidationAdjustments'))
-    const storedTotal = numeric(currentStoredLines.reduce((sum, line) => sum + Number(line.finalAmount || 0), 0))
-    if (storedTotal !== numeric(totals.finalAmount)) errors.push(t('payroll.reviewValidationTotals'))
+    if (!weeklyPayrollCurrencyTotalsMatch(currentStoredLines, calculatedLines)) errors.push(t('payroll.reviewValidationTotals'))
     return errors
   }
   const weekValidationErrors = draftRun ? validateDraftForReview() : []
