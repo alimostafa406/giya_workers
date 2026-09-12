@@ -2,6 +2,7 @@ import { getSupabaseClient } from '../lib/supabase'
 import { getAttendanceRequest } from './attendanceApi'
 import { getPayrollSettingsWorkersRequest } from './payrollSettingsApi'
 import { applyPayrollAdjustments } from '../utils/payrollCalculations'
+import { assertPayrollLineCurrencies, payrollLineCurrencySnapshot } from '../utils/payrollLineCurrency'
 
 const isMissingSundayPaymentsError = (error) => (
   error?.code === '42P01'
@@ -54,7 +55,7 @@ export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => 
 
 const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
   payroll_run_id: runId, worker_id: line.worker.id, attendance_period_start: periodStart, attendance_period_end: periodEnd, payment_due_date: dueDate,
-  worker_name_snapshot: line.worker.full_name || '-', payment_type_snapshot: line.paymentType, currency_code_snapshot: line.currency,
+  worker_name_snapshot: line.worker.full_name || '-', payment_type_snapshot: line.paymentType, currency_code_snapshot: payrollLineCurrencySnapshot(line),
   monthly_payroll_cycle_start_date_snapshot: line.term?.monthly_payroll_cycle_start_date || null,
   compensation_snapshot: line.term || {}, rule_snapshot: line.rules || {},
   attendance_summary_snapshot: { present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({ date: detail.date, status: detail.status, check_in: detail.row?.check_in || null, check_out: detail.row?.check_out || null })) },
@@ -72,6 +73,7 @@ const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
 })
 
 export const persistPayrollDraftRequest = async ({ paymentType, periodStart = null, periodEnd = null, dueDate, currency, ruleSetId, lines }) => {
+  assertPayrollLineCurrencies(lines)
   const client = getSupabaseClient()
   let protectedRunQuery = client.from('payroll_run').select('id,status').eq('payment_type', paymentType).eq('scheduled_payment_date', dueDate).eq('currency_code', currency).neq('status', 'draft')
   protectedRunQuery = paymentType === 'weekly' ? protectedRunQuery.eq('weekly_period_start', periodStart).eq('weekly_period_end', periodEnd) : protectedRunQuery.is('weekly_period_start', null).is('weekly_period_end', null)
