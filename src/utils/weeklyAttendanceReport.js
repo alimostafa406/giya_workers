@@ -1,5 +1,5 @@
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-const BUSINESS_TIME_ZONE = 'Africa/Lagos'
+const BUSINESS_TIME_ZONE = 'Africa/Kinshasa'
 
 const parseDateOnly = (dateText) => {
   if (!DATE_ONLY_PATTERN.test(String(dateText || ''))) return null
@@ -27,9 +27,10 @@ export const getWeeklyReportBusinessDate = (value = new Date()) => {
 export const getWeeklyReportRange = (referenceDate = new Date()) => {
   const today = parseDateOnly(getWeeklyReportBusinessDate(referenceDate))
   const start = new Date(today)
-  start.setUTCDate(today.getUTCDate() - today.getUTCDay())
+  const daysSinceMonday = (today.getUTCDay() + 6) % 7
+  start.setUTCDate(today.getUTCDate() - daysSinceMonday)
   const end = new Date(start)
-  end.setUTCDate(start.getUTCDate() + 6)
+  end.setUTCDate(start.getUTCDate() + 5)
 
   return { startDate: formatDateOnly(start), endDate: formatDateOnly(end) }
 }
@@ -53,7 +54,7 @@ export const buildWeeklyReportDateRange = (startDate, endDate) => {
   const dates = []
   const cursor = new Date(start)
   while (cursor <= end) {
-    dates.push(formatDateOnly(cursor))
+    if (cursor.getUTCDay() !== 0) dates.push(formatDateOnly(cursor))
     cursor.setUTCDate(cursor.getUTCDate() + 1)
   }
   return dates
@@ -76,8 +77,7 @@ export const classifyWeeklyReportDay = ({ date, status, checkOut, businessDate }
   const normalizedStatus = normalizeWeeklyAttendanceStatus(status)
   const reportStatus = normalizedStatus === 'late' ? (checkOut ? 'present' : 'half_day') : normalizedStatus
 
-  // Sunday is displayed inside the report cycle, but stays outside normal
-  // attendance totals. Real Sunday work remains visible when it was recorded.
+  // Sunday is not part of this Monday-Saturday operational report.
   if (parsedDate.getUTCDay() === 0) {
     if (reportStatus === 'present') return 'sunday_present'
     if (reportStatus === 'half_day') return 'sunday_half_day'

@@ -29,6 +29,7 @@ from hikvision_attendance_sync import (
 from hikvision_user_sync import sync_users_dataset
 from hikvision_local_config import load_local_hikvision_config, require_local_settings
 from hikvision_devices import configured_devices
+from hikvision_weekly_attendance_review import WeeklyAttendanceReviewer, WeeklyAttendanceReviewError
 
 try:
     load_local_hikvision_config()
@@ -105,6 +106,7 @@ class UserSyncJob:
 
 
 USER_SYNC_JOB = UserSyncJob(sync_users_dataset)
+WEEKLY_ATTENDANCE_REVIEWER = WeeklyAttendanceReviewer()
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 def helper_session():
@@ -349,6 +351,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if self.path == "/attendance/review-week":
+            try:
+                payload = parse_request_json(self)
+                if payload.get("confirm") is not True:
+                    raise WeeklyAttendanceReviewError("Explicit weekly review confirmation is required.")
+                result = WEEKLY_ATTENDANCE_REVIEWER.review(
+                    str(payload.get("date_from") or ""),
+                    str(payload.get("date_to") or ""),
+                )
+                self.send_json(200, result)
+            except (ValueError, WeeklyAttendanceReviewError) as error:
+                self.send_json(400, diagnostic("invalid_week_review", str(error)))
+            except Exception:
+                self.send_json(500, diagnostic(
+                    "weekly_attendance_review_failed",
+                    "Weekly biometric attendance review failed locally.",
+                ))
+            return
         if self.path in {"/attendance/preview", "/attendance/apply"}:
             try:
                 payload = parse_request_json(self)

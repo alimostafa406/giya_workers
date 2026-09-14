@@ -338,3 +338,49 @@ Object.assign(translations.fr, { payrollPublication: {
 Object.assign(translations.ar.payroll, { statusNotSaved: 'لم يتم الحفظ', teamCount: 'عدد الفرق', remainingBlockers: 'العوائق المتبقية' })
 Object.assign(translations.en.payroll, { statusNotSaved: 'Not saved', teamCount: 'Team count', remainingBlockers: 'Remaining blockers' })
 Object.assign(translations.fr.payroll, { statusNotSaved: 'Non enregistrée', teamCount: 'Nombre d’équipes', remainingBlockers: 'Blocages restants' })
+
+Object.assign(translations.ar.reports, {
+  reviewWeekBiometrics: 'مراجعة بصمات الأسبوع',
+  reviewingWeekBiometrics: 'جارٍ مراجعة بصمات الأسبوع...',
+  reviewWeekConfirmation: 'سيتم إعادة مراجعة جميع بصمات الفترة {start} → {end} ومزامنتها مع جدول الحضور. لن يتم تعديل السجلات اليدوية المحمية. هل تريد المتابعة؟',
+  weekReviewSummary: 'ملخص مراجعة بصمات الأسبوع',
+  workersEvaluated: 'العمال الذين تمت مراجعتهم',
+  workdaysEvaluated: 'أيام العمل التي تمت مراجعتها',
+  eventsProcessed: 'أحداث البصمة المعالجة',
+  rowsInserted: 'سجلات الحضور المضافة',
+  rowsUpdated: 'سجلات الحضور المحدثة',
+  rowsUnchanged: 'سجلات الحضور دون تغيير',
+  protectedSkipped: 'السجلات اليدوية المحمية',
+  unmatchedIdentities: 'هويات بصمة غير مربوطة',
+  reviewErrors: 'الأخطاء',
+})
+Object.assign(translations.en.reports, {
+  reviewWeekBiometrics: 'Review Week Biometrics',
+  reviewingWeekBiometrics: 'Reviewing week biometrics...',
+  reviewWeekConfirmation: 'All biometrics for {start} → {end} will be reviewed and synchronized with attendance. Protected manual records will not be changed. Continue?',
+  weekReviewSummary: 'Week biometric review summary',
+  workersEvaluated: 'Workers evaluated',
+  workdaysEvaluated: 'Workdays evaluated',
+  eventsProcessed: 'Biometric events processed',
+  rowsInserted: 'Attendance rows inserted',
+  rowsUpdated: 'Attendance rows updated',
+  rowsUnchanged: 'Attendance rows unchanged',
+  protectedSkipped: 'Protected manual rows',
+  unmatchedIdentities: 'Unmatched biometric identities',
+  reviewErrors: 'Errors',
+})
+Object.assign(translations.fr.reports, {
+  reviewWeekBiometrics: 'Vérifier les biométries de la semaine',
+  reviewingWeekBiometrics: 'Vérification des biométries...',
+  reviewWeekConfirmation: 'Toutes les biométries du {start} au {end} seront vérifiées et synchronisées avec les présences. Les saisies manuelles protégées ne seront pas modifiées. Continuer ?',
+  weekReviewSummary: 'Résumé de la vérification biométrique',
+  workersEvaluated: 'Travailleurs vérifiés',
+  workdaysEvaluated: 'Jours ouvrés vérifiés',
+  eventsProcessed: 'Événements biométriques traités',
+  rowsInserted: 'Présences ajoutées',
+  rowsUpdated: 'Présences mises à jour',
+  rowsUnchanged: 'Présences inchangées',
+  protectedSkipped: 'Saisies manuelles protégées',
+  unmatchedIdentities: 'Identités biométriques non liées',
+  reviewErrors: 'Erreurs',
+})

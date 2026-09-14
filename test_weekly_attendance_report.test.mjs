@@ -19,17 +19,16 @@ const summarize = (dates, statuses, businessDate = '2026-08-26') => (
   })
 )
 
-test('anchors the report cycle to Sunday through Saturday', () => {
+test('anchors the report cycle to Monday through Saturday and omits Sunday', () => {
   assert.deepEqual(getDefaultWeeklyReportRange('2026-08-26'), {
-    startDate: '2026-08-23',
+    startDate: '2026-08-24',
     endDate: '2026-08-29',
   })
   assert.deepEqual(getDefaultWeeklyReportRange('2026-08-29'), {
-    startDate: '2026-08-23',
+    startDate: '2026-08-24',
     endDate: '2026-08-29',
   })
   assert.deepEqual(buildWeeklyReportDateRange('2026-08-23', '2026-08-29'), [
-    '2026-08-23',
     '2026-08-24',
     '2026-08-25',
     '2026-08-26',
@@ -39,8 +38,8 @@ test('anchors the report cycle to Sunday through Saturday', () => {
   ])
 })
 
-test('JEREMIE example does not turn Sunday, half-day, or future dates into absences', () => {
-  const dates = buildWeeklyReportDateRange('2026-08-23', '2026-08-29')
+test('JEREMIE example does not turn half-day or future dates into absences', () => {
+  const dates = buildWeeklyReportDateRange('2026-08-24', '2026-08-29')
   const statuses = new Map([
     ['2026-08-24', 'present'],
     ['2026-08-25', 'present'],
@@ -49,7 +48,6 @@ test('JEREMIE example does not turn Sunday, half-day, or future dates into absen
   const result = summarize(dates, statuses)
 
   assert.deepEqual(result.days.map((day) => day.status), [
-    'sunday',
     'present',
     'present',
     'half_day',
@@ -61,15 +59,15 @@ test('JEREMIE example does not turn Sunday, half-day, or future dates into absen
   assert.equal(result.absentDays, 0)
 })
 
-test('previous, current, and next ranges remain consecutive Sunday-Saturday weeks', () => {
+test('previous, current, and next ranges remain consecutive Monday-Saturday weeks', () => {
   assert.deepEqual(getWeeklyReportRange('2026-08-26'), {
-    startDate: '2026-08-23', endDate: '2026-08-29',
+    startDate: '2026-08-24', endDate: '2026-08-29',
   })
-  assert.deepEqual(shiftWeeklyReportRange('2026-08-23', -1), {
-    startDate: '2026-08-16', endDate: '2026-08-22',
+  assert.deepEqual(shiftWeeklyReportRange('2026-08-24', -1), {
+    startDate: '2026-08-17', endDate: '2026-08-22',
   })
-  assert.deepEqual(shiftWeeklyReportRange('2026-08-23', 1), {
-    startDate: '2026-08-30', endDate: '2026-09-05',
+  assert.deepEqual(shiftWeeklyReportRange('2026-08-24', 1), {
+    startDate: '2026-08-31', endDate: '2026-09-05',
   })
 })
 
@@ -88,11 +86,11 @@ test('only an explicit absence on a non-Sunday current or past date counts absen
   }), 'unresolved')
 })
 
-test('real Sunday work is displayed but contributes to neither normal total', () => {
+test('Sunday is removed from report dates and contributes to neither total', () => {
   const dates = buildWeeklyReportDateRange('2026-08-23', '2026-08-29')
   const result = summarize(dates, new Map([['2026-08-23', 'present']]))
 
-  assert.equal(result.days[0].status, 'sunday_present')
+  assert.equal(result.days.some((day) => day.date === '2026-08-23'), false)
   assert.equal(result.presentDays, 0)
   assert.equal(result.absentDays, 0)
 })
@@ -154,8 +152,8 @@ test('Zarour current-day fixture renders all seven unfinished workers as half-da
   assert.equal(rows.filter((row) => row.day.status === 'half_day').length, 7)
 })
 
-test('completed historical ranges count recorded states without treating missing rows as absent', () => {
-  const dates = buildWeeklyReportDateRange('2026-08-16', '2026-08-22')
+test('completed historical ranges count only explicit stored absences', () => {
+  const dates = buildWeeklyReportDateRange('2026-08-17', '2026-08-22')
   const statuses = new Map([
     ['2026-08-17', 'present'],
     ['2026-08-18', 'half_day'],
@@ -172,6 +170,8 @@ test('completed historical ranges count recorded states without treating missing
 
 test('screen, print, PDF, and Excel use the same calculated report and export rows', async () => {
   const source = await readFile(new URL('./src/pages/WeeklyAttendanceReport.jsx', import.meta.url), 'utf8')
+  const apiSource = await readFile(new URL('./src/api/weeklyAttendanceReviewApi.js', import.meta.url), 'utf8')
+  const helperSource = await readFile(new URL('./hikvision_face_helper.py', import.meta.url), 'utf8')
 
   assert.match(source, /summarizeWeeklyAttendanceDays\(\{/)
   assert.match(source, /buildWeeklyReportDateRange\(weeklyFilters\.startDate, weeklyFilters\.endDate\)/)
@@ -185,4 +185,11 @@ test('screen, print, PDF, and Excel use the same calculated report and export ro
   assert.match(source, /const handleExportWeeklyPdf = \(\) => \{[\s\S]*handlePrintWeeklyReport\(\)[\s\S]*\}/)
   assert.doesNotMatch(source, /new jsPDF|autoTable\(doc/)
   assert.match(source, /exportHeaders, \.\.\.exportRows/)
+  assert.match(source, /reviewWeeklyAttendanceRequest\(\{/)
+  assert.match(source, /await loadSelectedWeek\(\)/)
+  assert.match(source, /disabled=\{reviewing \|\| loading \|\| weeklyDates\.length !== 6\}/)
+  assert.match(apiSource, /\/attendance\/review-week/)
+  assert.match(apiSource, /date_from: dateFrom, date_to: dateTo, confirm: true/)
+  assert.match(helperSource, /self\.path == ["']\/attendance\/review-week["']/)
+  assert.match(helperSource, /payload\.get\(["']confirm["']\) is not True/)
 })

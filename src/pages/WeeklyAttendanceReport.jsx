@@ -4,6 +4,7 @@ import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
+import { reviewWeeklyAttendanceRequest } from '../api/weeklyAttendanceReviewApi'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
 import {
@@ -54,6 +55,8 @@ function WeeklyAttendanceReport() {
   const [teams, setTeams] = useState([])
   const [workers, setWorkers] = useState([])
   const [attendance, setAttendance] = useState([])
+  const [reviewing, setReviewing] = useState(false)
+  const [reviewResult, setReviewResult] = useState(null)
   const [weeklyFilters, setWeeklyFilters] = useState({
     startDate: defaultWeekRange.startDate,
     endDate: defaultWeekRange.endDate,
@@ -78,33 +81,56 @@ function WeeklyAttendanceReport() {
     setReportWeek(shiftWeeklyReportRange(weeklyFilters.startDate, weekOffset))
   }
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      setError('')
-      try {
-        const [teamsRes, workersRes, attendanceRes] = await Promise.all([
-          getTeamsRequest(),
-          getWorkersRequest(),
-          getAttendanceRequest({
-            date_from: weeklyFilters.startDate,
-            date_to: weeklyFilters.endDate,
-            paginate: true,
-          }),
-        ])
-
-        setTeams(asArray(teamsRes.data))
-        setWorkers(asArray(workersRes.data))
-        setAttendance(asArray(attendanceRes.data))
-      } catch (err) {
-        setError(getErrorMessage(err))
-      } finally {
-        setLoading(false)
-      }
+  const loadSelectedWeek = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [teamsRes, workersRes, attendanceRes] = await Promise.all([
+        getTeamsRequest(),
+        getWorkersRequest(),
+        getAttendanceRequest({
+          date_from: weeklyFilters.startDate,
+          date_to: weeklyFilters.endDate,
+          paginate: true,
+        }),
+      ])
+      setTeams(asArray(teamsRes.data))
+      setWorkers(asArray(workersRes.data))
+      setAttendance(asArray(attendanceRes.data))
+      return true
+    } catch (err) {
+      setError(getErrorMessage(err))
+      return false
+    } finally {
+      setLoading(false)
     }
-
-    load()
   }, [weeklyFilters.startDate, weeklyFilters.endDate])
+
+  useEffect(() => {
+    loadSelectedWeek()
+  }, [loadSelectedWeek])
+
+  const handleReviewWeekBiometrics = async () => {
+    if (reviewing || !window.confirm(t('reports.reviewWeekConfirmation', {
+      start: weeklyFilters.startDate,
+      end: weeklyFilters.endDate,
+    }))) return
+    setReviewing(true)
+    setReviewResult(null)
+    setError('')
+    try {
+      const result = await reviewWeeklyAttendanceRequest({
+        dateFrom: weeklyFilters.startDate,
+        dateTo: weeklyFilters.endDate,
+      })
+      setReviewResult(result)
+      await loadSelectedWeek()
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setReviewing(false)
+    }
+  }
 
   const supervisorsOptions = useMemo(() => {
     const byId = new Map()
@@ -413,6 +439,14 @@ function WeeklyAttendanceReport() {
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="btn-primary px-3 py-2"
+          onClick={handleReviewWeekBiometrics}
+          disabled={reviewing || loading || weeklyDates.length !== 6}
+        >
+          {reviewing ? t('reports.reviewingWeekBiometrics') : t('reports.reviewWeekBiometrics')}
+        </button>
         <button type="button" className="btn-secondary px-3 py-2" onClick={handlePrintWeeklyReport} disabled={!selectedTeam}>
           {t('reports.print')}
         </button>
@@ -423,6 +457,32 @@ function WeeklyAttendanceReport() {
           {t('reports.excel')}
         </button>
       </div>
+
+      {reviewResult ? (
+        <div className={`surface-card mb-4 border p-4 ${reviewResult.completed ? 'border-emerald-200' : 'border-amber-300'}`}>
+          <h3 className="font-extrabold">{t('reports.weekReviewSummary')}</h3>
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <span>{t('reports.workersEvaluated')}: <strong>{reviewResult.workers_evaluated}</strong></span>
+            <span>{t('reports.workdaysEvaluated')}: <strong>{reviewResult.workdays_evaluated}</strong></span>
+            <span>{t('reports.eventsProcessed')}: <strong>{reviewResult.biometric_events_processed}</strong></span>
+            <span>{t('reports.rowsInserted')}: <strong>{reviewResult.attendance_rows_inserted}</strong></span>
+            <span>{t('reports.rowsUpdated')}: <strong>{reviewResult.attendance_rows_updated}</strong></span>
+            <span>{t('reports.rowsUnchanged')}: <strong>{reviewResult.attendance_rows_unchanged}</strong></span>
+            <span>{t('reports.protectedSkipped')}: <strong>{reviewResult.manual_protected_rows_skipped}</strong></span>
+            <span>{t('reports.unmatchedIdentities')}: <strong>{reviewResult.unmatched_biometric_identities?.length || 0}</strong></span>
+            <span>{t('reports.reviewErrors')}: <strong>{reviewResult.errors?.length || 0}</strong></span>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-180 border-collapse text-sm">
+              <thead><tr className="bg-(--surface-soft)"><th className="border border-(--border) p-2">{t('payroll.day')}</th><th className="border border-(--border) p-2">{t('reports.present')}</th><th className="border border-(--border) p-2">{t('attendance.halfDay')}</th><th className="border border-(--border) p-2">{t('reports.absent')}</th><th className="border border-(--border) p-2">{t('reports.rowsUpdated')}</th><th className="border border-(--border) p-2">{t('reports.rowsUnchanged')}</th></tr></thead>
+              <tbody>{reviewResult.per_day?.map((day) => <tr key={day.date}><td className="border border-(--border) p-2 font-semibold">{day.date}</td><td className="border border-(--border) p-2">{day.present}</td><td className="border border-(--border) p-2">{day.half_day}</td><td className="border border-(--border) p-2">{day.absent}</td><td className="border border-(--border) p-2">{day.updated}</td><td className="border border-(--border) p-2">{day.unchanged}</td></tr>)}</tbody>
+            </table>
+          </div>
+          {reviewResult.unmatched_biometric_identities?.length ? (
+            <details className="mt-3 text-sm"><summary className="cursor-pointer font-bold">{t('reports.unmatchedIdentities')}</summary><ul className="mt-2 space-y-1">{reviewResult.unmatched_biometric_identities.map((item, index) => <li key={`${item.device}-${item.serialNo || index}`}>{item.date} {item.timestamp} · {item.device} · {item.employeeNoString} · {item.reason}</li>)}</ul></details>
+          ) : null}
+        </div>
+      ) : null}
 
       {!weeklyFilters.teamId ? (
         <div className="surface-card p-4 text-sm text-(--muted)">{t('reports.selectTeamToView')}</div>
