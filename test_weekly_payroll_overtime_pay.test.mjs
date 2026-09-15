@@ -21,9 +21,18 @@ test('canonical weekly integration replaces legacy overtime once and preserves c
   const line = { currency: 'CDF', term: { overtime_rate_per_hour: 2000 }, details: [{ date: '2026-09-14', row: { check_in: '08:00:00', check_out: '18:00:00' } }], overtimeAmount: 999, finalAmount: 10999 }
   const result = applyWeeklyOvertimePay(line)
   assert.equal(result.currency, 'CDF')
-  assert.equal(result.overtimeAmount, 1500)
-  assert.equal(result.finalAmount, 11500)
+  assert.equal(result.overtimeAmount, 2000)
+  assert.equal(result.finalAmount, 12000)
   assert.equal(line.finalAmount, 10999)
+})
+
+test('worker overtime pay uses completed evening blocks without double counting', () => {
+  for (const [checkout, expectedMinutes, expectedPay] of [['18:00:00', 60, 2000], ['18:20:00', 60, 2000], ['18:30:00', 90, 3000], ['19:30:00', 150, 5000]]) {
+    const result = applyWeeklyOvertimePay({ currency: 'CDF', term: { overtime_rate_per_hour: 2000 }, details: [{ date: '2026-09-14', row: { check_in: '08:00:00', check_out: checkout } }], overtimeAmount: 700, finalAmount: 10700 })
+    assert.equal(result.eveningOvertimeMinutes, expectedMinutes)
+    assert.equal(result.overtimeAmount, expectedPay)
+    assert.equal(result.finalAmount, 10000 + expectedPay)
+  }
 })
 
 test('snapshot contains rate, separate minutes, overtime pay, currency, and final amount', () => {

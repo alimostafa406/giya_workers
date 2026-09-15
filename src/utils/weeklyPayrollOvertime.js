@@ -40,9 +40,10 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
   }
   const checkIn = clockMinutes(detail.row?.check_in ?? detail.check_in)
   const checkOut = clockMinutes(detail.row?.check_out ?? detail.check_out)
+  const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(Math.floor(checkOut - 1020), 0)
   return {
     morningOvertimeMinutes: checkIn == null ? 0 : Math.max(Math.round(480 - checkIn), 0),
-    eveningOvertimeMinutes: checkOut == null ? 0 : Math.max(Math.round(checkOut - 1035), 0),
+    eveningOvertimeMinutes: workedAfterEndMinutes < 60 ? 0 : 60 + (Math.floor((workedAfterEndMinutes - 60) / 30) * 30),
   }
 }
 

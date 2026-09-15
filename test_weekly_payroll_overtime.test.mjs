@@ -12,13 +12,15 @@ test('morning overtime starts before 08:00 only', () => {
   assert.equal(weeklyPayrollOvertimeForDetail(monday('06:00:00', null)).morningOvertimeMinutes, 120)
 })
 
-test('evening overtime starts strictly after 17:15 and requires checkout', () => {
+test('evening overtime awards the first completed hour then completed half-hour blocks', () => {
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:00:00')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:15:00')).eveningOvertimeMinutes, 0)
-  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:30:00')).eveningOvertimeMinutes, 15)
-  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '18:00:00')).eveningOvertimeMinutes, 45)
-  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '19:00:00')).eveningOvertimeMinutes, 105)
-  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '22:00:00')).eveningOvertimeMinutes, 285)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:59:00')).eveningOvertimeMinutes, 0)
+  for (const time of ['18:00:00', '18:20:00', '18:29:00']) assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', time)).eveningOvertimeMinutes, 60)
+  for (const time of ['18:30:00', '18:59:00']) assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', time)).eveningOvertimeMinutes, 90)
+  for (const time of ['19:00:00', '19:29:00']) assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', time)).eveningOvertimeMinutes, 120)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '19:30:00')).eveningOvertimeMinutes, 150)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '22:00:00')).eveningOvertimeMinutes, 300)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', null)).eveningOvertimeMinutes, 0)
 })
 
@@ -32,16 +34,17 @@ test('missing checkout stays half day, earns no evening overtime, and is not mut
 
 test('evening overtime displays zero as a dash and positive minutes as hours/minutes', () => {
   assert.equal(formatEveningOvertimeMinutes(0), '—')
-  assert.equal(formatEveningOvertimeMinutes(15), '0h15')
-  assert.equal(formatEveningOvertimeMinutes(45), '0h45')
-  assert.equal(formatEveningOvertimeMinutes(105), '1h45')
-  assert.equal(formatEveningOvertimeMinutes(285), '4h45')
+  assert.equal(formatEveningOvertimeMinutes(60), '1h00')
+  assert.equal(formatEveningOvertimeMinutes(90), '1h30')
+  assert.equal(formatEveningOvertimeMinutes(120), '2h00')
+  assert.equal(formatEveningOvertimeMinutes(150), '2h30')
+  assert.equal(formatEveningOvertimeMinutes(300), '5h00')
 })
 
 test('morning and evening overtime remain separate', () => {
   assert.deepEqual(weeklyPayrollOvertimeForLine({ details: [monday('06:00:00', '19:00:00')] }), {
     morningOvertimeMinutes: 120,
-    eveningOvertimeMinutes: 105,
+    eveningOvertimeMinutes: 120,
   })
 })
 
