@@ -56,6 +56,7 @@ export const translations = {
 }
 
 Object.assign(translations.ar.payroll, {
+  summaryNumber: 'م', summaryTeam: 'الفريق', summaryEffectif: 'العدد', summaryWorkDayPay: 'أجور أيام العمل', summaryOvertime: 'الإضافي', summaryLate: 'الخصومات / التأخير',
   overtimeRateMissing: 'سعر ساعة الإضافي غير محدد',
   submitForReview: 'إرسال للمراجعة',
   returnToDraft: 'إعادة إلى المسودة',
@@ -67,6 +68,7 @@ Object.assign(translations.ar.payroll, {
   monthlyOperations: 'القبض الشهري', monthlyGroupTotal: 'إجمالي القبض للمجموعة', monthlySalaryTotal: 'إجمالي الرواتب الشهرية', saveMonthlyDraft: 'حفظ مسودة القبض الشهري', noMonthlyConfiguration: 'لا يوجد موظفون شهريون مكتملو الإعداد.',
 })
 Object.assign(translations.en.payroll, {
+  summaryNumber: 'N', summaryTeam: 'Team', summaryEffectif: 'EFF', summaryWorkDayPay: 'Work-Day Pay', summaryOvertime: 'O/T', summaryLate: 'Late / Deductions',
   overtimeRateMissing: 'Overtime hourly rate is not set',
   submitForReview: 'Submit for review', returnToDraft: 'Return to Draft', finalize: 'Finalize',
   reviewValidationFailed: 'Correct the following before submitting for review:',
@@ -76,6 +78,7 @@ Object.assign(translations.en.payroll, {
   monthlyOperations: 'Monthly Payroll', monthlyGroupTotal: 'Monthly group payroll total', monthlySalaryTotal: 'Total monthly salaries', saveMonthlyDraft: 'Save Monthly Draft', noMonthlyConfiguration: 'No monthly workers have complete configuration.',
 })
 Object.assign(translations.fr.payroll, {
+  summaryNumber: 'N', summaryTeam: 'Équipe', summaryEffectif: 'EFF', summaryWorkDayPay: 'Journaliers', summaryOvertime: 'H/S', summaryLate: 'Retards / Retenues',
   overtimeRateMissing: 'Le taux horaire supplémentaire n’est pas défini',
   submitForReview: 'Envoyer en révision', returnToDraft: 'Retour au brouillon', finalize: 'Finaliser',
   reviewValidationFailed: 'Corrigez les éléments suivants avant l’envoi en révision :',

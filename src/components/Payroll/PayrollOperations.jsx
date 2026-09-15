@@ -13,6 +13,7 @@ import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import Table from '../Table/Table'
 import WeeklyPayrollSheet from './WeeklyPayrollSheet'
 import WeeklyPayrollWorkerEditPanel from './WeeklyPayrollWorkerEditPanel'
+import WeeklyPayrollTeamSummary from './WeeklyPayrollTeamSummary'
 import { applyWeeklyOvertimePay } from '../../utils/weeklyPayrollOvertime'
 
 const money = (amount, currency) => formatPayrollMoney(amount, { currency, paymentType: 'weekly' })
@@ -329,6 +330,7 @@ export default function PayrollOperations() {
         <button className="btn-secondary" disabled={loading || runActionSaving} onClick={load}>{t('payroll.refresh')}</button>
       </div>
     </div></div>
+    <div className="mb-4"><WeeklyPayrollTeamSummary groups={teamGroups} onSelectTeam={(id) => setSelectedTeamId(id)} /></div>
     {(reviewErrors.length || weekValidationErrors.length) ? <div className="mb-3 rounded bg-amber-50 p-3 text-amber-900"><p className="font-bold">{t('payroll.reviewValidationFailed')}</p><ul className="mt-2 list-inside list-disc text-sm">{(reviewErrors.length ? reviewErrors : weekValidationErrors).map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
     {selectedTeam ? <div data-weekly-team-review><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><div className="mb-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><p><strong>{t('common.team')}:</strong> {selectedTeam.name}</p><p><strong>{t('payroll.workers')}:</strong> {selectedTeam.lines.length}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {amountDue(selectedTeam.amountDueByCurrency)}</p></div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} /><div className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3"><p><strong>{t('payroll.presentDays')}:</strong> {selectedTeam.totals.presentDays + (selectedTeam.totals.halfDays * 0.5)}</p><p><strong>{t('payroll.candidateOvertimeHours')}:</strong> {selectedTeam.totals.overtimeHours}</p><p><strong>{t('payroll.transport')}:</strong> {money(selectedTeam.totals.transportAmount, 'CDF')}</p></div></div> : <><div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div><Table columns={teamColumns} data={teamGroups} loading={loading} emptyMessage={t('payroll.noTeams')} /></>}
     <p className="mt-3 font-extrabold">{t('payroll.allTeamsTotal')}: {amountDue(overallAmountDueByCurrency)}</p>

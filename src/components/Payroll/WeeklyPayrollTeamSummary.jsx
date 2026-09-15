@@ -1,0 +1,9 @@
+import { useMemo } from 'react'
+import { useTranslation } from '../../i18n/LanguageContext'
+import { formatPayrollMoney } from '../../utils/payrollCurrency'
+import { weeklyPayrollTeamSummary } from '../../utils/weeklyPayrollTeamSummary'
+export default function WeeklyPayrollTeamSummary({ groups, onSelectTeam }) {
+  const { t } = useTranslation(); const summary = useMemo(() => weeklyPayrollTeamSummary(groups), [groups])
+  const values = (byCurrency, key) => summary.currencies.map((currency) => <span className="block" dir="ltr" key={currency}>{formatPayrollMoney(byCurrency[currency]?.[key] || 0, { currency, paymentType: 'weekly' })}</span>)
+  return <div className="weekly-team-summary-wrap"><table className="weekly-team-summary"><thead><tr><th>{t('payroll.summaryNumber')}</th><th className="summary-team">{t('payroll.summaryTeam')}</th><th>{t('payroll.summaryEffectif')}</th><th>{t('payroll.summaryWorkDayPay')}</th><th>{t('payroll.transport')}</th><th>{t('payroll.summaryOvertime')}</th><th>{t('payroll.summaryLate')}</th><th>{t('payroll.total')}</th></tr></thead><tbody>{summary.rows.map((row) => <tr key={row.id}><td>{row.index}</td><td className="summary-team"><button type="button" onClick={() => onSelectTeam(row.id)}>{row.name}</button></td><td>{row.workers}</td><td>{values(row.byCurrency, 'workDayPay')}</td><td>{values(row.byCurrency, 'transport')}</td><td>{values(row.byCurrency, 'overtime')}</td><td>—</td><td className="summary-final">{values(row.byCurrency, 'total')}</td></tr>)}</tbody><tfoot><tr><th colSpan="2">{t('payroll.total')}</th><th>{summary.totals.workers}</th><th>{values(summary.totals.byCurrency, 'workDayPay')}</th><th>{values(summary.totals.byCurrency, 'transport')}</th><th>{values(summary.totals.byCurrency, 'overtime')}</th><th>—</th><th>{values(summary.totals.byCurrency, 'total')}</th></tr></tfoot></table></div>
+}

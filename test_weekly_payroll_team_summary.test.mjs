@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { weeklyPayrollTeamSummary } from './src/utils/weeklyPayrollTeamSummary.js'
+
+const line = (currency, attendanceWage, transportAmount, overtimeAmount, finalAmount) => ({ currency, attendanceWage, transportAmount, overtimeAmount, finalAmount })
+
+test('summary has one row per team and reconciles workers and authoritative values', () => {
+  const result = weeklyPayrollTeamSummary([
+    { id: 'a', name: 'Alpha', lines: [line('CDF', 100, 10, 5, 115), line('CDF', 200, 20, 0, 220)] },
+    { id: 'b', name: 'Beta', lines: [line('CDF', 300, 30, 15, 345)] },
+  ])
+  assert.equal(result.rows.length, 2)
+  assert.equal(result.rows[0].workers, 2)
+  assert.deepEqual(result.totals, { workers: 3, byCurrency: { CDF: { workDayPay: 600, transport: 60, overtime: 20, total: 680 } } })
+})
+
+test('currencies stay separate and input payroll lines are not mutated', () => {
+  const groups = [{ id: 'mixed', name: 'Mixed', lines: [line('CDF', 100, 10, 5, 115), line('USD', 20, 2, 1, 23)] }]
+  const before = structuredClone(groups)
+  const result = weeklyPayrollTeamSummary(groups)
+  assert.deepEqual(result.currencies, ['CDF', 'USD'])
+  assert.equal(result.rows[0].byCurrency.CDF.total, 115)
+  assert.equal(result.rows[0].byCurrency.USD.total, 23)
+  assert.deepEqual(groups, before)
+})
