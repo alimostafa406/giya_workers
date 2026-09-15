@@ -60,3 +60,8 @@ export const formatOvertimeMinutes = (minutes) => {
   const safeMinutes = Math.max(Math.round(Number(minutes) || 0), 0)
   return `${Math.floor(safeMinutes / 60)}h${String(safeMinutes % 60).padStart(2, '0')}`
 }
+
+export const formatEveningOvertimeMinutes = (minutes) => {
+  const safeMinutes = Math.max(Math.round(Number(minutes) || 0), 0)
+  return safeMinutes === 0 ? '—' : formatOvertimeMinutes(safeMinutes)
+}

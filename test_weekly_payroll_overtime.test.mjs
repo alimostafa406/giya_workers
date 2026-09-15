@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { calculatePayrollLine } from './src/utils/payrollCalculations.js'
-import { weeklyPayrollOvertimeForDetail, weeklyPayrollOvertimeForLine } from './src/utils/weeklyPayrollOvertime.js'
+import { formatEveningOvertimeMinutes, weeklyPayrollDisplayStatus, weeklyPayrollOvertimeForDetail, weeklyPayrollOvertimeForLine } from './src/utils/weeklyPayrollOvertime.js'
 
 const monday = (checkIn, checkOut) => ({ date: '2026-09-14', status: 'present', row: { check_in: checkIn, check_out: checkOut } })
 
@@ -13,11 +13,29 @@ test('morning overtime starts before 08:00 only', () => {
 })
 
 test('evening overtime starts strictly after 17:15 and requires checkout', () => {
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:00:00')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:15:00')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:30:00')).eveningOvertimeMinutes, 15)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '18:00:00')).eveningOvertimeMinutes, 45)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '19:00:00')).eveningOvertimeMinutes, 105)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '22:00:00')).eveningOvertimeMinutes, 285)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', null)).eveningOvertimeMinutes, 0)
+})
+
+test('missing checkout stays half day, earns no evening overtime, and is not mutated', () => {
+  const detail = { ...monday('08:00:00', null), status: 'late' }
+  const before = structuredClone(detail)
+  assert.equal(weeklyPayrollDisplayStatus(detail), 'half_day')
+  assert.equal(weeklyPayrollOvertimeForDetail(detail).eveningOvertimeMinutes, 0)
+  assert.deepEqual(detail, before)
+})
+
+test('evening overtime displays zero as a dash and positive minutes as hours/minutes', () => {
+  assert.equal(formatEveningOvertimeMinutes(0), '—')
+  assert.equal(formatEveningOvertimeMinutes(15), '0h15')
+  assert.equal(formatEveningOvertimeMinutes(45), '0h45')
+  assert.equal(formatEveningOvertimeMinutes(105), '1h45')
+  assert.equal(formatEveningOvertimeMinutes(285), '4h45')
 })
 
 test('morning and evening overtime remain separate', () => {
