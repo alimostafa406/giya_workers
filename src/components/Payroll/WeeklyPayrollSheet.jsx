@@ -1,7 +1,6 @@
 import { useTranslation } from '../../i18n/LanguageContext'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
-import { currentBusinessDate } from '../../utils/payrollCalculations'
-import Table from '../Table/Table'
+import { formatOvertimeMinutes, weeklyPayrollDisplayStatus, weeklyPayrollOvertimeForLine } from '../../utils/weeklyPayrollOvertime'
 
 const dayLabel = (date, language) => new Intl.DateTimeFormat(
   language === 'ar' ? 'ar' : language === 'fr' ? 'fr-FR' : 'en-US',
@@ -19,32 +18,14 @@ const statusLabel = (status, t) => ({
   not_recorded: t('dashboard.notRecorded'),
 }[status] || '—')
 
-const sundayStatusLabel = (line, t) => {
-  if (!line.sundayDate || line.sundayDate > currentBusinessDate()) return '—'
-  return line.sundayPayment && line.sundayPayment.payment_status !== 'cancelled'
-    ? t('attendance.present')
-    : t('attendance.absent')
-}
-
-export default function WeeklyPayrollSheet({ lines, dates, onEdit, editable = true }) {
+export default function WeeklyPayrollSheet({ lines, dates, onEdit }) {
   const { t, language } = useTranslation()
   const money = (amount, line) => formatPayrollMoney(amount, { currency: line.currency, paymentType: 'weekly' })
-  const columns = [
-    { key: 'worker', header: t('payroll.worker'), render: (line) => <div><p className="font-bold">{line.worker.full_name}</p><p className="text-xs text-(--muted)">{line.worker.employee_code || '—'}</p></div> },
-    { key: 'sundayAttendance', header: t('payroll.sunday'), render: (line) => sundayStatusLabel(line, t) },
-    ...dates.map((date) => ({ key: date, header: dayLabel(date, language), render: (line) => statusLabel(line.details.find((item) => item.date === date)?.status, t) })),
-    { key: 'attendance', header: t('payroll.presentDays'), render: (line) => line.presentDays + (line.halfDays * 0.5) },
-    { key: 'dailyRate', header: t('payroll.dailyRate'), render: (line) => money(line.term?.daily_rate, line) },
-    { key: 'attendanceWage', header: t('payroll.attendanceWage'), render: (line) => money(line.attendanceWage, line) },
-    { key: 'overtimeHours', header: t('payroll.candidateOvertimeHours'), render: (line) => `${line.overtimeHours || 0} ${t('payroll.hoursShort')}` },
-    { key: 'transport', header: t('payroll.transport'), render: (line) => money(line.transportAmount, line) },
-    { key: 'sunday', header: t('payroll.sundayWork'), render: (line) => {
-      const payment = line.sundayPayment?.payment_status === 'cancelled' ? null : line.sundayPayment
-      return <div><p className="font-bold">{money(payment?.amount || 0, line)}</p>{payment ? <span className={`status-badge ${payment.payment_status === 'paid' ? 'status-badge--success' : 'status-badge--warning'}`}>{payment.payment_status === 'paid' ? t('payroll.sundayPaid') : t('payroll.sundayUnpaid')}</span> : null}<p className="mt-1 text-xs text-(--muted)">{t('payroll.sundayIndependent')}</p></div>
-    } },
-    { key: 'final', header: t('payroll.finalPay'), render: (line) => <span className="font-extrabold">{money(line.finalAmount, line)}</span> },
-    ...(editable ? [{ key: 'actions', header: t('common.actions'), render: (line) => <button type="button" className="btn-secondary px-3 py-1" onClick={() => onEdit(line.worker.id)}>{t('common.edit')}</button> }] : []),
-  ]
+  const workDates = dates.filter((date) => new Date(`${date}T12:00:00Z`).getUTCDay() !== 0)
 
-  return <Table columns={columns} data={lines} loading={false} emptyMessage={t('payroll.noWorkers')} payrollSheet />
+  return <div className="surface-card overflow-x-auto bg-white"><table className="w-full table-fixed border-collapse text-sm"><thead className="bg-slate-50/90"><tr><th className="w-44 px-3 py-2.5 text-start text-xs font-extrabold text-(--muted)">{t('payroll.worker')}</th>{workDates.map((date) => <th key={date} className="w-20 px-1.5 py-2.5 text-center text-xs font-extrabold text-(--muted)">{dayLabel(date, language)}</th>)}<th className="w-28 px-2 py-2.5 text-center text-xs font-extrabold text-(--muted)">{t('payroll.workDayPay')}</th><th className="w-24 px-2 py-2.5 text-center text-xs font-extrabold text-(--muted)">{t('payroll.morningOvertime')}</th><th className="w-24 px-2 py-2.5 text-center text-xs font-extrabold text-(--muted)">{t('payroll.eveningOvertime')}</th><th className="w-28 px-2 py-2.5 text-center text-xs font-extrabold text-(--muted)">{t('payroll.transport')}</th></tr></thead><tbody>{lines.length ? lines.map((line) => {
+    const overtime = weeklyPayrollOvertimeForLine(line)
+    const transportConfigured = line.term?.daily_transport_allowance != null && line.term.daily_transport_allowance !== ''
+    return <tr key={line.worker.id} className="border-t border-(--border) hover:bg-slate-50/70"><td className="px-3 py-2.5"><button type="button" className="text-start font-extrabold text-(--primary) hover:underline" onClick={() => onEdit(line.worker.id)}>{line.worker.full_name}<span className="mt-0.5 block text-xs font-medium text-(--muted)">{line.worker.employee_code || '—'}</span></button></td>{workDates.map((date) => { const detail = line.details.find((item) => item.date === date); return <td key={date} className="px-1.5 py-2.5 text-center"><span className="whitespace-nowrap text-xs font-bold">{statusLabel(weeklyPayrollDisplayStatus(detail), t)}</span></td> })}<td className="px-2 py-2.5 text-center font-bold" dir="ltr">{money(line.attendanceWage, line)}</td><td className="px-2 py-2.5 text-center font-bold" dir="ltr">{formatOvertimeMinutes(overtime.morningOvertimeMinutes)}</td><td className="px-2 py-2.5 text-center font-bold" dir="ltr">{formatOvertimeMinutes(overtime.eveningOvertimeMinutes)}</td><td className="px-2 py-2.5 text-center" dir="ltr">{transportConfigured ? money(line.transportAmount, line) : '—'}</td></tr>
+  }) : <tr><td colSpan={workDates.length + 5} className="px-4 py-10 text-center text-(--muted)">{t('payroll.noWorkers')}</td></tr>}</tbody></table></div>
 }

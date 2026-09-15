@@ -339,6 +339,10 @@ Object.assign(translations.ar.payroll, { statusNotSaved: 'لم يتم الحفظ
 Object.assign(translations.en.payroll, { statusNotSaved: 'Not saved', teamCount: 'Team count', remainingBlockers: 'Remaining blockers' })
 Object.assign(translations.fr.payroll, { statusNotSaved: 'Non enregistrée', teamCount: 'Nombre d’équipes', remainingBlockers: 'Blocages restants' })
 
+Object.assign(translations.ar.payroll, { workDayPay: 'أجر أيام العمل', morningOvertime: 'إضافي صباحي', eveningOvertime: 'إضافي مسائي' })
+Object.assign(translations.en.payroll, { workDayPay: 'Work-Day Pay', morningOvertime: 'Morning Overtime', eveningOvertime: 'Evening Overtime' })
+Object.assign(translations.fr.payroll, { workDayPay: 'Paie des jours travaillés', morningOvertime: 'Heures sup. matin', eveningOvertime: 'Heures sup. soir' })
+
 Object.assign(translations.ar.reports, {
   reviewWeekBiometrics: 'مراجعة بصمات الأسبوع',
   reviewingWeekBiometrics: 'جارٍ مراجعة بصمات الأسبوع...',

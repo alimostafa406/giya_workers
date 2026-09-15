@@ -247,12 +247,11 @@ test('worker editor week starts with the preceding Sunday and keeps Monday throu
   assert.match(editor, /value=\{sundayWorked \? 'present' : 'absent'\}/)
 })
 
-test('weekly payroll table shows Sunday first from the shared Sunday payment state', () => {
+test('weekly payroll table omits Sunday and keeps Monday through Saturday', () => {
   const sheet = readFileSync('./src/components/Payroll/WeeklyPayrollSheet.jsx', 'utf8')
-  assert.ok(sheet.indexOf("key: 'sundayAttendance'") < sheet.indexOf('...dates.map((date)'))
-  assert.match(sheet, /line\.sundayPayment && line\.sundayPayment\.payment_status !== 'cancelled'/)
-  assert.match(sheet, /line\.sundayDate > currentBusinessDate\(\)/)
-  assert.match(sheet, /key: 'sunday'[\s\S]*payment\?\.amount[\s\S]*sundayIndependent/)
+  assert.match(sheet, /workDates = dates\.filter/)
+  assert.match(sheet, /workDates\.map\(\(date\)/)
+  assert.doesNotMatch(sheet, /sundayAttendance|sundayPayment|sundayWork|sundayIndependent/)
 })
 
 test('Sunday work state stays outside normal weekly attendance wage calculation', () => {
