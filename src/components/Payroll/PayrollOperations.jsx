@@ -7,7 +7,7 @@ import { applyPayrollAdjustments, calculatePayrollLine, mondayFor, sundayBefore,
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { payrollWorkerLabel } from '../../utils/payrollLineCurrency'
-import { isWeeklyPayrollEligibleWorker, weeklyPayrollCurrencyTotalsMatch, weeklyPayrollEligibleLines, weeklyPayrollTotalsByCurrency } from '../../utils/weeklyPayrollEligibility'
+import { isWeeklyPayrollEligibleWorker, positiveWeeklyPayrollCurrencyTotals, weeklyPayrollCurrencyTotalsMatch, weeklyPayrollEligibleLines, weeklyPayrollTotalsByCurrency } from '../../utils/weeklyPayrollEligibility'
 import { useTranslation } from '../../i18n/LanguageContext'
 import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import Table from '../Table/Table'
@@ -94,7 +94,10 @@ export default function PayrollOperations() {
     return [...groups.values()].map((group) => ({ ...group, totals: totalLines(group.lines), amountDueByCurrency: weeklyPayrollTotalsByCurrency(group.lines) }))
   }, [lines, t])
   const selectedTeam = teamGroups.find((group) => group.id === selectedTeamId) || null
-  const amountDue = (totalsByCurrency) => Object.entries(totalsByCurrency).sort(([left], [right]) => left.localeCompare(right)).map(([currency, amount]) => <span key={currency} className="block" dir="ltr">{money(amount, currency)}</span>)
+  const amountDue = (totalsByCurrency) => {
+    const visibleTotals = positiveWeeklyPayrollCurrencyTotals(totalsByCurrency)
+    return visibleTotals.length ? visibleTotals.map(([currency, amount]) => <span key={currency} className="block" dir="ltr">{money(amount, currency)}</span>) : '—'
+  }
   const editingLine = selectedTeam?.lines.find((line) => String(line.worker.id) === String(editingWorkerId)) || null
   const teamExportHeaders = [t('payroll.worker'), t('workers.employeeCode'), t('payroll.presentDays'), t('payroll.halfDays'), t('payroll.absentDays'), t('payroll.dailyRate'), t('payroll.attendanceWage'), t('payroll.transport'), t('payroll.overtimeHours'), t('payroll.overtimeAmount'), t('payroll.holidaySunday'), t('payroll.bonuses'), t('payroll.deductions'), t('payroll.advances'), t('payroll.otherAdjustments'), t('payroll.finalPay')]
   const teamExportRows = selectedTeam?.lines.map((line) => [line.worker.full_name, line.worker.employee_code || '—', line.presentDays, line.halfDays, line.absentDays, numeric(line.term?.daily_rate), numeric(line.attendanceWage), numeric(line.transportAmount), numeric(line.overtimeHours), numeric(line.overtimeAmount), numeric(line.holidayAmount), numeric(line.bonusAmount), numeric(line.deductionAmount), numeric(line.advanceAmount), numeric(line.manualAdjustmentAmount), numeric(line.finalAmount)]) || []

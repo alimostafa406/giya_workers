@@ -9,6 +9,7 @@ import {
   weeklyPayrollEligibleLines,
   weeklyPayrollCurrencyTotalsMatch,
   weeklyPayrollTotalsByCurrency,
+  positiveWeeklyPayrollCurrencyTotals,
 } from './src/utils/weeklyPayrollEligibility.js'
 import { assertPayrollLineCurrencies, payrollWorkerLabel } from './src/utils/payrollLineCurrency.js'
 
@@ -128,6 +129,21 @@ test('finalized payroll display uses stored final amounts', () => {
   assert.match(operations, /weeklyRun && weeklyRun\.status !== 'draft' \? weeklyPayrollEligibleLines\(storedLines\) : calculatedLines/)
   assert.match(operations, /amountDueByCurrency: weeklyPayrollTotalsByCurrency\(group\.lines\)/)
   assert.doesNotMatch(operations, /amountDueByCurrency:[^\n]*(daily_rate|transportAmount|overtimeAmount)/)
+})
+
+test('team amount display hides zero currencies and keeps positive currencies', () => {
+  assert.deepEqual(positiveWeeklyPayrollCurrencyTotals({ CDF: 962000, USD: 0 }), [['CDF', 962000]])
+  assert.deepEqual(positiveWeeklyPayrollCurrencyTotals({ CDF: 0, USD: 250 }), [['USD', 250]])
+  assert.deepEqual(positiveWeeklyPayrollCurrencyTotals({ CDF: 962000, USD: 250 }), [['CDF', 962000], ['USD', 250]])
+})
+
+test('all-zero team totals produce the display fallback without mutating payroll totals', () => {
+  const totals = { CDF: 0, USD: 0 }
+  const snapshot = structuredClone(totals)
+  assert.deepEqual(positiveWeeklyPayrollCurrencyTotals(totals), [])
+  assert.deepEqual(totals, snapshot)
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  assert.match(operations, /visibleTotals\.length \? visibleTotals\.map\([\s\S]*?\) : '—'/)
 })
 
 test('review validation requires the current eligible persisted worker set', () => {

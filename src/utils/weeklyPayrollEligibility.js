@@ -22,6 +22,12 @@ export const weeklyPayrollTotalsByCurrency = (lines = []) => (
   }, {})
 )
 
+export const positiveWeeklyPayrollCurrencyTotals = (totals = {}) => (
+  Object.entries(totals)
+    .filter(([, amount]) => Number(amount) > 0)
+    .sort(([left], [right]) => left.localeCompare(right))
+)
+
 export const weeklyPayrollCurrencyTotalsMatch = (storedLines = [], currentLines = []) => {
   const stored = weeklyPayrollTotalsByCurrency(storedLines)
   const current = weeklyPayrollTotalsByCurrency(currentLines)
