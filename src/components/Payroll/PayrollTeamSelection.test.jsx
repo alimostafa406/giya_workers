@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LanguageProvider } from '../../i18n/LanguageContext'
-import { findPayrollTeam, usePayrollTeamDetail } from '../../utils/payrollTeamSelection'
+import { findPayrollTeam } from '../../utils/payrollTeamSelection'
 import WeeklyPayrollTeamSummary from './WeeklyPayrollTeamSummary'
 import MonthlyPayrollTeamSummary from './MonthlyPayrollTeamSummary'
 
@@ -17,8 +17,7 @@ const groups = [
 function Flow({ Summary, detailSelector }) {
   const [selectedTeamId, setSelectedTeamId] = useState('')
   const selectedTeam = findPayrollTeam(groups, selectedTeamId)
-  usePayrollTeamDetail(selectedTeam, detailSelector)
-  return <LanguageProvider><Summary groups={groups} selectedTeamId={selectedTeamId} onSelectTeam={setSelectedTeamId} />{selectedTeam ? <div data-testid="team-detail" className={detailSelector.includes('monthly') ? 'mt-4' : ''} data-weekly-team-review={detailSelector.includes('weekly') ? '' : undefined}>{selectedTeam.lines.map((line) => <span key={line.worker.id}>{line.worker.full_name}</span>)}</div> : null}</LanguageProvider>
+  return <LanguageProvider><Summary groups={groups} selectedTeamId={selectedTeamId} onSelectTeam={setSelectedTeamId} />{selectedTeam ? <div data-testid="team-detail" className={detailSelector.includes('monthly') ? 'mt-4' : ''} data-weekly-team-review={detailSelector.includes('weekly') ? '' : undefined}><button type="button" onClick={() => setSelectedTeamId('')}>Back</button>{selectedTeam.lines.map((line) => <span key={line.worker.id}>{line.worker.full_name}</span>)}</div> : null}</LanguageProvider>
 }
 
 describe.each([
@@ -28,20 +27,20 @@ describe.each([
   afterEach(cleanup)
   beforeEach(() => {
     localStorage.setItem('workers_app_language', 'en')
-    Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it('clicks real team controls, renders that team workers, switches teams, and reveals details', () => {
+  it('keeps summary informational and opens worker details only from team cards', () => {
     render(<Flow Summary={Summary} detailSelector={detailSelector} />)
     expect(screen.queryByTestId('team-detail')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Team A' }))
+    expect(screen.getAllByText('Team A').some((node) => node.tagName === 'SPAN')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: /^Team A/ }))
     expect(screen.getByText('Worker Alpha')).toBeTruthy()
     expect(screen.queryByText('Worker Beta')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Team A' }).closest('tr').className).toContain('is-selected')
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Team B' }))
+    expect(screen.queryByRole('button', { name: /^Team B/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(screen.queryByTestId('team-detail')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^Team B/ }))
     expect(screen.getByText('Worker Beta')).toBeTruthy()
     expect(screen.queryByText('Worker Alpha')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Team B' }).closest('tr').className).toContain('is-selected')
   })
 })

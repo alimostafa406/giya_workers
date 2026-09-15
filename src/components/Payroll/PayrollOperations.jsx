@@ -13,7 +13,7 @@ import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import WeeklyPayrollSheet from './WeeklyPayrollSheet'
 import WeeklyPayrollWorkerEditPanel from './WeeklyPayrollWorkerEditPanel'
 import WeeklyPayrollTeamSummary from './WeeklyPayrollTeamSummary'
-import { findPayrollTeam, usePayrollTeamDetail } from '../../utils/payrollTeamSelection'
+import { findPayrollTeam } from '../../utils/payrollTeamSelection'
 import { applyWeeklyOvertimePay } from '../../utils/weeklyPayrollOvertime'
 
 const money = (amount, currency) => formatPayrollMoney(amount, { currency, paymentType: 'weekly' })
@@ -95,7 +95,6 @@ export default function PayrollOperations() {
     return [...groups.values()].map((group) => ({ ...group, totals: totalLines(group.lines), amountDueByCurrency: weeklyPayrollTotalsByCurrency(group.lines) }))
   }, [lines, t])
   const selectedTeam = findPayrollTeam(teamGroups, selectedTeamId)
-  usePayrollTeamDetail(selectedTeam, '[data-weekly-team-review]')
   const amountDue = (totalsByCurrency) => {
     const visibleTotals = positiveWeeklyPayrollCurrencyTotals(totalsByCurrency)
     return visibleTotals.length ? visibleTotals.map(([currency, amount]) => <span key={currency} className="block" dir="ltr">{money(amount, currency)}</span>) : '—'

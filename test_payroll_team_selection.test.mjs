@@ -9,12 +9,15 @@ const groups = [
   { id: 'empty-team', name: 'Empty', lines: [] },
 ]
 
-test('weekly and monthly callbacks pass the canonical team ID', () => {
+test('weekly and monthly summaries delegate navigation to the shared team cards', () => {
   for (const file of ['WeeklyPayrollTeamSummary.jsx', 'MonthlyPayrollTeamSummary.jsx']) {
     const source = readFileSync(`./src/components/Payroll/${file}`, 'utf8')
-    assert.match(source, /onSelectTeam\(payrollTeamId\(row\.id\)\)/)
-    assert.match(source, /payrollTeamId\(row\.id\) === payrollTeamId\(selectedTeamId\)/)
+    assert.match(source, /<span className="font-extrabold">\{row\.name\}<\/span>/)
+    assert.match(source, /<PayrollTeamCards groups=\{groups\} onOpenTeam=\{onSelectTeam\}/)
+    assert.doesNotMatch(source, /className=\{.*is-selected/)
   }
+  const cards = readFileSync('./src/components/Payroll/PayrollTeamCards.jsx', 'utf8')
+  assert.match(cards, /onOpenTeam\(payrollTeamId\(group\.id\)\)/)
   assert.equal(payrollTeamId(101), '101')
 })
 
