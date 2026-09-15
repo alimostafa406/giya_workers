@@ -13,6 +13,7 @@ import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import Table from '../Table/Table'
 import WeeklyPayrollSheet from './WeeklyPayrollSheet'
 import WeeklyPayrollWorkerEditPanel from './WeeklyPayrollWorkerEditPanel'
+import { applyWeeklyOvertimePay } from '../../utils/weeklyPayrollOvertime'
 
 const money = (amount, currency) => formatPayrollMoney(amount, { currency, paymentType: 'weekly' })
 
@@ -26,7 +27,7 @@ const weeklyLinesFor = (data, monday) => {
     .filter(isWeeklyPayrollEligibleWorker)
     .map((worker) => {
       const sundayPayment = (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(worker.id) && payment.work_date === sundayDate) || null
-      return { ...calculatePayrollLine({
+      return { ...applyWeeklyOvertimePay(calculatePayrollLine({
       worker,
       term: worker.payroll_compensation,
       attendanceByDate: attendance,
@@ -35,7 +36,7 @@ const weeklyLinesFor = (data, monday) => {
       holidayDates: holidays,
       paymentType: 'weekly',
       futureDatesAreNeutral: true,
-      }), sundayDate, sundayPayment }
+      })), sundayDate, sundayPayment }
     })
 }
 
@@ -135,8 +136,10 @@ export default function PayrollOperations() {
     if (!currentStoredLines.length || currentStoredLines.length !== calculatedLines.length) errors.push(t('payroll.reviewValidationLines'))
     const invalidCompensationLines = calculatedLines.filter((line) => line.term?.daily_rate == null || Number(line.term.daily_rate) < 0 || !line.currency)
     const invalidAmountLines = currentStoredLines.filter((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)
+    const missingOvertimeRateLines = calculatedLines.filter((line) => line.missingRateBlocker)
     if (invalidCompensationLines.length) errors.push(`${t('payroll.reviewValidationCompensation')}: ${invalidCompensationLines.map(payrollWorkerLabel).join(', ')}`)
     if (invalidAmountLines.length) errors.push(`${t('payroll.reviewValidationAmounts')}: ${invalidAmountLines.map(payrollWorkerLabel).join(', ')}`)
+    if (missingOvertimeRateLines.length) errors.push(`${t('payroll.overtimeRateMissing')}: ${missingOvertimeRateLines.map(payrollWorkerLabel).join(', ')}`)
     const activeAdjustmentLineIds = new Set((data?.payrollAdjustments || []).filter((adjustment) => !adjustment.voided_at).map((adjustment) => String(adjustment.payroll_line_id)))
     if (currentStoredLines.some((line) => activeAdjustmentLineIds.has(String(payrollLineByWorkerId.get(String(line.worker.id))?.id)) && !line.calculationSnapshotHasAdjustments)) errors.push(t('payroll.reviewValidationAdjustments'))
     if (!weeklyPayrollCurrencyTotalsMatch(currentStoredLines, calculatedLines)) errors.push(t('payroll.reviewValidationTotals'))

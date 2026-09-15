@@ -56,6 +56,7 @@ export const translations = {
 }
 
 Object.assign(translations.ar.payroll, {
+  overtimeRateMissing: 'سعر ساعة الإضافي غير محدد',
   submitForReview: 'إرسال للمراجعة',
   returnToDraft: 'إعادة إلى المسودة',
   finalize: 'اعتماد نهائي',
@@ -66,6 +67,7 @@ Object.assign(translations.ar.payroll, {
   monthlyOperations: 'القبض الشهري', monthlyGroupTotal: 'إجمالي القبض للمجموعة', monthlySalaryTotal: 'إجمالي الرواتب الشهرية', saveMonthlyDraft: 'حفظ مسودة القبض الشهري', noMonthlyConfiguration: 'لا يوجد موظفون شهريون مكتملو الإعداد.',
 })
 Object.assign(translations.en.payroll, {
+  overtimeRateMissing: 'Overtime hourly rate is not set',
   submitForReview: 'Submit for review', returnToDraft: 'Return to Draft', finalize: 'Finalize',
   reviewValidationFailed: 'Correct the following before submitting for review:',
   finalizedConfirmation: 'This payroll will become the official historical payroll for this week. Later attendance or compensation changes will not recalculate its finalized lines. Continue?',
@@ -74,6 +76,7 @@ Object.assign(translations.en.payroll, {
   monthlyOperations: 'Monthly Payroll', monthlyGroupTotal: 'Monthly group payroll total', monthlySalaryTotal: 'Total monthly salaries', saveMonthlyDraft: 'Save Monthly Draft', noMonthlyConfiguration: 'No monthly workers have complete configuration.',
 })
 Object.assign(translations.fr.payroll, {
+  overtimeRateMissing: 'Le taux horaire supplémentaire n’est pas défini',
   submitForReview: 'Envoyer en révision', returnToDraft: 'Retour au brouillon', finalize: 'Finaliser',
   reviewValidationFailed: 'Corrigez les éléments suivants avant l’envoi en révision :',
   finalizedConfirmation: 'Cette paie deviendra l’historique officiel de la semaine. Les changements ultérieurs de présence ou de rémunération ne modifieront pas ses lignes finalisées. Continuer ?',

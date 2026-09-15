@@ -65,3 +65,17 @@ export const formatEveningOvertimeMinutes = (minutes) => {
   const safeMinutes = Math.max(Math.round(Number(minutes) || 0), 0)
   return safeMinutes === 0 ? '—' : formatOvertimeMinutes(safeMinutes)
 }
+
+export const calculateWeeklyOvertimePay = ({ morningOvertimeMinutes = 0, eveningOvertimeMinutes = 0, overtimeHourlyRate = null } = {}) => {
+  const morningMinutes = Math.max(Number(morningOvertimeMinutes) || 0, 0)
+  const eveningMinutes = Math.max(Number(eveningOvertimeMinutes) || 0, 0)
+  const overtimeMinutes = morningMinutes + eveningMinutes
+  const hasRate = overtimeHourlyRate !== '' && overtimeHourlyRate != null && Number.isFinite(Number(overtimeHourlyRate)) && Number(overtimeHourlyRate) >= 0
+  return { morningOvertimeMinutes: morningMinutes, eveningOvertimeMinutes: eveningMinutes, overtimeMinutes, overtimeHours: overtimeMinutes / 60, overtimePay: hasRate ? Math.round(((overtimeMinutes / 60) * Number(overtimeHourlyRate)) * 100) / 100 : null, missingRateBlocker: overtimeMinutes > 0 && !hasRate }
+}
+
+export const applyWeeklyOvertimePay = (line) => {
+  const overtime = calculateWeeklyOvertimePay({ ...weeklyPayrollOvertimeForLine(line), overtimeHourlyRate: line?.term?.overtime_rate_per_hour })
+  const payable = overtime.overtimePay ?? 0
+  return { ...line, ...overtime, overtimeRate: line?.term?.overtime_rate_per_hour ?? null, overtimeAmount: payable, finalAmount: Math.round(((Number(line?.finalAmount) || 0) - (Number(line?.overtimeAmount) || 0) + payable) * 100) / 100 }
+}
