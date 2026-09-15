@@ -22,13 +22,16 @@
 }
 
 .weekly-team-summary-wrap { @apply w-full overflow-x-auto rounded-xl border border-slate-300 bg-white; }
-.weekly-team-summary { @apply w-full min-w-[980px] table-fixed border-collapse text-base; }
-.weekly-team-summary th, .weekly-team-summary td { @apply border border-slate-300 px-4 py-4 text-center align-middle; }
+.weekly-team-summary { @apply w-full min-w-[980px] table-fixed border-collapse text-sm; }
+.weekly-team-summary th, .weekly-team-summary td { @apply h-[60px] border border-slate-300 px-3 py-3 text-center align-middle; }
 .weekly-team-summary thead th { @apply bg-slate-800 text-sm font-extrabold uppercase tracking-wide text-white; }
-.weekly-team-summary .summary-team { @apply w-[28%] text-start; }
-.weekly-team-summary tbody .summary-team button { @apply text-lg font-extrabold text-(--primary) hover:underline; }
+.weekly-team-summary th:first-child, .weekly-team-summary td:first-child { @apply w-14; }
+.weekly-team-summary th:nth-child(3), .weekly-team-summary td:nth-child(3) { @apply w-16; }
+.weekly-team-summary .summary-team { @apply w-[26%] text-start; }
+.weekly-team-summary tbody .summary-team button { @apply text-base font-extrabold text-(--primary) hover:underline; }
 .weekly-team-summary tbody tr:hover { @apply bg-slate-50; }
-.weekly-team-summary .summary-final { @apply bg-emerald-50 text-lg font-extrabold; }
+.weekly-team-summary tbody tr.is-selected { @apply bg-teal-50; }
+.weekly-team-summary .summary-final { @apply text-base font-extrabold; }
 .weekly-team-summary tfoot th { @apply bg-slate-200 text-base font-extrabold; }
 
 @media print {

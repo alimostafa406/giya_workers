@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { weeklyPayrollTeamSummary } from './src/utils/weeklyPayrollTeamSummary.js'
+import { readFileSync } from 'node:fs'
 
 const line = (currency, attendanceWage, transportAmount, overtimeAmount, finalAmount) => ({ currency, attendanceWage, transportAmount, overtimeAmount, finalAmount })
 
@@ -22,4 +23,14 @@ test('currencies stay separate and input payroll lines are not mutated', () => {
   assert.equal(result.rows[0].byCurrency.CDF.total, 115)
   assert.equal(result.rows[0].byCurrency.USD.total, 23)
   assert.deepEqual(groups, before)
+})
+
+test('weekly payroll renders one selectable team summary and no legacy team table', () => {
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  const summary = readFileSync('./src/components/Payroll/WeeklyPayrollTeamSummary.jsx', 'utf8')
+  assert.doesNotMatch(operations, /import Table from/)
+  assert.doesNotMatch(operations, /const teamColumns =/)
+  assert.match(operations, /selectedTeamId=\{selectedTeamId\}/)
+  assert.match(summary, /onClick=\{\(\) => onSelectTeam\(row\.id\)\}/)
+  assert.match(summary, /Number\(byCurrency\[currency\]\?\.\[key\] \|\| 0\) !== 0/)
 })
