@@ -8,6 +8,7 @@ import {
   removableStaleWeeklyPayrollLineIds,
   weeklyPayrollEligibleLines,
   weeklyPayrollCurrencyTotalsMatch,
+  weeklyPayrollTotalsByCurrency,
 } from './src/utils/weeklyPayrollEligibility.js'
 import { assertPayrollLineCurrencies, payrollWorkerLabel } from './src/utils/payrollLineCurrency.js'
 
@@ -87,6 +88,46 @@ test('draft totals reconcile independently by currency', () => {
     [{ currency: 'CDF', finalAmount: 110 }],
     [{ currency: 'CDF', finalAmount: 100 }, { currency: 'USD', finalAmount: 10 }],
   ), false)
+})
+
+test('team amount due sums authoritative finalAmount values without recalculation', () => {
+  const present = { ...line({ id: 'present', team_id: 'team-a' }), finalAmount: 120000 }
+  const halfDay = { ...line({ id: 'half-day', team_id: 'team-a' }), finalAmount: 87500, transportAmount: 5000 }
+  const absent = { ...line({ id: 'absent', team_id: 'team-a' }), finalAmount: 0, overtimeAmount: 9000 }
+  assert.deepEqual(weeklyPayrollTotalsByCurrency([present, halfDay, absent]), { CDF: 207500 })
+})
+
+test('weekly team totals exclude ineligible and stale lines and keep currencies separate', () => {
+  const eligible = weeklyPayrollEligibleLines([
+    { ...line({ id: 'cdf', team_id: 'team-a' }, 'CDF'), finalAmount: 100000 },
+    { ...line({ id: 'usd', team_id: 'team-a' }, 'USD'), finalAmount: 300 },
+    { ...line({ id: 'monthly', payment_type: 'monthly' }, 'CDF'), finalAmount: 500000 },
+    { ...line({ id: 'special', staff_classification: 'special_staff' }, 'CDF'), finalAmount: 500000 },
+    { ...line({ id: 'inactive', is_active: false }, 'CDF'), finalAmount: 500000 },
+    { worker: { id: 'stale' }, currency: 'CDF', finalAmount: 500000 },
+  ])
+  assert.deepEqual(weeklyPayrollTotalsByCurrency(eligible), { CDF: 100000, USD: 300 })
+})
+
+test('overall amount due reconciles exactly with team totals by currency', () => {
+  const teams = [
+    [{ ...line({ id: 'a1' }, 'CDF'), finalAmount: 100 }, { ...line({ id: 'a2' }, 'USD'), finalAmount: 10 }],
+    [{ ...line({ id: 'b1' }, 'CDF'), finalAmount: 250 }, { ...line({ id: 'b2' }, 'USD'), finalAmount: 5 }],
+  ]
+  const overall = weeklyPayrollTotalsByCurrency(teams.flat())
+  const fromTeams = teams.map(weeklyPayrollTotalsByCurrency).reduce((sum, totals) => {
+    Object.entries(totals).forEach(([currency, amount]) => { sum[currency] = (sum[currency] || 0) + amount })
+    return sum
+  }, {})
+  assert.deepEqual(overall, fromTeams)
+})
+
+test('finalized payroll display uses stored final amounts', () => {
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  assert.match(operations, /finalAmount: Number\(stored\.final_amount \|\| 0\)/)
+  assert.match(operations, /weeklyRun && weeklyRun\.status !== 'draft' \? weeklyPayrollEligibleLines\(storedLines\) : calculatedLines/)
+  assert.match(operations, /amountDueByCurrency: weeklyPayrollTotalsByCurrency\(group\.lines\)/)
+  assert.doesNotMatch(operations, /amountDueByCurrency:[^\n]*(daily_rate|transportAmount|overtimeAmount)/)
 })
 
 test('review validation requires the current eligible persisted worker set', () => {

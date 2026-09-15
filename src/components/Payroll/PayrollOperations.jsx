@@ -7,7 +7,7 @@ import { applyPayrollAdjustments, calculatePayrollLine, mondayFor, sundayBefore,
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { payrollWorkerLabel } from '../../utils/payrollLineCurrency'
-import { isWeeklyPayrollEligibleWorker, weeklyPayrollCurrencyTotalsMatch } from '../../utils/weeklyPayrollEligibility'
+import { isWeeklyPayrollEligibleWorker, weeklyPayrollCurrencyTotalsMatch, weeklyPayrollEligibleLines, weeklyPayrollTotalsByCurrency } from '../../utils/weeklyPayrollEligibility'
 import { useTranslation } from '../../i18n/LanguageContext'
 import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import Table from '../Table/Table'
@@ -79,8 +79,9 @@ export default function PayrollOperations() {
       details: (summary.days || []).map((detail) => ({ ...detail, row: detail.check_in || detail.check_out ? { check_in: detail.check_in, check_out: detail.check_out } : null })),
     }
   }), [data, weeklyRun])
-  const lines = weeklyRun && weeklyRun.status !== 'draft' ? storedLines : calculatedLines
+  const lines = weeklyRun && weeklyRun.status !== 'draft' ? weeklyPayrollEligibleLines(storedLines) : calculatedLines
   const totals = totalLines(lines)
+  const overallAmountDueByCurrency = weeklyPayrollTotalsByCurrency(lines)
   const runStatusLabel = !weeklyRun ? t('payroll.statusNotSaved') : weeklyRun.status === 'reviewed' ? t('payroll.statusReviewed') : weeklyRun.status === 'finalized' ? t('payroll.statusFinalized') : weeklyRun.status === 'paid' ? t('payroll.statusPaid') : t('payroll.statusDraft')
   const teamGroups = useMemo(() => {
     const groups = new Map()
@@ -90,9 +91,10 @@ export default function PayrollOperations() {
       group.lines.push(line)
       groups.set(id, group)
     })
-    return [...groups.values()].map((group) => ({ ...group, totals: totalLines(group.lines) }))
+    return [...groups.values()].map((group) => ({ ...group, totals: totalLines(group.lines), amountDueByCurrency: weeklyPayrollTotalsByCurrency(group.lines) }))
   }, [lines, t])
   const selectedTeam = teamGroups.find((group) => group.id === selectedTeamId) || null
+  const amountDue = (totalsByCurrency) => Object.entries(totalsByCurrency).sort(([left], [right]) => left.localeCompare(right)).map(([currency, amount]) => <span key={currency} className="block" dir="ltr">{money(amount, currency)}</span>)
   const editingLine = selectedTeam?.lines.find((line) => String(line.worker.id) === String(editingWorkerId)) || null
   const teamExportHeaders = [t('payroll.worker'), t('workers.employeeCode'), t('payroll.presentDays'), t('payroll.halfDays'), t('payroll.absentDays'), t('payroll.dailyRate'), t('payroll.attendanceWage'), t('payroll.transport'), t('payroll.overtimeHours'), t('payroll.overtimeAmount'), t('payroll.holidaySunday'), t('payroll.bonuses'), t('payroll.deductions'), t('payroll.advances'), t('payroll.otherAdjustments'), t('payroll.finalPay')]
   const teamExportRows = selectedTeam?.lines.map((line) => [line.worker.full_name, line.worker.employee_code || '—', line.presentDays, line.halfDays, line.absentDays, numeric(line.term?.daily_rate), numeric(line.attendanceWage), numeric(line.transportAmount), numeric(line.overtimeHours), numeric(line.overtimeAmount), numeric(line.holidayAmount), numeric(line.bonusAmount), numeric(line.deductionAmount), numeric(line.advanceAmount), numeric(line.manualAdjustmentAmount), numeric(line.finalAmount)]) || []
@@ -298,7 +300,7 @@ export default function PayrollOperations() {
       setMessage(t('payroll.sundayCorrected'))
     } catch (e) { setError(getErrorMessage(e)) } finally { setSavingSheetWorkerId('') }
   }
-  const teamColumns = [{ key: 'name', header: t('common.team'), render: (group) => group.name }, { key: 'workers', header: t('payroll.workers'), render: (group) => group.totals.workers }, { key: 'days', header: `${t('payroll.presentDays')} / ${t('payroll.halfDays')} / ${t('payroll.absentDays')}`, render: (group) => `${group.totals.presentDays} / ${group.totals.halfDays} / ${group.totals.absentDays}` }, { key: 'total', header: t('payroll.teamTotal'), render: (group) => money(group.totals.finalAmount, 'CDF') }, { key: 'open', header: '', render: (group) => <button className="btn-secondary" onClick={() => setSelectedTeamId(group.id)}>{t('payroll.open')}</button> }]
+  const teamColumns = [{ key: 'name', header: t('common.team'), render: (group) => <span className="font-bold">{group.name}</span> }, { key: 'workers', header: t('payroll.workers'), render: (group) => group.lines.length }, { key: 'days', header: `${t('payroll.presentDays')} / ${t('payroll.halfDays')} / ${t('payroll.absentDays')}`, render: (group) => `${group.totals.presentDays} / ${group.totals.halfDays} / ${group.totals.absentDays}` }, { key: 'total', header: t('payroll.teamTotal'), render: (group) => <span className="font-extrabold">{amountDue(group.amountDueByCurrency)}</span> }, { key: 'open', header: '', render: (group) => <button className="btn-secondary" onClick={() => setSelectedTeamId(group.id)}>{t('payroll.open')}</button> }]
   const exportButtons = (onExport) => <div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('print')}>{t('reports.print')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('pdf')}>{t('reports.pdf')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('excel')}>{t('reports.excel')}</button></div>
   return <section>
     {error ? <p className="mb-3 rounded bg-red-50 p-3 text-red-700">{error}</p> : null}
@@ -322,8 +324,8 @@ export default function PayrollOperations() {
       </div>
     </div></div>
     {(reviewErrors.length || weekValidationErrors.length) ? <div className="mb-3 rounded bg-amber-50 p-3 text-amber-900"><p className="font-bold">{t('payroll.reviewValidationFailed')}</p><ul className="mt-2 list-inside list-disc text-sm">{(reviewErrors.length ? reviewErrors : weekValidationErrors).map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
-    {selectedTeam ? <div data-weekly-team-review><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} /><div className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>{t('payroll.presentDays')}:</strong> {selectedTeam.totals.presentDays + (selectedTeam.totals.halfDays * 0.5)}</p><p><strong>{t('payroll.candidateOvertimeHours')}:</strong> {selectedTeam.totals.overtimeHours}</p><p><strong>{t('payroll.transport')}:</strong> {money(selectedTeam.totals.transportAmount, 'CDF')}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {money(selectedTeam.totals.finalAmount, 'CDF')}</p></div></div> : <><div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div><Table columns={teamColumns} data={teamGroups} loading={loading} emptyMessage={t('payroll.noTeams')} /></>}
-    <p className="mt-3 font-extrabold">{t('payroll.allTeamsTotal')}: {money(totals.finalAmount, 'CDF')}</p>
+    {selectedTeam ? <div data-weekly-team-review><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><div className="mb-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><p><strong>{t('common.team')}:</strong> {selectedTeam.name}</p><p><strong>{t('payroll.workers')}:</strong> {selectedTeam.lines.length}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {amountDue(selectedTeam.amountDueByCurrency)}</p></div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} /><div className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3"><p><strong>{t('payroll.presentDays')}:</strong> {selectedTeam.totals.presentDays + (selectedTeam.totals.halfDays * 0.5)}</p><p><strong>{t('payroll.candidateOvertimeHours')}:</strong> {selectedTeam.totals.overtimeHours}</p><p><strong>{t('payroll.transport')}:</strong> {money(selectedTeam.totals.transportAmount, 'CDF')}</p></div></div> : <><div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div><Table columns={teamColumns} data={teamGroups} loading={loading} emptyMessage={t('payroll.noTeams')} /></>}
+    <p className="mt-3 font-extrabold">{t('payroll.allTeamsTotal')}: {amountDue(overallAmountDueByCurrency)}</p>
     <WeeklyPayrollWorkerEditPanel line={editingLine} dates={weeklyDates(monday)} hasDraft={Boolean(draftRun)} saving={Boolean(savingSheetWorkerId)} onClose={() => setEditingWorkerId('')} onSave={saveSheetEdit} onMarkSundayPaid={markSundayPaid} onCorrectPaidSunday={correctPaidSunday} />
     <AttendanceEditModal row={editingAttendance} isOpen={Boolean(editingAttendance)} isSaving={savingAttendance} onClose={() => setEditingAttendance(null)} onSave={saveAttendanceCorrection} />
   </section>
