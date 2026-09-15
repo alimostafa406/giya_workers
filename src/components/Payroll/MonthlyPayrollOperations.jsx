@@ -11,6 +11,7 @@ import Modal from '../Modal/Modal'
 import Table from '../Table/Table'
 import MonthlyPayrollTeamSummary from './MonthlyPayrollTeamSummary'
 import { monthlyPayrollTeamSummary } from '../../utils/monthlyPayrollTeamSummary'
+import { findPayrollTeam } from '../../utils/payrollTeamSelection'
 
 const statusLabel = (value, t) => ({ draft: t('payroll.statusDraft'), reviewed: t('payroll.statusReviewed'), finalized: t('payroll.statusFinalized'), paid: t('payroll.statusPaid') }[value] || value)
 const isSunday = (date) => new Date(`${date}T12:00:00`).getDay() === 0
@@ -93,7 +94,7 @@ export default function MonthlyPayrollOperations() {
   const storedLines = useMemo(() => (data?.payrollLines || []).filter((line) => line.payroll_run_id === run?.id).map((line) => { const term = line.compensation_snapshot || {}; const calc = line.calculation_snapshot || {}; return { worker: (data?.workers || []).find((worker) => String(worker.id) === String(line.worker_id)) || { id: line.worker_id, full_name: line.worker_name_snapshot }, term, paymentType: 'monthly', currency: line.currency_code_snapshot || run?.currency_code || null, cycle: { start: line.attendance_period_start, end: line.attendance_period_end, due: line.payment_due_date }, presentDays: Number(line.present_days || 0), halfDays: Number(line.half_days || 0), absentDays: Number(line.absent_days || 0), monthlySalary: Number(term.monthly_salary || 0), dailyValue: Number(calc.daily_value || 0), absenceDeduction: Number(calc.absence_deduction || 0), halfDayDeduction: Number(calc.half_day_deduction || 0), baseAmount: Number(line.base_amount || 0), transportAmount: Number(line.transport_amount || 0), overtimeHours: Number(line.overtime_hours || 0), overtimeAmount: Number(line.overtime_amount || 0), holidayAmount: Number(line.holiday_amount || 0), sundayCarryAmount: Number(calc.sunday_carry_amount || 0), sundayPayments: (data?.sundayPayments || []).filter((payment) => (calc.sunday_payment_ids || []).includes(payment.id)), bonusAmount: Number(line.bonus_amount || 0), deductionAmount: Number(line.deduction_amount || 0), advanceAmount: Number(line.advance_amount || 0), manualAdjustmentAmount: Number(line.manual_adjustment_amount || 0), finalAmount: Number(line.final_amount || 0) } }), [data, run])
   const lines = run && run.status !== 'draft' ? storedLines : draftLines
   const teamGroups = useMemo(() => { const map = new Map(); lines.forEach((line) => { const id = String(line.worker.team_id || 'unassigned'); const team = map.get(id) || { id, name: line.worker.team_name || t('common.unknown'), lines: [] }; team.lines.push(line); map.set(id, team) }); return [...map.values()] }, [lines, t])
-  const selectedTeam = teamGroups.find((team) => team.id === selectedTeamId) || null
+  const selectedTeam = findPayrollTeam(teamGroups, selectedTeamId)
   const teamLines = selectedTeam?.lines || []
   const totals = totalLines(lines); const editingLine = lines.find((line) => String(line.worker.id) === String(editingId)) || null; const money = (amount) => formatPayrollMoney(amount, { currency: group?.currency, paymentType: 'monthly' })
   const persist = (source, due, currency) => persistPayrollDraftRequest({ paymentType: 'monthly', dueDate: due, currency, ruleSetId: source.rules.id, lines: makeLines(source).filter((line) => line.cycle.due === due && line.currency === currency) })
