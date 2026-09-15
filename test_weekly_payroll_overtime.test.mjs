@@ -42,13 +42,14 @@ test('overtime display helper does not change payroll monetary totals', () => {
   assert.deepEqual(line, before)
 })
 
-test('weekly payroll table has only the approved columns and worker-name edit trigger', () => {
+test('weekly table source contains exactly the approved data columns and worker trigger', () => {
   const sheet = readFileSync('./src/components/Payroll/WeeklyPayrollSheet.jsx', 'utf8')
+  assert.match(sheet, /data-weekly-payroll-sheet/)
   assert.match(sheet, /workDayPay/)
   assert.match(sheet, /morningOvertime/)
   assert.match(sheet, /eveningOvertime/)
   assert.match(sheet, /onClick=\{\(\) => onEdit\(line\.worker\.id\)\}/)
   assert.match(sheet, /money\(line\.attendanceWage, line\)/)
   assert.match(sheet, /transportConfigured \? money\(line\.transportAmount, line\) : '—'/)
-  assert.doesNotMatch(sheet, /sundayStatusLabel|sundayWork|dailyRate|finalPay|common\.actions|common\.edit/)
+  assert.doesNotMatch(sheet, /sundayStatusLabel|sundayWork|dailyRate|finalPay|common\.actions|common\.edit|simpleWeeklyPayrollForLine/)
 })
