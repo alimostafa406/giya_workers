@@ -10,7 +10,6 @@ import { monthlyDailyValue } from '../utils/payrollCalculations'
 import PayrollOperations from '../components/Payroll/PayrollOperations'
 import PayrollHistory from '../components/Payroll/PayrollHistory'
 import MonthlyPayrollOperations from '../components/Payroll/MonthlyPayrollOperations'
-import SundayPaymentsPanel from '../components/Payroll/SundayPaymentsPanel'
 
 const lastDayOfMonth = (year, monthIndex) => new Date(year, monthIndex + 1, 0).getDate()
 
@@ -162,6 +161,7 @@ function PayrollSettings() {
 
 export default function Payroll() {
   const { t } = useTranslation()
-  const [section, setSection] = useState('operations')
-  return <section><div className="mb-4 flex flex-wrap justify-end gap-2"><Link className="btn-secondary" to="/payroll/publication">{t('payroll.manageViewerPublication')}</Link><Link className="btn-secondary" to="/payroll/compensation-review">{t('payroll.printCompensationReview')}</Link></div><div className="mb-4 flex flex-wrap gap-2"><button className={section === 'operations' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('operations')}>{t('payroll.operations')}</button><button className={section === 'monthly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('monthly')}>{t('payroll.monthlyOperations')}</button><button className={section === 'sundays' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('sundays')}>{t('payroll.sundayWork')}</button><button className={section === 'settings' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('settings')}>{t('payroll.settingsTitle')}</button><button className={section === 'history' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('history')}>{t('payroll.payrollHistory')}</button></div>{section === 'operations' ? <PayrollOperations /> : section === 'monthly' ? <MonthlyPayrollOperations /> : section === 'sundays' ? <SundayPaymentsPanel /> : section === 'settings' ? <PayrollSettings /> : <PayrollHistory />}</section>
+  const [section, setSection] = useState('weekly')
+  const [historyOpen, setHistoryOpen] = useState(false)
+  return <section><div className="mb-4 flex flex-wrap justify-end gap-2"><button className="btn-secondary" type="button" onClick={() => setHistoryOpen((open) => !open)}>{t('payroll.payrollHistory')}</button><Link className="btn-secondary" to="/payroll/publication">{t('payroll.manageViewerPublication')}</Link><Link className="btn-secondary" to="/payroll/compensation-review">{t('payroll.printCompensationReview')}</Link></div><div className="mb-4 flex flex-wrap gap-2"><button className={section === 'weekly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('weekly')}>{t('payroll.weeklyOperations')}</button><button className={section === 'monthly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('monthly')}>{t('payroll.monthlyOperations')}</button></div>{section === 'weekly' ? <PayrollOperations /> : <MonthlyPayrollOperations />}{historyOpen ? <div className="mt-4"><PayrollHistory /></div> : null}</section>
 }
