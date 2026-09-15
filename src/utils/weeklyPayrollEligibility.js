@@ -22,11 +22,20 @@ export const weeklyPayrollTotalsByCurrency = (lines = []) => (
   }, {})
 )
 
-export const positiveWeeklyPayrollCurrencyTotals = (totals = {}) => (
-  Object.entries(totals)
-    .filter(([, amount]) => Number(amount) > 0)
+export const positiveWeeklyPayrollCurrencyTotals = (totals = {}) => {
+  const normalized = (Array.isArray(totals) ? totals : Object.entries(totals)).reduce((result, entry) => {
+    const [rawCurrency, rawAmount] = Array.isArray(entry)
+      ? entry
+      : [entry?.currency ?? entry?.currencyCode, entry?.amount ?? entry?.total]
+    const currency = String(rawCurrency || '').trim().toUpperCase() || 'UNCONFIGURED'
+    const amount = Number(rawAmount)
+    result[currency] = Math.round(((result[currency] || 0) + (Number.isFinite(amount) ? amount : 0)) * 100) / 100
+    return result
+  }, {})
+  return Object.entries(normalized)
+    .filter(([, amount]) => amount > 0)
     .sort(([left], [right]) => left.localeCompare(right))
-)
+}
 
 export const weeklyPayrollCurrencyTotalsMatch = (storedLines = [], currentLines = []) => {
   const stored = weeklyPayrollTotalsByCurrency(storedLines)

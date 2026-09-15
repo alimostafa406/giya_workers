@@ -137,6 +137,21 @@ test('team amount display hides zero currencies and keeps positive currencies', 
   assert.deepEqual(positiveWeeklyPayrollCurrencyTotals({ CDF: 962000, USD: 250 }), [['CDF', 962000], ['USD', 250]])
 })
 
+test('team amount display normalizes duplicate same-currency entries before filtering', () => {
+  assert.deepEqual(positiveWeeklyPayrollCurrencyTotals([['CDF', 962000], ['CDF', 0]]), [['CDF', 962000]])
+  assert.deepEqual(positiveWeeklyPayrollCurrencyTotals([['cdf', 600000], [' CDF ', 362000]]), [['CDF', 962000]])
+})
+
+test('team amount display keeps mixed positive currencies as unique rows', () => {
+  const rendered = positiveWeeklyPayrollCurrencyTotals([
+    { currency: 'CDF', amount: 962000 },
+    { currencyCode: 'USD', total: 250 },
+    { currency: 'CDF', amount: 0 },
+  ])
+  assert.deepEqual(rendered, [['CDF', 962000], ['USD', 250]])
+  assert.equal(new Set(rendered.map(([currency]) => currency)).size, rendered.length)
+})
+
 test('all-zero team totals produce the display fallback without mutating payroll totals', () => {
   const totals = { CDF: 0, USD: 0 }
   const snapshot = structuredClone(totals)
