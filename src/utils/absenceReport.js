@@ -1,4 +1,5 @@
 import { isActiveWorker } from './activeWorkers.js'
+import { reportWorkerMatchesSearch } from './reportWorkerSearch.js'
 
 const BUSINESS_TIME_ZONE = 'Africa/Kinshasa'
 
@@ -47,7 +48,7 @@ const stateFor = (hasCheckIn, date, currentBusinessDate) => {
   return hasCheckIn ? 'morning_recorded' : 'morning_missing'
 }
 
-export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'today', selectedDate, businessDate = selectedDate, teamId = '' }) => {
+export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'today', selectedDate, businessDate = selectedDate, teamId = '', search = '' }) => {
   const dates = mode === 'week' ? absenceWeekDates(selectedDate) : [selectedDate]
   const workersById = new Map()
   workers.forEach((worker) => {
@@ -57,6 +58,7 @@ export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'toda
     isActiveWorker(worker)
     && (worker.staff_classification || 'normal') === 'normal'
     && (!teamId || String(worker.team_id || '') === String(teamId))
+    && reportWorkerMatchesSearch(worker, search)
   ))
   const recordedCheckIns = new Set(attendance
     .filter((row) => hasAttendanceCheckIn(row) && dates.includes(row.attendance_date))

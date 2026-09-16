@@ -23,6 +23,7 @@ export default function AbsenceReport() {
   const [mode, setMode] = useState('today')
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate)
   const [teamId, setTeamId] = useState('')
+  const [search, setSearch] = useState('')
   const [snapshot, setSnapshot] = useState({ key: '', workers: [], teams: [], attendance: [], fetchedAt: null })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -120,7 +121,8 @@ export default function AbsenceReport() {
     selectedDate,
     businessDate,
     teamId,
-  }), [businessDate, mode, requestKey, selectedDate, snapshot, teamId])
+    search,
+  }), [businessDate, mode, requestKey, search, selectedDate, snapshot, teamId])
 
   const printReport = async () => {
     setError('')
@@ -153,6 +155,7 @@ export default function AbsenceReport() {
       <div className="flex gap-2">{['today', 'week'].map((item) => <button key={item} type="button" className={mode === item ? 'btn-primary' : 'btn-secondary'} onClick={() => setMode(item)}>{t(`absenceReport.${item}`)}</button>)}</div>
       <label className="min-w-44 text-sm font-bold">{t('attendance.date')}<input className="input-base mt-1" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value || currentBusinessDate())} /></label>
       <label className="min-w-52 text-sm font-bold">{t('attendance.team')}<select className="input-base mt-1" value={teamId} onChange={(event) => setTeamId(event.target.value)}><option value="">{t('absenceReport.allTeams')}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+      <label className="min-w-60 text-sm font-bold">{t('common.search')}<input className="input-base mt-1" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('reports.workerSearchPlaceholder')} /></label>
       <button type="button" className="btn-primary" disabled={locked || reportLoading} onClick={printReport}>{t('absenceReport.print')}</button>
     </div>
     {error ? <p className="absence-report-screen-only alert alert--error mb-4">{error}</p> : null}
@@ -172,7 +175,7 @@ export default function AbsenceReport() {
         <div className="absence-summary-card absence-summary-card--teams"><span>{t('absenceReport.teamsWithMissingMorning')}</span><strong>{report.groups.length}</strong></div>
         <div className="absence-summary-card absence-summary-card--workers"><span>{t('absenceReport.missingMorningWorkers')}</span><strong>{report.missingMorningWorkers}</strong></div>
       </div>
-      {reportLoading ? <p className="py-8 text-center">{t('common.loading')}</p> : report.groups.length === 0 ? <p className="absence-report-empty">{t('absenceReport.empty')}</p> : report.groups.map((group) => <section key={group.id} className={`absence-team-block ${group.workers.length <= 4 ? 'absence-team-block--small' : ''}`}>
+      {reportLoading ? <p className="py-8 text-center">{t('common.loading')}</p> : report.groups.length === 0 ? <p className="absence-report-empty">{search.trim() ? t('common.noResults') : t('absenceReport.empty')}</p> : report.groups.map((group) => <section key={group.id} className={`absence-team-block ${group.workers.length <= 4 ? 'absence-team-block--small' : ''}`}>
         <div className="absence-team-heading"><h2>{group.name}</h2><p>{t('absenceReport.missingMorningCount')}: {group.workers.length}</p></div>
         {mode === 'today' ? <div className="absence-today-list">{group.workers.map((worker) => <div key={worker.id} className="absence-worker-card"><strong>{worker.name}</strong>{worker.employeeCode ? <span>{worker.employeeCode}</span> : null}</div>)}</div> : <div className="absence-week-table-wrap"><table className="absence-week-table"><thead><tr><th>{t('attendance.worker')}</th><th>{t('workers.employeeCode')}</th>{dates.map((date) => <th key={date}>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</th>)}<th>{t('absenceReport.missingMorningTotal')}</th></tr></thead><tbody>{group.workers.map((worker) => <tr key={worker.id}><td>{worker.name}</td><td>{worker.employeeCode || '—'}</td>{worker.states.map((day) => <td key={day.date} className={`absence-state absence-state--${day.state}`}>{statusLabel(day.state)}</td>)}<td className="absence-total-cell">{worker.missingMorningDays}</td></tr>)}</tbody></table></div>}
       </section>)}

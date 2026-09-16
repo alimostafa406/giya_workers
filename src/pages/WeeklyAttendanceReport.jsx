@@ -16,6 +16,7 @@ import {
   shiftWeeklyReportRange,
   summarizeWeeklyAttendanceDays,
 } from '../utils/weeklyAttendanceReport'
+import { reportWorkerMatchesSearch } from '../utils/reportWorkerSearch'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -62,6 +63,7 @@ function WeeklyAttendanceReport() {
     endDate: defaultWeekRange.endDate,
     teamId: '',
     supervisorId: '',
+    search: '',
   })
   const weekNavigationLabels = {
     ar: { previous: 'الأسبوع السابق', current: 'الأسبوع الحالي', next: 'الأسبوع التالي' },
@@ -208,6 +210,8 @@ function WeeklyAttendanceReport() {
         return false
       }
 
+      if (!reportWorkerMatchesSearch(worker, weeklyFilters.search)) return false
+
       return true
     })
 
@@ -234,7 +238,7 @@ function WeeklyAttendanceReport() {
 
       return row
     })
-  }, [attendance, businessDate, teams, weeklyDates, weeklyFilters.supervisorId, weeklyFilters.teamId, workers, t])
+  }, [attendance, businessDate, teams, weeklyDates, weeklyFilters.search, weeklyFilters.supervisorId, weeklyFilters.teamId, workers, t])
 
   const weeklyColumns = useMemo(() => {
     const baseColumns = [
@@ -384,7 +388,7 @@ function WeeklyAttendanceReport() {
         </button>
       </div>
 
-      <div className="surface-card mb-4 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="surface-card mb-4 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
         <div>
           <label className="mb-1 block text-sm font-semibold">{t('reports.from')}</label>
           <input
@@ -393,6 +397,11 @@ function WeeklyAttendanceReport() {
             onChange={(e) => selectWeekContaining(e.target.value)}
             className="input-base"
           />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-semibold">{t('common.search')}</label>
+          <input type="search" value={weeklyFilters.search} onChange={(e) => setWeeklyFilters((prev) => ({ ...prev, search: e.target.value }))} className="input-base" placeholder={t('reports.workerSearchPlaceholder')} />
         </div>
 
         <div>
@@ -499,7 +508,7 @@ function WeeklyAttendanceReport() {
             columns={weeklyColumns}
             data={weeklyReportRows}
             loading={loading}
-            emptyMessage={t('reports.noData')}
+            emptyMessage={weeklyFilters.search.trim() ? t('common.noResults') : t('reports.noData')}
           />
         </>
       )}

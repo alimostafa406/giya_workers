@@ -286,6 +286,10 @@ Object.assign(translations.fr, {
   },
 })
 
+Object.assign(translations.ar.reports, { workerSearchPlaceholder: 'بحث عن عامل بالاسم أو الرقم...' })
+Object.assign(translations.en.reports, { workerSearchPlaceholder: 'Search worker by name or code...' })
+Object.assign(translations.fr.reports, { workerSearchPlaceholder: 'Rechercher un travailleur par nom ou code...' })
+
 Object.assign(translations.ar.payroll, {
   compensationReview: 'تقرير مراجعة تعويضات العمال',
   compensationReviewDescription: 'مراجعة بيانات الأجر وبدل النقل المخزنة للعمال النشطين.',
