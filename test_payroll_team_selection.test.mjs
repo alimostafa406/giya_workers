@@ -13,11 +13,13 @@ test('weekly and monthly summaries delegate navigation to the shared team cards'
   for (const file of ['WeeklyPayrollTeamSummary.jsx', 'MonthlyPayrollTeamSummary.jsx']) {
     const source = readFileSync(`./src/components/Payroll/${file}`, 'utf8')
     assert.match(source, /<span className="font-extrabold">\{row\.name\}<\/span>/)
-    assert.match(source, /<PayrollTeamCards groups=\{groups\} onOpenTeam=\{onSelectTeam\}/)
+    assert.match(source, /return <>\{!selectedTeamId[\s\S]*<PayrollTeamCards groups=\{groups\} onOpenTeam=\{onSelectTeam\}[\s\S]*weekly-team-summary-wrap/)
     assert.doesNotMatch(source, /className=\{.*is-selected/)
   }
   const cards = readFileSync('./src/components/Payroll/PayrollTeamCards.jsx', 'utf8')
   assert.match(cards, /onOpenTeam\(payrollTeamId\(group\.id\)\)/)
+  assert.match(cards, /min-h-36/)
+  assert.match(cards, /hover:-translate-y-0\.5/)
   assert.equal(payrollTeamId(101), '101')
 })
 
