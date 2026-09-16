@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
+import { activeWorkersOnly } from '../utils/activeWorkers'
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
 
@@ -89,7 +90,7 @@ export const getTeamsRequest = async () => {
 	)
 
 	const data = teams.map((team) => {
-		const teamWorkers = workers.filter(
+		const teamWorkers = activeWorkersOnly(workers).filter(
 			(worker) => String(worker.team_id ?? '') === String(team.id),
 		)
 		const supervisor = supervisorsById.get(String(team.supervisor_id ?? '')) || null

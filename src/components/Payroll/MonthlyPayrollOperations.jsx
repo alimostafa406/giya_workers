@@ -12,6 +12,7 @@ import Table from '../Table/Table'
 import MonthlyPayrollTeamSummary from './MonthlyPayrollTeamSummary'
 import { monthlyPayrollTeamSummary } from '../../utils/monthlyPayrollTeamSummary'
 import { findPayrollTeam } from '../../utils/payrollTeamSelection'
+import { isActiveWorker } from '../../utils/activeWorkers'
 
 const statusLabel = (value, t) => ({ draft: t('payroll.statusDraft'), reviewed: t('payroll.statusReviewed'), finalized: t('payroll.statusFinalized'), paid: t('payroll.statusPaid') }[value] || value)
 const isSunday = (date) => new Date(`${date}T12:00:00`).getDay() === 0
@@ -22,7 +23,7 @@ const latestTermForType = (line, paymentType) => (line?.worker?.payroll_compensa
 const makeLines = (data) => {
   const attendance = new Map((data?.attendance || []).map((row) => [`${row.worker_id}|${row.attendance_date}`, row]))
   const holidays = new Set((data?.holidays || []).map((holiday) => holiday.holiday_date))
-  return (data?.workers || []).filter((worker) => worker.is_active !== false && worker.payment_type === 'monthly').map((worker) => {
+  return (data?.workers || []).filter((worker) => isActiveWorker(worker) && worker.payment_type === 'monthly').map((worker) => {
     const term = worker.payroll_compensation
     const cycle = monthlyCycle(term?.monthly_payroll_cycle_start_date)
     if (!cycle || term?.monthly_salary == null || !term?.currency_code) return null
@@ -82,7 +83,7 @@ export default function MonthlyPayrollOperations() {
   const rawLines = useMemo(() => makeLines(data), [data])
   const incompleteWorkers = useMemo(() => (data?.workers || []).filter((worker) => {
     const term = worker.payroll_compensation
-    return worker.is_active !== false && worker.payment_type === 'monthly'
+    return isActiveWorker(worker) && worker.payment_type === 'monthly'
       && (term?.monthly_salary == null || !term?.monthly_payroll_cycle_start_date || !term?.currency_code)
   }), [data])
   const groups = useMemo(() => { const map = new Map(); rawLines.forEach((line) => { const key = `${line.cycle.due}|${line.currency}`; map.set(key, { key, due: line.cycle.due, currency: line.currency, lines: [...(map.get(key)?.lines || []), line] }) }); return [...map.values()].map((group) => ({ ...group, totals: totalLines(group.lines) })).sort((a, b) => a.key.localeCompare(b.key)) }, [rawLines])

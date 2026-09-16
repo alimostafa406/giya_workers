@@ -1,3 +1,5 @@
+import { isActiveWorker } from './activeWorkers.js'
+
 const BUSINESS_TIME_ZONE = 'Africa/Kinshasa'
 
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -52,7 +54,7 @@ export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'toda
     if (worker?.id && !workersById.has(String(worker.id))) workersById.set(String(worker.id), worker)
   })
   const rosterWorkers = [...workersById.values()].filter((worker) => (
-    worker.is_active !== false
+    isActiveWorker(worker)
     && (worker.staff_classification || 'normal') === 'normal'
     && (!teamId || String(worker.team_id || '') === String(teamId))
   ))

@@ -1,3 +1,5 @@
+import { isActiveWorker } from './activeWorkers.js'
+
 const normalizeEmployeeNo = (value) => String(value || '').trim()
 const normalizeDeviceId = (value) => String(value || '').trim()
 export const biometricDeviceIdentityKey = (deviceId, employeeNo) => `${normalizeDeviceId(deviceId)}::${normalizeEmployeeNo(employeeNo)}`
@@ -20,7 +22,7 @@ export const buildRecentIdentityUsers = ({ activityIdentities, inventoryUsers, m
     }
   }
   const activeWorkerIds = new Set((workers || [])
-    .filter((worker) => worker?.id && worker.is_active !== false)
+    .filter((worker) => worker?.id && isActiveWorker(worker))
     .map((worker) => String(worker.id)))
   const ignored = new Set((ignoredEmployeeNos || []).map(normalizeEmployeeNo))
   const scopedIgnored = new Set((ignoredIdentities || [])

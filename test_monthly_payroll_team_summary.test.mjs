@@ -39,7 +39,8 @@ test('attendance deductions alone remain outside the monthly summary deduction c
 
 test('monthly UI preserves eligibility and cycle grouping while using team selection', () => {
   const source = readFileSync('./src/components/Payroll/MonthlyPayrollOperations.jsx','utf8')
-  assert.match(source, /worker\.is_active !== false && worker\.payment_type === 'monthly'/)
+  assert.match(source, /import \{ isActiveWorker \} from '\.\.\/\.\.\/utils\/activeWorkers'/)
+  assert.match(source, /isActiveWorker\(worker\) && worker\.payment_type === 'monthly'/)
   assert.match(source, /const key = `\$\{line\.cycle\.due\}\|\$\{line\.currency\}`/)
   assert.match(source, /<MonthlyPayrollTeamSummary groups=\{teamGroups\}/)
   assert.match(source, /data=\{teamLines\}/)

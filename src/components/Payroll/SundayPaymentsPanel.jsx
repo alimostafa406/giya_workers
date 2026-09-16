@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { isActiveWorker } from '../../utils/activeWorkers'
 import { confirmSundayWorkRequest, getPayrollOperationsDataRequest, markSundayPaymentPaidRequest } from '../../api/payrollOperationsApi'
 import { getErrorMessage } from '../../api/axios'
 import { currentBusinessDate } from '../../utils/payrollCalculations'
@@ -27,7 +28,7 @@ export default function SundayPaymentsPanel() {
   }
   useEffect(() => { load() }, [])
 
-  const workers = useMemo(() => (data?.workers || []).filter((worker) => worker.is_active !== false && ['weekly', 'monthly'].includes(worker.payment_type)), [data])
+  const workers = useMemo(() => (data?.workers || []).filter((worker) => isActiveWorker(worker) && ['weekly', 'monthly'].includes(worker.payment_type)), [data])
   const workerById = useMemo(() => new Map(workers.map((worker) => [String(worker.id), worker])), [workers])
   const payments = useMemo(() => (data?.sundayPayments || []).map((payment) => ({ ...payment, worker: workerById.get(String(payment.worker_id)) || null })), [data, workerById])
   const summaries = useMemo(() => {

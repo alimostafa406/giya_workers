@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
+import { isActiveWorker } from '../utils/activeWorkers'
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
 
@@ -112,6 +113,7 @@ const readAttendance = async (client, params = {}) => {
   if (params.date_from) query = query.gte('attendance_date', params.date_from)
   if (params.date_to) query = query.lte('attendance_date', params.date_to)
   if (params.worker_id) query = query.eq('worker_id', params.worker_id)
+  if (Array.isArray(params.worker_ids) && params.worker_ids.length) query = query.in('worker_id', params.worker_ids)
   if (Number.isInteger(params.range_from) && Number.isInteger(params.range_to)) query = query.range(params.range_from, params.range_to)
   const { data, error } = await query
 
@@ -124,6 +126,7 @@ const readAttendance = async (client, params = {}) => {
     if (params.date_from) fallbackQuery = fallbackQuery.gte('attendance_date', params.date_from)
     if (params.date_to) fallbackQuery = fallbackQuery.lte('attendance_date', params.date_to)
     if (params.worker_id) fallbackQuery = fallbackQuery.eq('worker_id', params.worker_id)
+    if (Array.isArray(params.worker_ids) && params.worker_ids.length) fallbackQuery = fallbackQuery.in('worker_id', params.worker_ids)
     if (Number.isInteger(params.range_from) && Number.isInteger(params.range_to)) fallbackQuery = fallbackQuery.range(params.range_from, params.range_to)
     const fallback = await fallbackQuery
     if (fallback.error) throw fallback.error
@@ -206,10 +209,11 @@ export const getAttendanceRequest = async (params = {}) => {
     const matchesDateTo = !params.date_to || row.attendance_date <= params.date_to
     const matchesTeam = !params.team_id || String(worker?.team_id ?? '') === String(params.team_id)
     const matchesWorker = !params.worker_id || String(row.worker_id ?? '') === String(params.worker_id)
+    const matchesWorkers = !Array.isArray(params.worker_ids) || !params.worker_ids.length || params.worker_ids.some((id) => String(id) === String(row.worker_id))
     const matchesClassification = !params.staff_classification
       || (worker?.staff_classification || 'normal') === params.staff_classification
 
-    return matchesDate && matchesDateFrom && matchesDateTo && matchesTeam && matchesWorker && matchesClassification
+    return matchesDate && matchesDateFrom && matchesDateTo && matchesTeam && matchesWorker && matchesWorkers && matchesClassification
   })
 
   const data = filtered.map((row) => {
@@ -263,7 +267,7 @@ export const getForeignAttendanceRequest = async (params = {}) => {
 
   const data = workers
     .filter((worker) => (
-      worker.is_active !== false
+      isActiveWorker(worker)
       && classificationsByWorkerId.get(String(worker.id)) === 'special_staff'
       && (!params.team_id || String(worker.team_id || '') === String(params.team_id))
     ))

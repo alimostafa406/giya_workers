@@ -1,6 +1,8 @@
 const asArray = (value) => (Array.isArray(value) ? value : [])
 
-export const buildInactiveWorkerRows = ({ workers = [], mappings = [], unresolvedEvents = [] } = {}) => {
+const attendanceSortValue = (row) => `${row?.attendance_date || row?.date || ''}|${row?.updated_at || row?.created_at || ''}`
+
+export const buildInactiveWorkerRows = ({ workers = [], mappings = [], unresolvedEvents = [], attendance = [] } = {}) => {
   const mappingsByWorker = new Map()
   asArray(mappings).forEach((mapping) => {
     if (!mapping?.worker_id) return
@@ -15,6 +17,13 @@ export const buildInactiveWorkerRows = ({ workers = [], mappings = [], unresolve
     eventsByWorker.set(workerId, [...(eventsByWorker.get(workerId) || []), event])
   })
 
+  const attendanceByWorker = new Map()
+  asArray(attendance).forEach((row) => {
+    if (!row?.worker_id) return
+    const workerId = String(row.worker_id)
+    attendanceByWorker.set(workerId, [...(attendanceByWorker.get(workerId) || []), row])
+  })
+
   return asArray(workers)
     .filter((worker) => worker?.is_active === false)
     .map((worker) => {
@@ -22,11 +31,15 @@ export const buildInactiveWorkerRows = ({ workers = [], mappings = [], unresolve
       const latestEvent = [...workerEvents].sort((left, right) => (
         new Date(right.event_timestamp || 0).getTime() - new Date(left.event_timestamp || 0).getTime()
       ))[0] || null
+      const attendanceHistory = [...(attendanceByWorker.get(String(worker.id)) || [])]
+        .sort((left, right) => attendanceSortValue(right).localeCompare(attendanceSortValue(left)))
       return {
         ...worker,
         biometricMappings: mappingsByWorker.get(String(worker.id)) || [],
         biometricEventsToday: workerEvents,
         latestBiometricEvent: latestEvent,
+        attendanceHistory,
+        latestAttendance: attendanceHistory[0] || null,
       }
     })
     .sort((left, right) => String(left.full_name || '').localeCompare(String(right.full_name || '')))

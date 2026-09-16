@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createWorkerAndConfirmBiometricMappingRequest, getBiometricMappingWorkspaceRequest, getRecentUnmappedBiometricIdentitiesRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
 import { normalizePersonName, replaceHikvisionDeviceUsers } from '../data/hikvisionRawData'
 import { useTranslation } from '../i18n/LanguageContext'
+import { isActiveWorker } from '../utils/activeWorkers'
 import CreateWorkerFromDeviceModal from '../components/Biometric/CreateWorkerFromDeviceModal'
 import { completeCriticalBiometricMappingSave, completeCriticalBiometricWorkerCreation } from '../utils/biometricMappingSaveFlow'
 import { getNextNumericEmployeeCode, isDuplicateEmployeeCodeError } from '../utils/employeeCodeSuggestion'
@@ -117,7 +118,7 @@ export default function BiometricMapping() {
     ignoredIdentities: data?.ignoredIdentities,
   }), [data, recentActivity])
   const availableWorkers = useMemo(() => (data?.workers || [])
-    .filter((worker) => worker.is_active !== false), [data])
+    .filter(isActiveWorker), [data])
   const recentUnmappedUsers = useMemo(() => (data
     ? recentUnmappedIdentityUsers(recentActivityUsers)
       .filter((user) => !optimisticallyMappedEmployeeNos.has(user.identityKey))

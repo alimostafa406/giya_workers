@@ -1,5 +1,6 @@
 import { getHikvisionDeviceUsers, normalizeDeviceEmployeeNo, normalizePersonName } from '../data/hikvisionRawData'
 import { getSupabaseClient } from '../lib/supabase'
+import { isActiveWorker } from '../utils/activeWorkers'
 import { createWorkerRequest, getWorkersRequest, updateWorkerRequest } from './workersApi'
 import { getTeamsRequest } from './teamsApi'
 
@@ -209,7 +210,7 @@ export const getBiometricMappingWorkspaceRequest = async () => {
       ? workersById.get(String(deviceMappings[0]?.worker_id || '')) || null
       : null
     const sameNameWorkers = enrichedWorkers.filter((worker) => (
-      worker.is_active !== false
+      isActiveWorker(worker)
       && normalizePersonName(worker.full_name) === normalizePersonName(deviceUser.name)
     ))
 
@@ -242,7 +243,7 @@ export const getBiometricMappingWorkspaceRequest = async () => {
     enrichedWorkers.map((worker) => [String(worker.id), mappingsByWorker.get(String(worker.id)) || []]),
   )
   const supabaseOnlyWorkers = enrichedWorkers.filter((worker) => (
-    worker.is_active !== false && (workerMappings.get(String(worker.id)) || []).length === 0
+    isActiveWorker(worker) && (workerMappings.get(String(worker.id)) || []).length === 0
   ))
 
   return {

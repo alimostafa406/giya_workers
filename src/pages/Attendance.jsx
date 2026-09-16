@@ -17,6 +17,7 @@ import {
   prepareAttendanceOutput,
 } from '../utils/attendanceOperationalGate'
 import { attendanceRosterCategory, mergeAttendanceRoster, operationalAttendanceStatus, summarizeAttendanceRoster } from '../utils/attendanceRoster'
+import { activeWorkersOnly } from '../utils/activeWorkers'
 
 const asArray = (value) => {
   if (Array.isArray(value)) return value
@@ -238,7 +239,7 @@ function Attendance() {
         </div>
       </div>
 
-      <AttendanceFilters filters={filters} onChange={handleFilterChange} teams={teams} workers={snapshot.workers} onApply={handleApply} />
+      <AttendanceFilters filters={filters} onChange={handleFilterChange} teams={teams} workers={activeWorkersOnly(snapshot.workers)} onApply={handleApply} />
       {error ? <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
       {locked ? (
