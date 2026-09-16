@@ -9,7 +9,7 @@ test('weekly draft validation ignores saved lines for workers no longer weekly',
   assert.match(source, /currentWeeklyWorkerIds = new Set\(calculatedLines\.map/)
   assert.match(source, /currentStoredLines = storedLines\.filter/)
   assert.doesNotMatch(source, /storedLines\.length !== calculatedLines\.length/)
-  assert.match(source, /currentStoredLines\.some\(\(line\) => !Number\.isFinite\(line\.finalAmount\) \|\| line\.unresolvedDays > 0\)/)
+  assert.match(source, /invalidAmountLines = currentStoredLines\.filter\(\(line\) => !Number\.isFinite\(line\.finalAmount\) \|\| line\.unresolvedDays > 0\)/)
   assert.doesNotMatch(source, /weeklyLinesFor\([^)]*\)\.filter\(\(line\) => line\.term\?\.daily_rate != null\)/)
 })
 

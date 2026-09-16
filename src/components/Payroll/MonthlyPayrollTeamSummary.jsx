@@ -4,18 +4,22 @@ import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { monthlyPayrollTeamSummary } from '../../utils/monthlyPayrollTeamSummary'
 import PayrollTeamCards from './PayrollTeamCards'
 import PayrollWorkerSearch from './PayrollWorkerSearch'
+import PayrollNotes from './PayrollNotes'
+import { payrollConfigurationWarnings } from '../../utils/payrollWarnings'
 
 export default function MonthlyPayrollTeamSummary({ groups, selectedTeamId = '', onSelectTeam }) {
   const { t } = useTranslation()
   const [workerSearch, setWorkerSearch] = useState('')
   const summary = useMemo(() => monthlyPayrollTeamSummary(groups), [groups])
   const lines = useMemo(() => groups.flatMap((group) => group.lines || []), [groups])
+  const warnings = useMemo(() => payrollConfigurationWarnings(lines, 'monthly'), [lines])
   const values = (byCurrency, key, hideZero = false) => {
     const entries = summary.currencies.filter((currency) => !hideZero || Number(byCurrency[currency]?.[key] || 0) !== 0)
     return entries.length ? entries.map((currency) => <span className="block" dir="ltr" key={currency}>{formatPayrollMoney(byCurrency[currency]?.[key] || 0, { currency, paymentType: 'monthly' })}</span>) : '—'
   }
 
   return <>
+    <PayrollNotes warnings={warnings} t={t} />
     <PayrollWorkerSearch lines={lines} paymentType="monthly" value={workerSearch} onChange={setWorkerSearch} onSelect={(line) => onSelectTeam(String(line.worker.team_id || 'unassigned'))} t={t} />
     {!selectedTeamId ? <>
       <div className="mb-4"><PayrollTeamCards groups={groups} onOpenTeam={onSelectTeam} /></div>

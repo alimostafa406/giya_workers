@@ -292,6 +292,9 @@ Object.assign(translations.fr.reports, { workerSearchLabel: 'Rechercher un trava
 Object.assign(translations.ar.payroll, { workerSearchLabel: 'بحث عن عامل', workerSearchPlaceholder: 'بحث بالاسم أو رقم العامل...' })
 Object.assign(translations.en.payroll, { workerSearchLabel: 'Search worker', workerSearchPlaceholder: 'Search worker by name or code...' })
 Object.assign(translations.fr.payroll, { workerSearchLabel: 'Rechercher un travailleur', workerSearchPlaceholder: 'Rechercher un travailleur par nom ou code...' })
+Object.assign(translations.ar.payroll, { notesTitle: 'ملاحظات القبض', warning_dailyRate: 'اليومية غير محددة', warning_monthlySalary: 'الراتب الشهري غير محدد', warning_transport: 'بدل النقل غير محدد', warning_overtimeRate: 'سعر ساعة الإضافي غير محدد' })
+Object.assign(translations.en.payroll, { notesTitle: 'Payroll Notes', warning_dailyRate: 'Daily rate is not configured', warning_monthlySalary: 'Monthly salary is not configured', warning_transport: 'Transport allowance is not configured', warning_overtimeRate: 'Overtime hourly rate is not configured' })
+Object.assign(translations.fr.payroll, { notesTitle: 'Notes de paie', warning_dailyRate: 'Le taux journalier n’est pas configuré', warning_monthlySalary: 'Le salaire mensuel n’est pas configuré', warning_transport: 'L’indemnité de transport n’est pas configurée', warning_overtimeRate: 'Le taux horaire des heures supplémentaires n’est pas configuré' })
 
 Object.assign(translations.ar.payroll, {
   compensationReview: 'تقرير مراجعة تعويضات العمال',

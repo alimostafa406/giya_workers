@@ -14,9 +14,11 @@ import WeeklyPayrollSheet from './WeeklyPayrollSheet'
 import WeeklyPayrollWorkerEditPanel from './WeeklyPayrollWorkerEditPanel'
 import WeeklyPayrollTeamSummary from './WeeklyPayrollTeamSummary'
 import PayrollWorkerSearch from './PayrollWorkerSearch'
+import PayrollNotes from './PayrollNotes'
 import { findPayrollTeam } from '../../utils/payrollTeamSelection'
 import { applyWeeklyOvertimePay, formatEveningOvertimeMinutes } from '../../utils/weeklyPayrollOvertime'
 import { positiveWeeklyPayrollFooterAmounts, weeklyPayrollTeamFooter } from '../../utils/weeklyPayrollTeamFooter'
+import { payrollConfigurationWarnings } from '../../utils/payrollWarnings'
 
 const money = (amount, currency) => formatPayrollMoney(amount, { currency, paymentType: 'weekly' })
 
@@ -78,13 +80,14 @@ export default function PayrollOperations() {
       paymentType: stored.payment_type_snapshot,
       currency: stored.currency_code_snapshot,
       presentDays: Number(stored.present_days || 0), halfDays: Number(stored.half_days || 0), absentDays: Number(stored.absent_days || 0), unresolvedDays: Number(summary.unresolved_days || 0),
-      attendanceWage: Number(calculation.attendance_wage ?? stored.base_amount ?? 0), baseAmount: Number(stored.base_amount || 0), transportAmount: Number(stored.transport_amount || 0), overtimeHours: Number(stored.overtime_hours || 0), overtimeAmount: Number(stored.overtime_amount || 0), holidayAmount: Number(stored.holiday_amount || 0), sundayDate: sundayBefore(stored.attendance_period_start), sundayPayment: (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(stored.worker_id) && payment.work_date === sundayBefore(stored.attendance_period_start)) || null, bonusAmount: Number(stored.bonus_amount || 0), deductionAmount: Number(stored.deduction_amount || 0), advanceAmount: Number(stored.advance_amount || 0), manualAdjustmentAmount: Number(stored.manual_adjustment_amount || 0), finalAmount: Number(stored.final_amount || 0),
+      attendanceWage: Number(calculation.attendance_wage ?? stored.base_amount ?? 0), baseAmount: Number(stored.base_amount || 0), transportAmount: Number(stored.transport_amount || 0), morningOvertimeMinutes: Number(calculation.morning_overtime_minutes || 0), eveningOvertimeMinutes: Number(calculation.evening_overtime_minutes || 0), overtimeHours: Number(stored.overtime_hours || 0), overtimeAmount: Number(stored.overtime_amount || 0), holidayAmount: Number(stored.holiday_amount || 0), sundayDate: sundayBefore(stored.attendance_period_start), sundayPayment: (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(stored.worker_id) && payment.work_date === sundayBefore(stored.attendance_period_start)) || null, bonusAmount: Number(stored.bonus_amount || 0), deductionAmount: Number(stored.deduction_amount || 0), advanceAmount: Number(stored.advance_amount || 0), manualAdjustmentAmount: Number(stored.manual_adjustment_amount || 0), finalAmount: Number(stored.final_amount || 0),
       calculationSnapshotHasAdjustments: Object.prototype.hasOwnProperty.call(calculation, 'adjustment_summary'),
       details: (summary.days || []).map((detail) => ({ ...detail, row: detail.check_in || detail.check_out ? { check_in: detail.check_in, check_out: detail.check_out } : null })),
     }
   }), [data, weeklyRun])
   const lines = weeklyRun && weeklyRun.status !== 'draft' ? weeklyPayrollEligibleLines(storedLines) : calculatedLines
   const totals = totalLines(lines)
+  const payrollWarnings = payrollConfigurationWarnings(lines, 'weekly')
   const runStatusLabel = !weeklyRun ? t('payroll.statusNotSaved') : weeklyRun.status === 'reviewed' ? t('payroll.statusReviewed') : weeklyRun.status === 'finalized' ? t('payroll.statusFinalized') : weeklyRun.status === 'paid' ? t('payroll.statusPaid') : t('payroll.statusDraft')
   const teamGroups = useMemo(() => {
     const groups = new Map()
@@ -107,7 +110,7 @@ export default function PayrollOperations() {
   const overtimePayFooterAmounts = footerAmounts('overtimePay')
   const editingLine = selectedTeam?.lines.find((line) => String(line.worker.id) === String(editingWorkerId)) || null
   const teamExportHeaders = [t('payroll.worker'), t('workers.employeeCode'), t('payroll.presentDays'), t('payroll.halfDays'), t('payroll.absentDays'), t('payroll.dailyRate'), t('payroll.attendanceWage'), t('payroll.transport'), t('payroll.overtimeHours'), t('payroll.overtimeAmount'), t('payroll.holidaySunday'), t('payroll.bonuses'), t('payroll.deductions'), t('payroll.advances'), t('payroll.otherAdjustments'), t('payroll.finalPay')]
-  const teamExportRows = selectedTeam?.lines.map((line) => [line.worker.full_name, line.worker.employee_code || '—', line.presentDays, line.halfDays, line.absentDays, numeric(line.term?.daily_rate), numeric(line.attendanceWage), numeric(line.transportAmount), numeric(line.overtimeHours), numeric(line.overtimeAmount), numeric(line.holidayAmount), numeric(line.bonusAmount), numeric(line.deductionAmount), numeric(line.advanceAmount), numeric(line.manualAdjustmentAmount), numeric(line.finalAmount)]) || []
+  const teamExportRows = selectedTeam?.lines.map((line) => { const missingDailyRate = line.term?.daily_rate == null; const missingOvertimeRate = line.eveningOvertimeMinutes > 0 && line.term?.overtime_rate_per_hour == null; return [line.worker.full_name, line.worker.employee_code || '—', line.presentDays, line.halfDays, line.absentDays, missingDailyRate ? '—' : numeric(line.term?.daily_rate), missingDailyRate ? '—' : numeric(line.attendanceWage), line.term?.daily_transport_allowance == null ? '—' : numeric(line.transportAmount), numeric(line.overtimeHours), missingOvertimeRate ? '—' : numeric(line.overtimeAmount), numeric(line.holidayAmount), numeric(line.bonusAmount), numeric(line.deductionAmount), numeric(line.advanceAmount), numeric(line.manualAdjustmentAmount), numeric(line.finalAmount)] }) || []
   const teamExportTotals = selectedTeam ? [[t('payroll.finalTeamPayrollTotal'), '', selectedTeam.totals.presentDays, selectedTeam.totals.halfDays, selectedTeam.totals.absentDays, '', numeric(selectedTeam.totals.baseAmount), numeric(selectedTeam.totals.transportAmount), numeric(selectedTeam.totals.overtimeHours), numeric(selectedTeam.totals.overtimeAmount), numeric(selectedTeam.totals.holidayAmount), numeric(selectedTeam.totals.bonusAmount), numeric(selectedTeam.totals.deductionAmount), numeric(selectedTeam.totals.advanceAmount), numeric(selectedTeam.totals.manualAdjustmentAmount), numeric(selectedTeam.totals.finalAmount)]] : []
   const allTeamsHeaders = [t('common.team'), t('payroll.workers'), t('payroll.presentDays'), t('payroll.halfDays'), t('payroll.absentDays'), t('payroll.attendanceWage'), t('payroll.transport'), t('payroll.overtime'), t('payroll.holidaySunday'), t('payroll.adjustments'), t('payroll.finalTeamPayrollTotal')]
   const allTeamsRows = teamGroups.map((group) => [group.name, group.totals.workers, group.totals.presentDays, group.totals.halfDays, group.totals.absentDays, numeric(group.totals.baseAmount), numeric(group.totals.transportAmount), numeric(group.totals.overtimeAmount), numeric(group.totals.holidayAmount), numeric(group.totals.bonusAmount - group.totals.deductionAmount - group.totals.advanceAmount + group.totals.manualAdjustmentAmount), numeric(group.totals.finalAmount)])
@@ -140,12 +143,8 @@ export default function PayrollOperations() {
     if (!draftRun || draftRun.payment_type !== 'weekly') errors.push(t('payroll.reviewValidationRun'))
     if (draftRun?.weekly_period_start !== monday || draftRun?.weekly_period_end !== saturday || new Date(`${monday}T12:00:00`).getDay() !== 1 || draftRun?.scheduled_payment_date !== saturday) errors.push(t('payroll.reviewValidationPeriod'))
     if (!currentStoredLines.length || currentStoredLines.length !== calculatedLines.length) errors.push(t('payroll.reviewValidationLines'))
-    const invalidCompensationLines = calculatedLines.filter((line) => line.term?.daily_rate == null || Number(line.term.daily_rate) < 0 || !line.currency)
     const invalidAmountLines = currentStoredLines.filter((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)
-    const missingOvertimeRateLines = calculatedLines.filter((line) => line.missingRateBlocker)
-    if (invalidCompensationLines.length) errors.push(`${t('payroll.reviewValidationCompensation')}: ${invalidCompensationLines.map(payrollWorkerLabel).join(', ')}`)
     if (invalidAmountLines.length) errors.push(`${t('payroll.reviewValidationAmounts')}: ${invalidAmountLines.map(payrollWorkerLabel).join(', ')}`)
-    if (missingOvertimeRateLines.length) errors.push(`${t('payroll.overtimeRateMissing')}: ${missingOvertimeRateLines.map(payrollWorkerLabel).join(', ')}`)
     const activeAdjustmentLineIds = new Set((data?.payrollAdjustments || []).filter((adjustment) => !adjustment.voided_at).map((adjustment) => String(adjustment.payroll_line_id)))
     if (currentStoredLines.some((line) => activeAdjustmentLineIds.has(String(payrollLineByWorkerId.get(String(line.worker.id))?.id)) && !line.calculationSnapshotHasAdjustments)) errors.push(t('payroll.reviewValidationAdjustments'))
     if (!weeklyPayrollCurrencyTotalsMatch(currentStoredLines, calculatedLines)) errors.push(t('payroll.reviewValidationTotals'))
@@ -334,6 +333,7 @@ export default function PayrollOperations() {
         <button className="btn-secondary" disabled={loading || runActionSaving} onClick={load}>{t('payroll.refresh')}</button>
       </div>
     </div></div>
+    <PayrollNotes warnings={payrollWarnings} t={t} />
     <PayrollWorkerSearch lines={lines} paymentType="weekly" value={workerSearch} onChange={setWorkerSearch} onSelect={(line) => { setSelectedTeamId(String(line.worker.team_id || 'unassigned')); setEditingWorkerId(String(line.worker.id)) }} t={t} />
     {!selectedTeam ? <div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div> : null}
     <div className="mb-4"><WeeklyPayrollTeamSummary groups={teamGroups} selectedTeamId={selectedTeamId} onSelectTeam={(id) => { setSelectedTeamId(id); setEditingWorkerId('') }} /></div>

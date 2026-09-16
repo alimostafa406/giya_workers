@@ -77,7 +77,7 @@ test('weekly selection, validation, persistence, and counts use the shared rule'
 test('blocker labels use the canonical worker full name', () => {
   assert.equal(payrollWorkerLabel(line({ full_name: 'JOEL', employee_code: '56' }, null)), 'JOEL #56')
   const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
-  assert.match(operations, /invalidCompensationLines\.map\(payrollWorkerLabel\)/)
+  assert.match(operations, /invalidAmountLines\.map\(payrollWorkerLabel\)/)
 })
 
 test('draft totals reconcile independently by currency', () => {

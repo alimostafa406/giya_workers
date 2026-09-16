@@ -77,7 +77,7 @@ test('review report follows saved payment type even when base compensation is mi
   assert.equal(weekly.monthlyCount, 0)
 })
 
-test('history is preserved and incomplete workers remain excluded from payroll generation', async () => {
+test('history is preserved while missing base pay remains reportable with warnings', async () => {
   const api = await readFile(new URL('src/api/payrollSettingsApi.js', import.meta.url), 'utf8')
   const monthly = await readFile(new URL('src/components/Payroll/MonthlyPayrollOperations.jsx', import.meta.url), 'utf8')
   const weekly = await readFile(new URL('src/components/Payroll/PayrollOperations.jsx', import.meta.url), 'utf8')
@@ -85,8 +85,10 @@ test('history is preserved and incomplete workers remain excluded from payroll g
   assert.match(api, /if \(plan\.compensationPayload\)/)
   assert.match(api, /saveWorkerPayrollProfileRequest\(worker\.id, plan\.profilePayload\)/)
   assert.doesNotMatch(api, /\.delete\(\)/)
-  assert.match(monthly, /if \(!cycle \|\| term\?\.monthly_salary == null \|\| !term\?\.currency_code\) return null/)
-  assert.match(weekly, /filter\(\(line\) => line\.term\?\.daily_rate != null\)/)
+  assert.match(monthly, /if \(!cycle \|\| !term\?\.currency_code\) return null/)
+  assert.doesNotMatch(monthly, /if \(!cycle \|\| term\?\.monthly_salary == null/)
+  assert.doesNotMatch(weekly, /filter\(\(line\) => line\.term\?\.daily_rate != null\)/)
+  assert.match(weekly, /payrollConfigurationWarnings\(lines, 'weekly'\)/)
 })
 
 test('payroll settings and monthly editor expose non-blocking incomplete compensation fields', async () => {

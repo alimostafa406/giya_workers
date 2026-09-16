@@ -24,10 +24,10 @@ test('weekly payroll lifecycle actions render at week level, outside team review
 
 test('weekly review validates the complete current weekly worker set', () => {
   assert.match(source, /currentWeeklyWorkerIds = new Set\(calculatedLines\.map/)
-  assert.match(source, /invalidCompensationLines = calculatedLines\.filter/)
   assert.match(source, /currentStoredLines = storedLines\.filter/)
   assert.match(source, /invalidAmountLines = currentStoredLines\.filter/)
-  assert.match(source, /invalidCompensationLines\.map\(payrollWorkerLabel\)/)
+  assert.match(source, /payrollConfigurationWarnings\(lines, 'weekly'\)/)
+  assert.doesNotMatch(source, /missingOvertimeRateLines|invalidCompensationLines/)
   assert.doesNotMatch(source, /selectedTeam[^\n]*validateDraftForReview/)
 })
 

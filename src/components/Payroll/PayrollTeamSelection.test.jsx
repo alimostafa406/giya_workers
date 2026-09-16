@@ -10,8 +10,8 @@ import MonthlyPayrollTeamSummary from './MonthlyPayrollTeamSummary'
 globalThis.React = React
 
 const groups = [
-  { id: 'team-a', name: 'Team A', lines: [{ worker: { id: 'a', full_name: 'Worker Alpha' }, currency: 'CDF', finalAmount: 10 }] },
-  { id: 'team-b', name: 'Team B', lines: [{ worker: { id: 'b', full_name: 'Worker Beta' }, currency: 'CDF', finalAmount: 20 }] },
+  { id: 'team-a', name: 'Team A', lines: [{ worker: { id: 'a', full_name: 'Worker Alpha' }, term: { monthly_salary: 10, daily_transport_allowance: 0 }, currency: 'CDF', finalAmount: 10 }] },
+  { id: 'team-b', name: 'Team B', lines: [{ worker: { id: 'b', full_name: 'Worker Beta' }, term: { monthly_salary: 20, daily_transport_allowance: 0 }, currency: 'CDF', finalAmount: 20 }] },
 ]
 
 function Flow({ Summary, detailSelector }) {
