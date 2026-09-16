@@ -11,7 +11,7 @@ export const monthlyPayrollTeamSummary = (groups = []) => {
       current.salary += amount(line.monthlySalary)
       current.transport += amount(line.transportAmount)
       current.overtime += amount(line.overtimeAmount)
-      current.deductions += amount(line.absenceDeduction) + amount(line.halfDayDeduction) + amount(line.deductionAmount) + amount(line.advanceAmount)
+      current.deductions += amount(line.deductionAmount) + amount(line.advanceAmount)
       current.total += amount(line.finalAmount)
       byCurrency[currency] = current
     })
