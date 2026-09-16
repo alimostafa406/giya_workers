@@ -4,6 +4,7 @@ import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
+import ReportWorkerSearch from '../components/Reports/ReportWorkerSearch'
 import { useTranslation } from '../i18n/LanguageContext'
 import {
   ATTENDANCE_REFRESH_INTERVAL_MS,
@@ -155,7 +156,7 @@ export default function AbsenceReport() {
       <div className="flex gap-2">{['today', 'week'].map((item) => <button key={item} type="button" className={mode === item ? 'btn-primary' : 'btn-secondary'} onClick={() => setMode(item)}>{t(`absenceReport.${item}`)}</button>)}</div>
       <label className="min-w-44 text-sm font-bold">{t('attendance.date')}<input className="input-base mt-1" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value || currentBusinessDate())} /></label>
       <label className="min-w-52 text-sm font-bold">{t('attendance.team')}<select className="input-base mt-1" value={teamId} onChange={(event) => setTeamId(event.target.value)}><option value="">{t('absenceReport.allTeams')}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-      <label className="min-w-60 text-sm font-bold">{t('common.search')}<input className="input-base mt-1" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('reports.workerSearchPlaceholder')} /></label>
+      <ReportWorkerSearch value={search} onChange={setSearch} label={t('reports.workerSearchLabel')} placeholder={t('reports.workerSearchPlaceholder')} />
       <button type="button" className="btn-primary" disabled={locked || reportLoading} onClick={printReport}>{t('absenceReport.print')}</button>
     </div>
     {error ? <p className="absence-report-screen-only alert alert--error mb-4">{error}</p> : null}

@@ -5,6 +5,7 @@ import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
 import { reviewWeeklyAttendanceRequest } from '../api/weeklyAttendanceReviewApi'
+import ReportWorkerSearch from '../components/Reports/ReportWorkerSearch'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
 import {
@@ -399,10 +400,12 @@ function WeeklyAttendanceReport() {
           />
         </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-semibold">{t('common.search')}</label>
-          <input type="search" value={weeklyFilters.search} onChange={(e) => setWeeklyFilters((prev) => ({ ...prev, search: e.target.value }))} className="input-base" placeholder={t('reports.workerSearchPlaceholder')} />
-        </div>
+        <ReportWorkerSearch
+          value={weeklyFilters.search}
+          onChange={(search) => setWeeklyFilters((prev) => ({ ...prev, search }))}
+          label={t('reports.workerSearchLabel')}
+          placeholder={t('reports.workerSearchPlaceholder')}
+        />
 
         <div>
           <label className="mb-1 block text-sm font-semibold">{t('reports.to')}</label>

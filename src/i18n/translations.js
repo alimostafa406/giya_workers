@@ -286,9 +286,9 @@ Object.assign(translations.fr, {
   },
 })
 
-Object.assign(translations.ar.reports, { workerSearchPlaceholder: 'بحث عن عامل بالاسم أو الرقم...' })
-Object.assign(translations.en.reports, { workerSearchPlaceholder: 'Search worker by name or code...' })
-Object.assign(translations.fr.reports, { workerSearchPlaceholder: 'Rechercher un travailleur par nom ou code...' })
+Object.assign(translations.ar.reports, { workerSearchLabel: 'بحث عن عامل', workerSearchPlaceholder: 'بحث بالاسم أو رقم العامل...' })
+Object.assign(translations.en.reports, { workerSearchLabel: 'Search worker', workerSearchPlaceholder: 'Search worker by name or code...' })
+Object.assign(translations.fr.reports, { workerSearchLabel: 'Rechercher un travailleur', workerSearchPlaceholder: 'Rechercher un travailleur par nom ou code...' })
 
 Object.assign(translations.ar.payroll, {
   compensationReview: 'تقرير مراجعة تعويضات العمال',

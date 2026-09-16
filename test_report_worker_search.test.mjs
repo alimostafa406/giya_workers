@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import ReportWorkerSearch from './src/components/Reports/ReportWorkerSearch.js'
 import { buildAbsenceReport } from './src/utils/absenceReport.js'
 import { reportWorkerMatchesSearch } from './src/utils/reportWorkerSearch.js'
 
@@ -9,6 +12,33 @@ const workers = [
   { id: '2', full_name: 'Abed Karim', employee_code: '120', team_id: 'paint', team_name: 'Peinture Raghibe', is_active: true, staff_classification: 'normal' },
   { id: '3', full_name: 'Other Worker', employee_code: '999', team_id: 'other', team_name: 'Other', is_active: true, staff_classification: 'normal', employeeNoString: 'DEVICE-77' },
 ]
+
+test('report worker search renders a visible Arabic label and input', () => {
+  const html = renderToStaticMarkup(React.createElement(ReportWorkerSearch, {
+    value: '',
+    onChange: () => {},
+    label: 'بحث عن عامل',
+    placeholder: 'بحث بالاسم أو رقم العامل...',
+  }))
+
+  assert.match(html, /data-testid="report-worker-search"/)
+  assert.match(html, />بحث عن عامل</)
+  assert.match(html, /type="search"/)
+  assert.match(html, /aria-label="بحث عن عامل"/)
+  assert.match(html, /placeholder="بحث بالاسم أو رقم العامل\.\.\."/)
+})
+
+test('both report pages render search with their filters before result conditions', async () => {
+  const [absenceSource, weeklySource] = await Promise.all([
+    readFile(new URL('./src/pages/AbsenceReport.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('./src/pages/WeeklyAttendanceReport.jsx', import.meta.url), 'utf8'),
+  ])
+
+  assert.match(absenceSource, /<ReportWorkerSearch[\s\S]*workerSearchLabel[\s\S]*workerSearchPlaceholder/)
+  assert.ok(absenceSource.indexOf('<ReportWorkerSearch') < absenceSource.indexOf('{locked ?'))
+  assert.match(weeklySource, /<ReportWorkerSearch[\s\S]*workerSearchLabel[\s\S]*workerSearchPlaceholder/)
+  assert.ok(weeklySource.indexOf('<ReportWorkerSearch') < weeklySource.indexOf('{!weeklyFilters\.teamId ?'))
+})
 
 test('report search matches full, partial, case-insensitive names, codes, and available biometric numbers', () => {
   assert.equal(reportWorkerMatchesSearch(workers[0], 'MUNIANGA'), true)
