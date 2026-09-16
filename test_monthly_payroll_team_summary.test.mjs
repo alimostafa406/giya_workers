@@ -17,6 +17,18 @@ test('monthly summary has one row per team, correct EFF, canonical totals, and s
   assert.deepEqual(groups, before)
 })
 
+test('monthly deductions aggregate explicit canonical fields and never infer a final-amount difference', () => {
+  const groups = [{ id:'a',name:'A',lines:[
+    line('CDF',{monthlySalary:1000,absenceDeduction:100,halfDayDeduction:50,deductionAmount:25,advanceAmount:10,finalAmount:999}),
+    line('CDF',{monthlySalary:1000,absenceDeduction:20,halfDayDeduction:0,deductionAmount:0,advanceAmount:0,finalAmount:1}),
+  ]}]
+  const before = structuredClone(groups)
+  const result = monthlyPayrollTeamSummary(groups)
+  assert.equal(result.rows[0].byCurrency.CDF.deductions, 205)
+  assert.equal(result.rows[0].byCurrency.CDF.total, 1000)
+  assert.deepEqual(groups, before)
+})
+
 test('monthly UI preserves eligibility and cycle grouping while using team selection', () => {
   const source = readFileSync('./src/components/Payroll/MonthlyPayrollOperations.jsx','utf8')
   assert.match(source, /worker\.is_active !== false && worker\.payment_type === 'monthly'/)
@@ -26,6 +38,9 @@ test('monthly UI preserves eligibility and cycle grouping while using team selec
   assert.doesNotMatch(source, /incompleteWorkers\.map\(\(worker\) => worker\.full_name\)\.join/)
   assert.match(source, /setupRequiredCount/)
   assert.match(source, /orientation:'landscape'/)
+  assert.match(source, /datesForRange\(cycle\.start, cycle\.end\)\.filter\(\(date\) => !isSunday\(date\)\)/)
+  assert.match(source, /paymentType: 'monthly', futureDatesAreNeutral: true/)
+  assert.match(source, /setSelectedTeamId\(''\)[\s\S]*payroll\.back/)
 })
 
 test('optional monthly money uses a display-only dash and final amount remains authoritative', () => {

@@ -30,9 +30,12 @@ describe.each([
   })
 
   it('keeps summary informational and opens worker details only from team cards', () => {
-    render(<Flow Summary={Summary} detailSelector={detailSelector} />)
+    const { container } = render(<Flow Summary={Summary} detailSelector={detailSelector} />)
     expect(screen.queryByTestId('team-detail')).toBeNull()
     expect(screen.getAllByText('Team A').some((node) => node.tagName === 'SPAN')).toBe(true)
+    const cards = container.querySelector('[data-payroll-team-cards]')
+    const summary = container.querySelector('.weekly-team-summary-wrap')
+    expect(cards.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /^Team A/ }))
     expect(screen.getByText('Worker Alpha')).toBeTruthy()
     expect(screen.queryByText('Worker Beta')).toBeNull()

@@ -34,5 +34,5 @@ test('weekly review validates the complete current weekly worker set', () => {
 test('finalize and payment transition the whole weekly run', () => {
   assert.match(source, /setWeeklyPayrollRunStatusRequest\(\{ runId: weeklyRun\.id, nextStatus \}\)/)
   assert.doesNotMatch(source, /setWeeklyPayrollRunStatusRequest\([^)]*team/i)
-  assert.match(source, /setSelectedTeamId\(group\.id\)/)
+  assert.match(source, /<WeeklyPayrollTeamSummary groups=\{teamGroups\}[\s\S]*onSelectTeam=\{\(id\) => \{ setSelectedTeamId\(id\); setEditingWorkerId\(''\) \}\}/)
 })
