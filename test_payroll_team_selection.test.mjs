@@ -13,7 +13,8 @@ test('weekly and monthly summaries delegate navigation to the shared team cards'
   for (const file of ['WeeklyPayrollTeamSummary.jsx', 'MonthlyPayrollTeamSummary.jsx']) {
     const source = readFileSync(`./src/components/Payroll/${file}`, 'utf8')
     assert.match(source, /<span className="font-extrabold">\{row\.name\}<\/span>/)
-    assert.match(source, /if \(selectedTeamId\) return null/)
+    if (file === 'WeeklyPayrollTeamSummary.jsx') assert.match(source, /if \(selectedTeamId\) return null/)
+    else assert.match(source, /\{!selectedTeamId \? <>[\s\S]*<PayrollTeamCards/)
     assert.match(source, /return <>[\s\S]*<PayrollTeamCards groups=\{groups\} onOpenTeam=\{onSelectTeam\}[\s\S]*weekly-team-summary-wrap/)
     assert.doesNotMatch(source, /className=\{.*is-selected/)
   }

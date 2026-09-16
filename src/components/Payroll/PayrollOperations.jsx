@@ -13,6 +13,7 @@ import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import WeeklyPayrollSheet from './WeeklyPayrollSheet'
 import WeeklyPayrollWorkerEditPanel from './WeeklyPayrollWorkerEditPanel'
 import WeeklyPayrollTeamSummary from './WeeklyPayrollTeamSummary'
+import PayrollWorkerSearch from './PayrollWorkerSearch'
 import { findPayrollTeam } from '../../utils/payrollTeamSelection'
 import { applyWeeklyOvertimePay, formatEveningOvertimeMinutes } from '../../utils/weeklyPayrollOvertime'
 import { positiveWeeklyPayrollFooterAmounts, weeklyPayrollTeamFooter } from '../../utils/weeklyPayrollTeamFooter'
@@ -46,7 +47,7 @@ const numeric = (value) => Math.round((Number(value) || 0) * 100) / 100
 
 export default function PayrollOperations() {
   const { t, language, direction } = useTranslation()
-  const [data, setData] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [monday, setMonday] = useState(mondayFor()); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(''); const [selectedTeamId, setSelectedTeamId] = useState(''); const [editingWorkerId, setEditingWorkerId] = useState(''); const [editingAttendance, setEditingAttendance] = useState(null); const [savingAttendance, setSavingAttendance] = useState(false); const [savingSheetWorkerId, setSavingSheetWorkerId] = useState(''); const [runActionSaving, setRunActionSaving] = useState(false); const [reviewErrors, setReviewErrors] = useState([])
+  const [data, setData] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [monday, setMonday] = useState(mondayFor()); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(''); const [selectedTeamId, setSelectedTeamId] = useState(''); const [workerSearch, setWorkerSearch] = useState(''); const [editingWorkerId, setEditingWorkerId] = useState(''); const [editingAttendance, setEditingAttendance] = useState(null); const [savingAttendance, setSavingAttendance] = useState(false); const [savingSheetWorkerId, setSavingSheetWorkerId] = useState(''); const [runActionSaving, setRunActionSaving] = useState(false); const [reviewErrors, setReviewErrors] = useState([])
   const load = async (weekStart = monday) => { setLoading(true); try { const result = await getPayrollOperationsDataRequest({ date_from: weekStart, date_to: weeklyDates(weekStart).at(-1), paginate: true }); setData(result); setError(''); return result } catch (e) { setError(getErrorMessage(e)); return null } finally { setLoading(false) } }
   useEffect(() => { load(monday) }, [monday])
   const saturday = weeklyDates(monday).at(-1)
@@ -333,6 +334,7 @@ export default function PayrollOperations() {
         <button className="btn-secondary" disabled={loading || runActionSaving} onClick={load}>{t('payroll.refresh')}</button>
       </div>
     </div></div>
+    <PayrollWorkerSearch lines={lines} paymentType="weekly" value={workerSearch} onChange={setWorkerSearch} onSelect={(line) => { setSelectedTeamId(String(line.worker.team_id || 'unassigned')); setEditingWorkerId(String(line.worker.id)) }} t={t} />
     {!selectedTeam ? <div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div> : null}
     <div className="mb-4"><WeeklyPayrollTeamSummary groups={teamGroups} selectedTeamId={selectedTeamId} onSelectTeam={(id) => { setSelectedTeamId(id); setEditingWorkerId('') }} /></div>
     {(reviewErrors.length || weekValidationErrors.length) ? <div className="mb-3 rounded bg-amber-50 p-3 text-amber-900"><p className="font-bold">{t('payroll.reviewValidationFailed')}</p><ul className="mt-2 list-inside list-disc text-sm">{(reviewErrors.length ? reviewErrors : weekValidationErrors).map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
