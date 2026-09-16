@@ -25,6 +25,22 @@ test('currencies stay separate and input payroll lines are not mutated', () => {
   assert.deepEqual(groups, before)
 })
 
+test('team H/S sums the canonical worker overtimeAmount with different rates already applied', () => {
+  const result = weeklyPayrollTeamSummary([{ id: 'a', name: 'Alpha', lines: [
+    line('CDF', 100, 10, 4000, 4110),
+    line('CDF', 200, 20, 4500, 4720),
+  ] }])
+  assert.equal(result.rows[0].byCurrency.CDF.overtime, 8500)
+  assert.equal(result.totals.byCurrency.CDF.overtime, 8500)
+})
+
+test('no paid overtime remains zero and the summary renderer hides zero H/S', () => {
+  const result = weeklyPayrollTeamSummary([{ id: 'a', name: 'Alpha', lines: [line('CDF', 100, 10, 0, 110)] }])
+  assert.equal(result.rows[0].byCurrency.CDF.overtime, 0)
+  const summary = readFileSync('./src/components/Payroll/WeeklyPayrollTeamSummary.jsx', 'utf8')
+  assert.match(summary, /values\(row\.byCurrency, 'overtime', true\)/)
+})
+
 test('weekly payroll renders one selectable team summary and no legacy team table', () => {
   const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
   const summary = readFileSync('./src/components/Payroll/WeeklyPayrollTeamSummary.jsx', 'utf8')

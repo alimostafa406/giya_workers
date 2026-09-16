@@ -5,9 +5,17 @@ import { applyWeeklyOvertimePay, calculateWeeklyOvertimePay } from './src/utils/
 
 test('exact overtime minutes are paid at each worker rate', () => {
   for (const [minutes, expected] of [[30, 1000], [45, 1500], [90, 3000], [285, 9500]]) assert.equal(calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: 2000 }).overtimePay, expected)
-  assert.equal(calculateWeeklyOvertimePay({ morningOvertimeMinutes: 15, eveningOvertimeMinutes: 20, overtimeHourlyRate: 2000 }).overtimePay, 1166.67)
+  assert.equal(calculateWeeklyOvertimePay({ morningOvertimeMinutes: 15, eveningOvertimeMinutes: 20, overtimeHourlyRate: 2000 }).overtimePay, 666.67)
   assert.equal(calculateWeeklyOvertimePay({ eveningOvertimeMinutes: 60, overtimeHourlyRate: 1500 }).overtimePay, 1500)
   assert.equal(calculateWeeklyOvertimePay({ eveningOvertimeMinutes: 60, overtimeHourlyRate: 3500 }).overtimePay, 3500)
+})
+
+test('morning overtime is retained structurally but does not create payroll money', () => {
+  const result = calculateWeeklyOvertimePay({ morningOvertimeMinutes: 120, overtimeHourlyRate: 2000 })
+  assert.equal(result.morningOvertimeMinutes, 0)
+  assert.equal(result.overtimeMinutes, 0)
+  assert.equal(result.overtimePay, 0)
+  assert.equal(result.missingRateBlocker, false)
 })
 
 test('missing rate blocks only positive overtime', () => {

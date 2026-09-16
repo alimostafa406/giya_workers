@@ -38,11 +38,10 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
   if (!detail?.date || !isWeekday(detail.date)) {
     return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   }
-  const checkIn = clockMinutes(detail.row?.check_in ?? detail.check_in)
   const checkOut = clockMinutes(detail.row?.check_out ?? detail.check_out)
   const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(Math.floor(checkOut - 1020), 0)
   return {
-    morningOvertimeMinutes: checkIn == null ? 0 : Math.max(Math.round(480 - checkIn), 0),
+    morningOvertimeMinutes: 0,
     eveningOvertimeMinutes: workedAfterEndMinutes < 60 ? 0 : 60 + (Math.floor((workedAfterEndMinutes - 60) / 30) * 30),
   }
 }
@@ -59,16 +58,15 @@ export const weeklyPayrollOvertimeForLine = (line) => (
 
 export const formatOvertimeMinutes = (minutes) => {
   const safeMinutes = Math.max(Math.round(Number(minutes) || 0), 0)
-  return `${Math.floor(safeMinutes / 60)}h${String(safeMinutes % 60).padStart(2, '0')}`
+  return safeMinutes === 0 ? '—' : `${Math.floor(safeMinutes / 60)}h${String(safeMinutes % 60).padStart(2, '0')}`
 }
 
-export const formatEveningOvertimeMinutes = (minutes) => {
-  const safeMinutes = Math.max(Math.round(Number(minutes) || 0), 0)
-  return safeMinutes === 0 ? '—' : formatOvertimeMinutes(safeMinutes)
-}
+export const formatEveningOvertimeMinutes = formatOvertimeMinutes
 
 export const calculateWeeklyOvertimePay = ({ morningOvertimeMinutes = 0, eveningOvertimeMinutes = 0, overtimeHourlyRate = null } = {}) => {
-  const morningMinutes = Math.max(Number(morningOvertimeMinutes) || 0, 0)
+  // Keep the field available, but do not calculate or pay morning overtime
+  // until worker-specific schedules are approved.
+  const morningMinutes = 0
   const eveningMinutes = Math.max(Number(eveningOvertimeMinutes) || 0, 0)
   const overtimeMinutes = morningMinutes + eveningMinutes
   const hasRate = overtimeHourlyRate !== '' && overtimeHourlyRate != null && Number.isFinite(Number(overtimeHourlyRate)) && Number(overtimeHourlyRate) >= 0

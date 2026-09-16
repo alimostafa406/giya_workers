@@ -2,14 +2,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { calculatePayrollLine } from './src/utils/payrollCalculations.js'
-import { formatEveningOvertimeMinutes, weeklyPayrollDisplayStatus, weeklyPayrollOvertimeForDetail, weeklyPayrollOvertimeForLine } from './src/utils/weeklyPayrollOvertime.js'
+import { formatEveningOvertimeMinutes, formatOvertimeMinutes, weeklyPayrollDisplayStatus, weeklyPayrollOvertimeForDetail, weeklyPayrollOvertimeForLine } from './src/utils/weeklyPayrollOvertime.js'
 
 const monday = (checkIn, checkOut) => ({ date: '2026-09-14', status: 'present', row: { check_in: checkIn, check_out: checkOut } })
 
-test('morning overtime starts before 08:00 only', () => {
+test('morning overtime is disabled until worker schedules are approved', () => {
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', null)).morningOvertimeMinutes, 0)
-  assert.equal(weeklyPayrollOvertimeForDetail(monday('07:30:00', null)).morningOvertimeMinutes, 30)
-  assert.equal(weeklyPayrollOvertimeForDetail(monday('06:00:00', null)).morningOvertimeMinutes, 120)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('07:48:00', null)).morningOvertimeMinutes, 0)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('06:00:00', null)).morningOvertimeMinutes, 0)
 })
 
 test('evening overtime awards the first completed hour then completed half-hour blocks', () => {
@@ -41,11 +41,15 @@ test('evening overtime displays zero as a dash and positive minutes as hours/min
   assert.equal(formatEveningOvertimeMinutes(300), '5h00')
 })
 
-test('morning and evening overtime remain separate', () => {
+test('morning overtime remains zero while approved evening overtime is retained', () => {
   assert.deepEqual(weeklyPayrollOvertimeForLine({ details: [monday('06:00:00', '19:00:00')] }), {
-    morningOvertimeMinutes: 120,
+    morningOvertimeMinutes: 0,
     eveningOvertimeMinutes: 120,
   })
+})
+
+test('disabled morning overtime renders as a dash', () => {
+  assert.equal(formatOvertimeMinutes(0), '—')
 })
 
 test('Saturday never derives weekday overtime and keeps existing full-day payroll rule', () => {
