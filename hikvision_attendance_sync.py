@@ -665,26 +665,6 @@ class SupabaseReadClient:
             raise
         self.diagnostics.success('SUPABASE', response.status_code)
 
-    def reactivate_worker_from_persisted_biometric_event(self, device_id: str, event_identity: str) -> dict:
-        """Ask the database to verify one persisted event and reactivate its unique confirmed owner."""
-        target = 'reactivating worker from persisted biometric event'
-        self.diagnostics.start('SUPABASE', target, 'POST', self.host)
-        try:
-            response = requests.post(
-                f'{self.base_url}/rest/v1/rpc/reactivate_worker_from_biometric_event',
-                headers={**self.headers, 'Prefer': 'return=representation'},
-                json={'p_device_id': device_id, 'p_event_identity': event_identity},
-                timeout=30,
-            )
-            response.raise_for_status()
-        except requests.RequestException as error:
-            self.diagnostics.failure('SUPABASE', target, 'POST', self.host, error)
-            raise
-        self.diagnostics.success('SUPABASE', response.status_code)
-        data = response.json()
-        return data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else {}
-
-
 def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for_apply: bool = False) -> dict:
     active_mappings = client.read(
         'biometric_worker_mapping',
@@ -732,43 +712,6 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
             if row.get('worker_id')
         },
     }
-
-
-def auto_reactivate_inactive_workers(client: SupabaseReadClient, persisted_rows: list[dict], resolution: dict) -> Counter:
-    """Reactivate only inactive owners backed by persisted, confirmed biometric evidence.
-
-    The database RPC repeats the authoritative mapping checks under row locks.
-    This client-side prefilter only avoids unnecessary RPC calls; it never grants
-    reactivation authority by itself.
-    """
-    results = Counter()
-    seen: set[tuple[str, str]] = set()
-    workers = resolution.get('workers', {})
-    for row in persisted_rows:
-        device_id = str(row.get('device_id') or '').strip()
-        event_identity = str(row.get('event_identity') or '')
-        employee_no = str(row.get('device_employee_no') or '').strip()
-        key = (device_id, event_identity)
-        if not device_id or not event_identity or not employee_no or key in seen:
-            continue
-        seen.add(key)
-        mapping = biometric_mapping_for_event(resolution, {
-            '_device_id': device_id,
-            'employeeNoString': employee_no,
-        })
-        worker = workers.get(str(mapping.get('worker_id') or '')) if mapping else None
-        if not worker or worker.get('is_active') is not False:
-            continue
-        try:
-            outcome = client.reactivate_worker_from_persisted_biometric_event(device_id, event_identity)
-        except requests.RequestException:
-            results['errors'] += 1
-            continue
-        outcome_name = str(outcome.get('outcome') or 'unknown')
-        results[outcome_name] += 1
-        if outcome_name in {'reactivated', 'already_active'}:
-            results['reload_required'] += 1
-    return results
 
 
 def biometric_mapping_for_event(resolution: dict, event: dict) -> dict | None:
@@ -1273,14 +1216,10 @@ def main() -> int:
             persisted_rows = []
         resolution = load_resolution_data(client, target_date, for_apply=args.apply)
         apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
-        reactivation_results = None
         if args.apply and not apply_blocked_reason:
             if not args.from_persisted_events:
                 persisted_rows = resolved_biometric_event_rows(events, resolution, target_date)
                 client.insert_biometric_attendance_events(persisted_rows)
-            reactivation_results = auto_reactivate_inactive_workers(client, persisted_rows, resolution)
-            if reactivation_results.get('reload_required'):
-                resolution = load_resolution_data(client, target_date, for_apply=True)
         plans, counters = plan_attendance(events, resolution, target_date)
     except (RuntimeError, requests.RequestException, ValueError) as error:
         print(f'DRY RUN FAILED: {error}', file=sys.stderr)
@@ -1291,10 +1230,9 @@ def main() -> int:
         print(json.dumps({
             'mode': 'apply_preflight',
             'date': target_date.isoformat(),
-            'schema_prerequisite': 'attendance_biometric_workflow_upgrade.sql and biometric_auto_reactivation.sql must already be approved and executed',
+            'schema_prerequisite': 'attendance_biometric_workflow_upgrade.sql must already be approved and executed',
             'device_reads': device_reads,
             'apply_blocked_reason': apply_blocked_reason,
-            'auto_reactivation': dict(reactivation_results or {}),
             **planned_writes,
         }, ensure_ascii=False, indent=2))
         if apply_blocked_reason:
@@ -1310,8 +1248,6 @@ def main() -> int:
             'skipped_manual_protected': write_results.get('skipped_manual_protected', 0),
             'unmapped': write_results.get('unmapped', 0),
             'needs_review': write_results.get('needs_review', 0),
-            'workers_reactivated': (reactivation_results or {}).get('reactivated', 0),
-            'reactivation_errors': (reactivation_results or {}).get('errors', 0),
             'errors': write_results.get('errors', 0),
         }, ensure_ascii=False, indent=2))
     else:

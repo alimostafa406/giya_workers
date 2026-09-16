@@ -56,8 +56,10 @@ test('activity RPC is read-only and preserves exact-device-first confirmed mappi
   assert.doesNotMatch(sql, /\binsert\b|\bupdate\b|\bdelete\b/i)
 })
 
-test('inactive page has no worker, mapping, team, or attendance writes', async () => {
+test('inactive page has no mapping, team, or attendance writes and exposes only explicit reactivation', async () => {
   const page = await readFile(new URL('./src/pages/InactiveWorkers.jsx', import.meta.url), 'utf8')
   const utility = await readFile(new URL('./src/utils/inactiveWorkers.js', import.meta.url), 'utf8')
-  assert.doesNotMatch(`${page}\n${utility}`, /\.insert\(|\.update\(|\.upsert\(|\.delete\(|saveBiometricMapping|updateWorker/)
+  assert.doesNotMatch(`${page}\n${utility}`, /\.insert\(|\.update\(|\.upsert\(|\.delete\(|saveBiometricMapping|saveAttendance/)
+  assert.match(page, /window\.confirm\(text\.reactivateConfirm\)/)
+  assert.match(page, /reactivateWorkerRequest\(worker\)/)
 })

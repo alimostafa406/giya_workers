@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from '../api/biometricMappingApi'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
-import { getWorkersRequest } from '../api/workersApi'
+import { getWorkersRequest, reactivateWorkerRequest } from '../api/workersApi'
 import Table from '../components/Table/Table'
 import Modal from '../components/Modal/Modal'
 import { useTranslation } from '../i18n/LanguageContext'
@@ -28,6 +28,7 @@ const labels = {
     empty: 'لا يوجد عمال غير نشطين.',
     unavailable: 'تعذر تحميل مراقبة نشاط البصمة اليوم، لكن قائمة العمال غير النشطين ما زالت متاحة.',
     lastAttendance: 'آخر حضور', lastCheckIn: 'آخر دخول', lastCheckOut: 'آخر خروج', details: 'السجل', history: 'سجل الحضور', date: 'التاريخ', status: 'الحالة', checkIn: 'الدخول', checkOut: 'الخروج', noHistory: 'لا يوجد سجل حضور متاح.', statusUpdated: 'تحديث الحالة',
+    reactivate: 'تفعيل العامل', reactivateConfirm: 'هل تريد إعادة تفعيل هذا العامل؟',
   },
   en: {
     title: 'Inactive Workers',
@@ -48,6 +49,7 @@ const labels = {
     empty: 'No inactive workers.',
     unavailable: 'Today’s biometric monitoring could not be loaded, but the inactive-worker roster remains available.',
     lastAttendance: 'Last attendance', lastCheckIn: 'Last check-in', lastCheckOut: 'Last check-out', details: 'History', history: 'Attendance history', date: 'Date', status: 'Status', checkIn: 'Check-in', checkOut: 'Check-out', noHistory: 'No attendance history available.', statusUpdated: 'Status updated',
+    reactivate: 'Reactivate', reactivateConfirm: 'Reactivate this worker?',
   },
   fr: {
     title: 'Travailleurs inactifs',
@@ -68,6 +70,7 @@ const labels = {
     empty: 'Aucun travailleur inactif.',
     unavailable: 'Le suivi biométrique du jour est indisponible, mais la liste des travailleurs inactifs reste accessible.',
     lastAttendance: 'Dernière présence', lastCheckIn: 'Dernière entrée', lastCheckOut: 'Dernière sortie', details: 'Historique', history: 'Historique de présence', date: 'Date', status: 'Statut', checkIn: 'Entrée', checkOut: 'Sortie', noHistory: 'Aucun historique de présence disponible.', statusUpdated: 'Statut mis à jour',
+    reactivate: 'Réactiver', reactivateConfirm: 'Réactiver ce travailleur ?',
   },
 }
 
@@ -89,6 +92,7 @@ export default function InactiveWorkers() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [reactivatingId, setReactivatingId] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -131,6 +135,21 @@ export default function InactiveWorkers() {
   }, [rows, search])
   const activeTodayCount = rows.filter((worker) => worker.biometricEventsToday.length > 0).length
 
+  const reactivate = async (worker) => {
+    if (!window.confirm(text.reactivateConfirm)) return
+    setReactivatingId(worker.id)
+    setError('')
+    try {
+      await reactivateWorkerRequest(worker)
+      setWorkers((current) => current.map((item) => item.id === worker.id ? { ...item, is_active: true } : item))
+      setSelectedWorker(null)
+    } catch (requestError) {
+      setError(getErrorMessage(requestError))
+    } finally {
+      setReactivatingId('')
+    }
+  }
+
   const columns = [
     { key: 'worker', header: text.name, render: (row) => <div><b>{row.full_name}</b><span className="status-badge status-badge--neutral ms-2">{text.inactive}</span></div> },
     { key: 'code', header: text.code, render: (row) => <span dir="ltr">{row.employee_code || '—'}</span> },
@@ -143,7 +162,7 @@ export default function InactiveWorkers() {
         ? <div className="space-y-1">{row.biometricMappings.map((mapping) => <div key={mapping.id} dir="ltr" className="text-xs"><b>{mapping.device_id || 'legacy'}:{mapping.device_employee_no}</b> · {mapping.mapping_review_state || '—'} · {mapping.is_active === false ? 'inactive mapping' : 'active mapping'}</div>)}</div>
         : <span className="text-sm text-(--muted)">{text.noMapping}</span>,
     },
-    { key: 'details', header: text.details, render: (row) => <button type="button" className="btn-secondary" onClick={() => setSelectedWorker(row)}>{text.details}</button> },
+    { key: 'details', header: text.details, render: (row) => <div className="flex gap-2"><button type="button" className="btn-secondary" onClick={() => setSelectedWorker(row)}>{text.details}</button><button type="button" className="btn-primary" disabled={reactivatingId === row.id} onClick={() => reactivate(row)}>{text.reactivate}</button></div> },
     { key: 'last_activity', header: text.lastActivity, render: (row) => <span dir="ltr">{localDateTime(row.latestBiometricEvent?.event_timestamp, language)}</span> },
     {
       key: 'today', header: text.today, render: (row) => row.biometricEventsToday.length

@@ -23,7 +23,6 @@ from hikvision_attendance_sync import (
     SupabaseReadClient,
     attendance_apply_blocked_reason,
     apply_biometric_attendance,
-    auto_reactivate_inactive_workers,
     hikvision_events,
     hikvision_events_with_devices,
     load_resolution_data,
@@ -69,14 +68,6 @@ def completion_plans(plans: list[dict], existing_attendance: dict) -> list[dict]
 def positive_evidence_plans(plans: list[dict]) -> list[dict]:
     """Under incomplete coverage, allow positive evidence but never absence."""
     return [plan for plan in plans if plan.get('proposed_status') != 'absent']
-
-
-def complete_device_persisted_rows(persisted_rows: list[dict], device_reads: dict) -> list[dict]:
-    """Limit automatic reactivation to observations from fully read devices."""
-    return [
-        row for row in persisted_rows
-        if device_reads.get(str(row.get('device_id') or ''), {}).get('state') == 'complete'
-    ]
 
 
 def positive_int_env(name: str, default: int) -> int:
@@ -241,13 +232,6 @@ class AttendanceAgent:
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
             persisted_rows = self.persist_observed_biometric_events(events, resolution, target_date)
             apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
-            reactivation_results = None
-            reactivation_rows = complete_device_persisted_rows(persisted_rows, device_reads)
-            if not self.dry_run and reactivation_rows:
-                reactivation_results = auto_reactivate_inactive_workers(self.client, reactivation_rows, resolution)
-                if reactivation_results.get('reload_required'):
-                    resolution = load_resolution_data(self.client, target_date, for_apply=True)
-                self.logger.info('Biometric auto-reactivation: %s', dict(reactivation_results))
             plans, counters = plan_attendance(events, resolution, target_date)
             summary = write_summary(plans, resolution['existing_attendance'], counters)
             if self.dry_run:
@@ -263,9 +247,6 @@ class AttendanceAgent:
                 result_counts = dict(results)
                 result_counts['unmapped'] = counters.get('unmapped', 0)
                 result_counts['needs_review'] = counters.get('needs_review', 0)
-                if reactivation_results is not None:
-                    result_counts['workers_reactivated'] = reactivation_results.get('reactivated', 0)
-                    result_counts['reactivation_errors'] = reactivation_results.get('errors', 0)
                 if results.get('aborted_structural_error'):
                     self.logger.error('Attendance write cycle aborted after structural Supabase error.')
                 else:
@@ -306,13 +287,6 @@ class AttendanceAgent:
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
             persisted_rows = self.persist_observed_biometric_events(events, resolution, target_date)
             apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
-            reactivation_results = None
-            reactivation_rows = complete_device_persisted_rows(persisted_rows, device_reads)
-            if not self.dry_run and reactivation_rows:
-                reactivation_results = auto_reactivate_inactive_workers(self.client, reactivation_rows, resolution)
-                if reactivation_results.get('reload_required'):
-                    resolution = load_resolution_data(self.client, target_date, for_apply=True)
-                self.logger.info('Previous-workday biometric auto-reactivation: %s', dict(reactivation_results))
             plans, counters = plan_attendance(events, resolution, target_date)
             existing = resolution['existing_attendance']
             recovery_plans = completion_plans(plans, existing)

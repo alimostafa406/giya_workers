@@ -165,3 +165,16 @@ export const updateWorkerRequest = async (id, payload) => {
 
 	return { data }
 }
+
+// Explicit admin action only. Automated mapping, attendance, import, and payroll
+// flows must never call this function.
+export const reactivateWorkerRequest = async (worker) => {
+	if (!worker?.id || worker.is_active !== false) throw new Error('Only an inactive worker can be reactivated.')
+	return updateWorkerRequest(worker.id, {
+		full_name: worker.full_name,
+		employee_code: worker.employee_code,
+		phone: worker.phone,
+		team_id: worker.team_id,
+		is_active: true,
+	})
+}

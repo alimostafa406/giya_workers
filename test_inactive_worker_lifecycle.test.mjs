@@ -49,5 +49,13 @@ test('deactivation API changes only the worker row and inactive history page rem
   assert.match(workersApi, /\.from\('workers'\)\s*\.update\(updatePayload\)\s*\.eq\('id', id\)/s)
   assert.doesNotMatch(workersApi, /delete\(/)
   assert.match(inactivePage, /getAttendanceRequest\(\{ worker_ids: inactiveWorkerIds, paginate: true \}\)/)
-  assert.doesNotMatch(inactivePage, /saveAttendance|updateWorker|delete\(|upsert\(/)
+  assert.doesNotMatch(inactivePage, /saveAttendance|delete\(|upsert\(/)
+  assert.match(inactivePage, /reactivateWorkerRequest\(worker\)/)
+})
+
+test('automatic mapping and payroll refreshes preserve inactive state and never call reactivation', async () => {
+  const mappingApi = await readFile(new URL('./src/api/biometricMappingApi.js', import.meta.url), 'utf8')
+  const payrollApi = await readFile(new URL('./src/api/payrollOperationsApi.js', import.meta.url), 'utf8')
+  assert.match(mappingApi, /is_active: worker\.is_active/)
+  assert.doesNotMatch(`${mappingApi}\n${payrollApi}`, /reactivateWorkerRequest|reactivate_worker_from_biometric_event/)
 })
