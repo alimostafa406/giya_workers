@@ -73,11 +73,11 @@ class EarlyMorningReviewTests(unittest.TestCase):
         self.assertEqual(automatic, [])
         self.assertNotIn('attendance_role', punch)
 
-    def test_outside_window_continues_existing_checkin_logic(self):
+    def test_pre_seven_event_remains_raw_but_is_not_a_normal_checkin(self):
         plans, counters = plan_attendance([event(SEP8, '06:00:00')], resolution(), SEP8)
         self.assertEqual(counters['early_morning_needs_review'], 0)
-        self.assertEqual(plans[0]['check_in'], '06:00:00')
-        self.assertEqual(plans[0]['proposed_status'], 'half_day')
+        self.assertIsNone(plans[0]['check_in'])
+        self.assertEqual(plans[0]['proposed_status'], 'absent')
 
     def test_sql_is_idempotent_auditable_and_protects_manual_rows(self):
         sql = Path('supabase/sql/early_morning_biometric_review.sql').read_text(encoding='utf-8')

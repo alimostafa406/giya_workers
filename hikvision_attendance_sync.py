@@ -173,7 +173,12 @@ def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_d
             event_timestamp = parse_monitoring_event_time(str(event.get('time') or ''))
         except ValueError:
             continue
-        if event_timestamp.date() != target_date:
+        next_date = target_date + timedelta(days=1)
+        is_next_day_tail = (
+            event_timestamp.date() == next_date
+            and event_timestamp.timetz().replace(tzinfo=None) <= time(2, 0)
+        )
+        if event_timestamp.date() != target_date and not is_next_day_tail:
             continue
         device_id = str(event.get('_device_id') or event.get('device_id') or '').strip()
         if not device_id:
@@ -187,7 +192,7 @@ def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_d
             'worker_id': worker_id,
             'device_employee_no': employee_no,
             'device_name': str(event.get('name') or '').strip() or None,
-            'attendance_date': target_date.isoformat(),
+            'attendance_date': event_timestamp.date().isoformat(),
             'event_timestamp': event_timestamp.isoformat(),
             'device_id': device_id,
             'event_identity': event_identity,
@@ -216,7 +221,10 @@ def persisted_biometric_events(client, target_date: date_type) -> tuple[list[dic
     rows = client.read(
         'biometric_attendance_events',
         'id,attendance_date,event_timestamp,device_id,device_employee_no,device_name,event_identity',
-        attendance_date=f'eq.{target_date.isoformat()}',
+        attendance_date=(
+            f'in.({target_date.isoformat()},'
+            f'{(target_date + timedelta(days=1)).isoformat()})'
+        ),
     )
     events: list[dict] = []
     valid_rows: list[dict] = []
@@ -229,7 +237,12 @@ def persisted_biometric_events(client, target_date: date_type) -> tuple[list[dic
             identity_parts = json.loads(event_identity)
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
-        if not device_id or not employee_no or timestamp.date() != target_date or not isinstance(identity_parts, list):
+        is_target_date = timestamp.date() == target_date
+        is_next_day_tail = (
+            timestamp.date() == target_date + timedelta(days=1)
+            and timestamp.timetz().replace(tzinfo=None) <= time(2, 0)
+        )
+        if not device_id or not employee_no or not (is_target_date or is_next_day_tail) or not isinstance(identity_parts, list):
             continue
         serial = identity_parts[2] if len(identity_parts) >= 3 and identity_parts[0] == 'serial' else None
         events.append({
@@ -449,12 +462,43 @@ def attendance_apply_blocked_reason(device_reads: dict[str, dict]) -> str | None
     return f'Attendance apply blocked: incomplete Hikvision device read ({details}).'
 
 
-def hikvision_events_with_devices(target_date: date_type, diagnostics: RequestDiagnostics) -> tuple[list[dict], dict[str, dict]]:
+def hikvision_events_with_devices(
+    target_date: date_type,
+    diagnostics: RequestDiagnostics,
+    *,
+    include_next_day_tail: bool = False,
+) -> tuple[list[dict], dict[str, dict]]:
     events: list[dict] = []
     device_reads: dict[str, dict] = {}
     for device in configured_devices():
         try:
             device_events, read_status = hikvision_events_for_device_with_recovery(target_date, diagnostics, device)
+            # Once the following calendar day has begun, include the bounded
+            # 00:00-02:00 tail so it can close this workday.  The raw events
+            # retain their real timestamps and calendar dates.
+            if include_next_day_tail and target_date < local_now().date():
+                tail_date = target_date + timedelta(days=1)
+                with HikvisionDeviceOperationLock(device.device_id, 'next-day workday tail'):
+                    tail_events, tail_status = hikvision_events_for_device(
+                        tail_date,
+                        diagnostics,
+                        device,
+                        return_status=True,
+                        start_time=time(0, 0),
+                        end_time=time(2, 0),
+                        search_suffix='-previous-workday-tail',
+                    )
+                device_events.extend(tail_events)
+                read_status = {
+                    **read_status,
+                    'state': (
+                        'complete'
+                        if read_status.get('state') == 'complete' and tail_status.get('state') == 'complete'
+                        else 'partial' if device_events else 'failed'
+                    ),
+                    'event_count': len(deduplicate_hikvision_events(device_events)),
+                    'next_day_tail': tail_status,
+                }
             events.extend(device_events)
             device_reads[device.device_id] = read_status
         except (RuntimeError, requests.RequestException, ValueError) as error:
@@ -672,6 +716,7 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
         is_active='eq.true',
     )
     workers = client.read('workers', 'id,full_name,is_active,team_id')
+    teams = client.read('teams', 'id,name')
     classifications = client.read('worker_staff_classification', 'worker_id,classification')
     ignored_identity_rows = client.read('biometric_device_identity_review', 'device_id,device_employee_no,review_state', review_state='eq.ignored')
     attendance_select = 'id,worker_id,attendance_date,status,check_in,check_out,note,recorded_by'
@@ -705,6 +750,7 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
             for row in ignored_identity_rows
         },
         'workers': workers_by_id,
+        'teams': {str(team['id']): team for team in teams if team.get('id')},
         'classifications': classifications_by_worker,
         'existing_attendance': {
             str(row['worker_id']): row
@@ -746,6 +792,12 @@ def biometric_mapping_is_ignored(resolution: dict, mapping: dict) -> bool:
     device_id = str(mapping.get('device_id') or '').strip() or None
     ignored = resolution.get('ignored', set())
     return (device_id, employee_no) in ignored or (None, employee_no) in ignored or employee_no in ignored
+
+
+def worker_uses_legacy_chauffeur_window(worker: dict, resolution: dict) -> bool:
+    """Keep the canonical Chauffeur team on its existing calendar-day window."""
+    team = resolution.get('teams', {}).get(str(worker.get('team_id') or ''), {})
+    return str(team.get('name') or '').strip().casefold() == 'chauffeur'
 
 
 def eligible_for_automatic_absence(
@@ -820,11 +872,6 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
         except ValueError:
             counters['invalid_event_timestamp'] += 1
             continue
-        if is_early_morning_review_time(event_timestamp):
-            # The raw event is persisted before planning.  A database trigger
-            # creates one pending review item; no attendance role is inferred.
-            counters['early_morning_needs_review'] += 1
-            continue
         employee_no = str(event.get('employeeNoString') or '').strip()
         if biometric_identity_is_ignored(resolution, event):
             counters['ignored_old_user'] += 1
@@ -836,6 +883,17 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
         worker = resolution['workers'].get(str(mapping.get('worker_id') or ''))
         if not worker or worker.get('is_active') is False:
             counters['ignored_inactive_worker'] += 1
+            continue
+        is_chauffeur = worker_uses_legacy_chauffeur_window(worker, resolution)
+        is_previous_workday_tail = bool(
+            not is_chauffeur
+            and event_timestamp.date() == target_date + timedelta(days=1)
+            and event_timestamp.timetz().replace(tzinfo=None) <= time(2, 0)
+        )
+        if is_early_morning_review_time(event_timestamp) and not is_previous_workday_tail:
+            # Preserve unusual early events for review, but permit the normal
+            # workday's bounded next-day tail to close its previous attendance.
+            counters['early_morning_needs_review'] += 1
             continue
         events_by_worker[str(worker['id'])].append(event)
         counters['resolved_events'] += 1
@@ -865,23 +923,47 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             ((parse_monitoring_event_time(event['time']), event) for event in worker_events),
             key=lambda item: item[0],
         )
+        is_chauffeur = worker_uses_legacy_chauffeur_window(worker, resolution)
+        workday_start = datetime.combine(
+            target_date,
+            schedule['legacy_workday_boundary'] if is_chauffeur else schedule['workday_boundary'],
+            tzinfo=MONITORING_TIME_ZONE,
+        ) if schedule else None
+        checkin_end = datetime.combine(target_date, time(23, 59, 59), tzinfo=MONITORING_TIME_ZONE)
+        workday_end = datetime.combine(
+            target_date if is_chauffeur else target_date + timedelta(days=1),
+            schedule['checkout_end'] if is_chauffeur else schedule['next_day_checkout_end'],
+            tzinfo=MONITORING_TIME_ZONE,
+        ) if schedule else None
+        replace_out_of_window_existing_check_in = bool(
+            schedule
+            and workday_start
+            and stored_check_in
+            and not is_chauffeur
+            and stored_check_in < workday_start
+        )
+        if replace_out_of_window_existing_check_in:
+            stored_check_in = None
         arrivals = [] if schedule is None else [
             item for item in parsed
-            if schedule['workday_boundary'] <= item[0].timetz().replace(tzinfo=None)
+            if workday_start <= item[0] <= checkin_end
         ]
         check_in_event = arrivals[0] if arrivals and schedule is not None else None
         check_in = check_in_event[0] if check_in_event else None
-        # Once a real biometric arrival has been stored, historical/current
-        # reconciliation may attach later positive evidence but must never
-        # reinterpret or replace that established arrival. This is especially
-        # important across terminal timezone corrections and discontinuous reads.
-        check_in_from_existing = bool(stored_check_in)
+        # Preserve an established biometric arrival unless a complete later
+        # read proves an earlier valid arrival inside the same workday window.
+        check_in_from_existing = bool(
+            stored_check_in and (check_in is None or stored_check_in <= check_in)
+        )
+        use_new_earlier_check_in = bool(
+            stored_check_in and check_in and check_in < stored_check_in
+        )
         if check_in_from_existing:
             check_in = stored_check_in
             check_in_event = None
         checkout = [] if schedule is None else [
             item for item in parsed
-            if schedule['checkout_start'] <= item[0].timetz().replace(tzinfo=None) <= schedule['checkout_end']
+            if datetime.combine(target_date, schedule['checkout_start'], tzinfo=MONITORING_TIME_ZONE) <= item[0] <= workday_end
             and (check_in is None or item[0] > check_in)
         ]
         checkout_event = checkout[-1] if checkout else None
@@ -956,6 +1038,9 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             'biometric_sync_metadata': metadata,
             'raw_events_used': len(worker_events),
             'check_in_from_existing': check_in_from_existing,
+            'use_new_earlier_check_in': use_new_earlier_check_in,
+            'replace_out_of_window_existing_check_in': replace_out_of_window_existing_check_in,
+            'check_out_next_day': bool(checkout_time and checkout_time.date() > target_date),
             'sync_key': f'hikvision:{worker_id}:{target_date.isoformat()}',
             'existing_attendance_protection': existing_protection,
             # A future write stage may upgrade its own half_day row to present when
@@ -1007,18 +1092,31 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
 
     if existing:
         existing_status = existing.get('status')
+        preferred_check_in = (
+            check_in
+            if check_in and (
+                plan.get('replace_out_of_window_existing_check_in')
+                or plan.get('use_new_earlier_check_in')
+            )
+            else existing.get('check_in') or check_in
+        )
+        preferred_check_out = (
+            check_out
+            if plan.get('check_out_next_day') and check_out
+            else later_time(existing.get('check_out'), check_out)
+        )
         if existing_status in {'present', 'late'} and existing.get('check_in') and existing.get('check_out'):
             # A partial/replayed read cannot replace the established biometric
             # arrival or downgrade a completed day. Legacy late rows normalize
             # to the simple completed-day status when safely processed again.
             status = 'present'
-            check_in = existing.get('check_in')
-            check_out = later_time(existing.get('check_out'), check_out)
+            check_in = preferred_check_in
+            check_out = preferred_check_out
         elif status == 'present':
-            check_in = existing.get('check_in') or check_in
-            check_out = later_time(existing.get('check_out'), check_out)
+            check_in = preferred_check_in
+            check_out = preferred_check_out
         elif status == 'half_day':
-            check_in = existing.get('check_in') or check_in
+            check_in = preferred_check_in
             check_out = None
         elif status == 'absent' and existing_status in {'half_day', 'present', 'late'}:
             # A partial device response must never downgrade a biometric record
@@ -1212,7 +1310,9 @@ def main() -> int:
                 'error': None,
             }}
         else:
-            events, device_reads = hikvision_events_with_devices(target_date, diagnostics)
+            events, device_reads = hikvision_events_with_devices(
+                target_date, diagnostics, include_next_day_tail=True,
+            )
             persisted_rows = []
         resolution = load_resolution_data(client, target_date, for_apply=args.apply)
         apply_blocked_reason = attendance_apply_blocked_reason(device_reads)

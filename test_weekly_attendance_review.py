@@ -97,7 +97,7 @@ class WeeklyAttendanceReviewTests(unittest.TestCase):
         client = FakeClient()
         requested_dates = []
 
-        def read_events(target_date, _diagnostics):
+        def read_events(target_date, _diagnostics, **_kwargs):
             requested_dates.append(target_date.isoformat())
             return [], {'office-main': {'state': 'complete', 'pagination_complete': True}}
 
@@ -155,7 +155,7 @@ class WeeklyAttendanceReviewTests(unittest.TestCase):
             'attendance_day_fraction': 0.5, 'updated_at': 'v1',
         }
 
-        def read_events(target_date, _diagnostics):
+        def read_events(target_date, _diagnostics, **_kwargs):
             events = []
             if target_date.isoformat() == '2026-09-07':
                 events = [
@@ -201,7 +201,7 @@ class WeeklyAttendanceReviewTests(unittest.TestCase):
             patch('hikvision_weekly_attendance_review.require_local_settings'),
             patch('hikvision_weekly_attendance_review.configured_devices', return_value=[object()]),
             patch('hikvision_weekly_attendance_review.SupabaseReadClient', return_value=client),
-            patch('hikvision_weekly_attendance_review.hikvision_events_with_devices', side_effect=lambda day, _: (
+            patch('hikvision_weekly_attendance_review.hikvision_events_with_devices', side_effect=lambda day, _, **_kwargs: (
                 [biometric_event(day.isoformat(), '08:00:00', 1)] if day.isoformat() == '2026-09-07' else [],
                 {'office-main': {'state': 'complete', 'pagination_complete': True}},
             )),

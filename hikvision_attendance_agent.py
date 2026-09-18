@@ -219,7 +219,9 @@ class AttendanceAgent:
             return True, None
         diagnostics = RequestDiagnostics(False)
         try:
-            events, device_reads = hikvision_events_with_devices(target_date, diagnostics)
+            events, device_reads = hikvision_events_with_devices(
+                target_date, diagnostics, include_next_day_tail=True,
+            )
             now = local_now().isoformat()
             for device_id, result in device_reads.items():
                 if result.get('state') == 'complete':
@@ -274,7 +276,9 @@ class AttendanceAgent:
             return True, None
         diagnostics = RequestDiagnostics(False)
         try:
-            events, device_reads = hikvision_events_with_devices(target_date, diagnostics)
+            events, device_reads = hikvision_events_with_devices(
+                target_date, diagnostics, include_next_day_tail=True,
+            )
             now = local_now().isoformat()
             for device_id, result in device_reads.items():
                 if result.get('state') == 'complete':

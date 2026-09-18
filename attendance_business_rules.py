@@ -1,9 +1,4 @@
-"""Central attendance-day boundaries shared by Hikvision services.
-
-The official shift start is 08:00.  The earlier 04:00 boundary only separates
-the current workday from genuine after-midnight/previous-day device activity;
-it is configurable on the office machine without changing attendance code.
-"""
+"""Central attendance-day boundaries shared by Hikvision services."""
 
 from __future__ import annotations
 
@@ -14,6 +9,8 @@ from datetime import date, time
 VALID_ATTENDANCE_MAJOR = 5
 VALID_ATTENDANCE_MINOR = 75
 DEFAULT_WORKDAY_BOUNDARY = time(4, 0)
+NORMAL_WORKDAY_START = time(7, 0)
+NORMAL_NEXT_DAY_END = time(2, 0)
 OFFICIAL_START = time(8, 0)
 # Retained original biometric morning window. Normal Monday-Friday attendance
 # may accept a later real arrival, but only this bounded window earns the
@@ -47,7 +44,12 @@ def workday_schedule(target_date: date) -> dict | None:
     """Return the one authoritative Monday-Saturday schedule snapshot."""
     weekday = target_date.weekday()
     common = {
-        "workday_boundary": workday_boundary(),
+        # Normal attendance is grouped from 07:00 through 02:00 on the next
+        # calendar day.  The configurable legacy boundary is retained for the
+        # Chauffeur team until its dedicated night schedule is defined.
+        "workday_boundary": NORMAL_WORKDAY_START,
+        "legacy_workday_boundary": workday_boundary(),
+        "next_day_checkout_end": NORMAL_NEXT_DAY_END,
         "official_start": OFFICIAL_START,
         "morning_checkin_start": MORNING_CHECKIN_START,
         "morning_checkin_end": MORNING_CHECKIN_END,

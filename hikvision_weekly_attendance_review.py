@@ -129,7 +129,9 @@ def review_week_attendance(start_date: str, end_date: str) -> dict:
             'errors': [],
         }
         try:
-            events, device_reads = hikvision_events_with_devices(target_date, diagnostics)
+            events, device_reads = hikvision_events_with_devices(
+                target_date, diagnostics, include_next_day_tail=True,
+            )
             day['events_processed'] = len(events)
             day['device_reads'] = device_reads
             overall['events_processed'] += len(events)

@@ -26,6 +26,7 @@ def resolution_with(existing_row):
         "unconfirmed": set(),
         "ignored": set(),
         "workers": {WORKER_ID: {"id": WORKER_ID, "full_name": "Test Worker", "is_active": True, "team_id": None}},
+        "teams": {},
         "classifications": {WORKER_ID: "special_staff"},
         "existing_attendance": {} if existing_row is None else {WORKER_ID: existing_row},
     }
@@ -167,7 +168,6 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
 
     def test_checkin_boundaries_accept_all_arrivals_as_half_day_without_an_upper_cutoff(self):
         cases = (
-            ('06:45:00', 'half_day'),
             ('07:00:00', 'half_day'),
             ('07:59:00', 'half_day'),
             ('08:00:00', 'half_day'),
@@ -183,6 +183,116 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
                 self.assertEqual(plans[0]['check_in'], clock)
                 self.assertEqual(plans[0]['proposed_status'], expected_status)
                 self.assertEqual(plans[0]['day_fraction'], 0.5)
+
+    def test_normal_workday_uses_next_day_tail_and_ignores_pre_seven_arrivals(self):
+        events = [
+            attendance_event('04:20:00', serial=1),
+            attendance_event('06:16:00', serial=2),
+            attendance_event('07:11:00', serial=3),
+            attendance_event('00:31:00', serial=4, event_date='2026-08-12'),
+        ]
+        plans, counters = plan_attendance(events, resolution_with(None), TARGET_DATE)
+        plan = plans[0]
+
+        self.assertEqual(plan['check_in'], '07:11:00')
+        self.assertEqual(plan['check_out'], '00:31:00')
+        self.assertEqual(plan['proposed_status'], 'present')
+        self.assertEqual(plan['biometric_sync_metadata']['check_out_event_timestamp'], '2026-08-12T00:31:00+01:00')
+        self.assertEqual(counters['early_morning_needs_review'], 1)
+
+    def test_next_day_tail_is_inclusive_through_0200_only(self):
+        accepted = [
+            attendance_event('07:11:00', serial=1),
+            attendance_event('01:59:00', serial=2, event_date='2026-08-12'),
+        ]
+        rejected = [
+            attendance_event('07:11:00', serial=1),
+            attendance_event('02:01:00', serial=2, event_date='2026-08-12'),
+        ]
+
+        accepted_plan = plan_attendance(accepted, resolution_with(None), TARGET_DATE)[0][0]
+        rejected_plan = plan_attendance(rejected, resolution_with(None), TARGET_DATE)[0][0]
+
+        self.assertEqual(accepted_plan['check_out'], '01:59:00')
+        self.assertIsNone(rejected_plan['check_out'])
+        self.assertEqual(rejected_plan['proposed_status'], 'half_day')
+
+        exact_boundary = [
+            attendance_event('07:11:00', serial=1),
+            attendance_event('02:00:00', serial=2, event_date='2026-08-12'),
+        ]
+        boundary_plan = plan_attendance(exact_boundary, resolution_with(None), TARGET_DATE)[0][0]
+        self.assertEqual(boundary_plan['check_out'], '02:00:00')
+
+    def test_next_day_checkout_replaces_earlier_same_day_checkout(self):
+        existing = {
+            'attendance_date': TARGET_DATE.isoformat(),
+            'status': 'present',
+            'check_in': '07:11:00',
+            'check_out': '19:00:00',
+            'attendance_source': 'biometric',
+            'manual_override': False,
+        }
+        events = [attendance_event('00:31:00', event_date='2026-08-12')]
+
+        plan = plan_attendance(events, resolution_with(existing), TARGET_DATE)[0][0]
+        payload = biometric_payload(plan, existing)
+
+        self.assertTrue(plan['check_out_next_day'])
+        self.assertEqual(payload['check_out'], '00:31:00')
+
+    def test_explicit_reconciliation_replaces_pre_seven_biometric_checkin(self):
+        existing = {
+            'attendance_date': TARGET_DATE.isoformat(),
+            'status': 'half_day',
+            'check_in': '04:20:00',
+            'check_out': None,
+            'attendance_source': 'biometric',
+            'manual_override': False,
+        }
+        events = [attendance_event('07:11:00'), attendance_event('17:00:00', serial=2)]
+
+        plan = plan_attendance(events, resolution_with(existing), TARGET_DATE)[0][0]
+        payload = biometric_payload(plan, existing)
+
+        self.assertTrue(plan['replace_out_of_window_existing_check_in'])
+        self.assertEqual(payload['check_in'], '07:11:00')
+        self.assertEqual(payload['check_out'], '17:00:00')
+
+    def test_after_midnight_event_cannot_be_current_day_checkin(self):
+        next_day = TARGET_DATE + timedelta(days=1)
+        plans, _ = plan_attendance(
+            [attendance_event('00:31:00', event_date=next_day.isoformat())],
+            resolution_with(None),
+            next_day,
+        )
+
+        self.assertIsNone(plans[0]['check_in'])
+        self.assertIsNone(plans[0]['check_out'])
+
+    def test_chauffeur_keeps_legacy_calendar_day_window(self):
+        resolution = resolution_with(None)
+        resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur-team'
+        resolution['teams'] = {'chauffeur-team': {'id': 'chauffeur-team', 'name': 'Chauffeur'}}
+        events = [
+            attendance_event('06:16:00', serial=1),
+            attendance_event('17:00:00', serial=2),
+            attendance_event('00:31:00', serial=3, event_date='2026-08-12'),
+        ]
+
+        plan = plan_attendance(events, resolution, TARGET_DATE)[0][0]
+
+        self.assertEqual(plan['check_in'], '06:16:00')
+        self.assertEqual(plan['check_out'], '17:00:00')
+
+    def test_saturday_morning_rule_remains_full_day_without_checkout(self):
+        saturday = date(2026, 8, 15)
+        event = attendance_event('07:11:00', event_date=saturday.isoformat())
+
+        plan = plan_attendance([event], resolution_with(None), saturday)[0][0]
+
+        self.assertEqual(plan['proposed_status'], 'present')
+        self.assertTrue(plan['saturday_morning_full_day'])
 
     def test_later_checkin_and_real_checkout_complete_as_present(self):
         events = [attendance_event('10:30:00', serial=1), attendance_event('17:05:00', serial=2)]
@@ -204,7 +314,7 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
     def test_earliest_legitimate_arrival_wins_over_later_morning_event(self):
         events = [attendance_event('09:13:00', serial=2), attendance_event('06:45:00', serial=1)]
         plans, _ = plan_attendance(events, resolution_with(None), TARGET_DATE)
-        self.assertEqual(plans[0]['check_in'], '06:45:00')
+        self.assertEqual(plans[0]['check_in'], '09:13:00')
         self.assertEqual(plans[0]['proposed_status'], 'half_day')
 
     def test_exact_22_hour_checkout_is_preserved_on_same_workday(self):
@@ -322,9 +432,12 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(plans[0]['check_in'], '09:05:00')
         self.assertEqual(plans[0]['proposed_status'], 'half_day')
 
-    def test_configured_workday_boundary_is_central_and_respected(self):
+    def test_configured_legacy_boundary_is_respected_for_chauffeur_only(self):
+        resolution = resolution_with(None)
+        resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur-team'
+        resolution['teams'] = {'chauffeur-team': {'id': 'chauffeur-team', 'name': 'Chauffeur'}}
         with patch.dict('os.environ', {'HIKVISION_ATTENDANCE_WORKDAY_BOUNDARY': '06:30'}):
-            plans, _ = plan_attendance([attendance_event('06:45:00')], resolution_with(None), TARGET_DATE)
+            plans, _ = plan_attendance([attendance_event('06:45:00')], resolution, TARGET_DATE)
         self.assertEqual(plans[0]['check_in'], '06:45:00')
 
     def test_repeated_later_event_processing_is_idempotent(self):
