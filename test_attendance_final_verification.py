@@ -508,6 +508,9 @@ class FinalMorningVerificationTests(unittest.TestCase):
         self.assertEqual(verification_event_windows(time(4, 0), time(9, 15)), [
             (time(4, 0), time(6, 59, 59)), (time(7, 0), time(9, 15)),
         ])
+        self.assertEqual(verification_event_windows(time(6, 30), time(9, 15)), [
+            (time(6, 30), time(6, 59, 59)), (time(7, 0), time(9, 15)),
+        ])
         self.assertEqual([(call['start_time'], call['end_time']) for call in calls], verification_event_windows(time(4, 0), time(9, 15)))
         self.assertEqual(len({call['search_id'] for call in calls}), 2)
         self.assertTrue(all(len(call['search_id']) <= 32 for call in calls))
@@ -923,6 +926,7 @@ class FinalMorningVerificationTests(unittest.TestCase):
     def test_complete_no_event_is_verified_negative(self, _load, _persisted, query):
         query.return_value = ({'office-main': ([], {'state': 'complete', 'segments': []})}, {'w1': {('office-main', '0336699')}})
         result = run_targeted_verification(client=FakeClient(), target_date=DAY, devices=[DEVICE_MAIN], diagnostics=None, agent_id='agent')
+        self.assertEqual(query.call_args.args[5], time(6, 30))
         self.assertEqual(result['status'], 'complete')
         self.assertEqual(result['worker_results'][0]['verification_result'], 'verified_no_event')
 

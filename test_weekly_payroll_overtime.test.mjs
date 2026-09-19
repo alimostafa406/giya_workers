@@ -9,6 +9,9 @@ const monday = (checkIn, checkOut) => ({ date: '2026-09-14', status: 'present', 
 test('morning overtime is disabled until worker schedules are approved', () => {
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', null)).morningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('07:48:00', null)).morningOvertimeMinutes, 0)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('07:30:00', null)).morningOvertimeMinutes, 0)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('06:56:00', null)).morningOvertimeMinutes, 0)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('06:30:00', null)).morningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('06:00:00', null)).morningOvertimeMinutes, 0)
 })
 

@@ -9,7 +9,7 @@ from datetime import date, time
 VALID_ATTENDANCE_MAJOR = 5
 VALID_ATTENDANCE_MINOR = 75
 DEFAULT_WORKDAY_BOUNDARY = time(4, 0)
-NORMAL_WORKDAY_START = time(7, 0)
+NORMAL_WORKDAY_START = time(6, 30)
 NORMAL_NEXT_DAY_END = time(2, 0)
 OFFICIAL_START = time(8, 0)
 # Retained original biometric morning window. Normal Monday-Friday attendance
@@ -44,7 +44,7 @@ def workday_schedule(target_date: date) -> dict | None:
     """Return the one authoritative Monday-Saturday schedule snapshot."""
     weekday = target_date.weekday()
     common = {
-        # Normal attendance is grouped from 07:00 through 02:00 on the next
+        # Normal attendance is grouped from 06:30 through 02:00 on the next
         # calendar day.  The configurable legacy boundary is retained for the
         # Chauffeur team until its dedicated night schedule is defined.
         "workday_boundary": NORMAL_WORKDAY_START,

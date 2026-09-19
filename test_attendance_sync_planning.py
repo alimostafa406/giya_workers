@@ -168,6 +168,8 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
 
     def test_checkin_boundaries_accept_all_arrivals_as_half_day_without_an_upper_cutoff(self):
         cases = (
+            ('06:30:00', 'half_day'),
+            ('06:56:00', 'half_day'),
             ('07:00:00', 'half_day'),
             ('07:59:00', 'half_day'),
             ('08:00:00', 'half_day'),
@@ -184,10 +186,10 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
                 self.assertEqual(plans[0]['proposed_status'], expected_status)
                 self.assertEqual(plans[0]['day_fraction'], 0.5)
 
-    def test_normal_workday_uses_next_day_tail_and_ignores_pre_seven_arrivals(self):
+    def test_normal_workday_uses_next_day_tail_and_ignores_pre_0630_arrivals(self):
         events = [
             attendance_event('04:20:00', serial=1),
-            attendance_event('06:16:00', serial=2),
+            attendance_event('06:29:59', serial=2),
             attendance_event('07:11:00', serial=3),
             attendance_event('00:31:00', serial=4, event_date='2026-08-12'),
         ]
@@ -199,6 +201,33 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(plan['proposed_status'], 'present')
         self.assertEqual(plan['biometric_sync_metadata']['check_out_event_timestamp'], '2026-08-12T00:31:00+01:00')
         self.assertEqual(counters['early_morning_needs_review'], 1)
+
+    def test_normal_workday_boundary_accepts_0630_and_rejects_0629(self):
+        cases = (
+            ('06:29:00', None),
+            ('06:30:00', '06:30:00'),
+            ('06:56:00', '06:56:00'),
+            ('07:00:00', '07:00:00'),
+        )
+        for clock, expected in cases:
+            with self.subTest(clock=clock):
+                plan = plan_attendance([attendance_event(clock)], resolution_with(None), TARGET_DATE)[0][0]
+                self.assertEqual(plan['check_in'], expected)
+                self.assertIsNone(plan['check_out'])
+
+    def test_current_week_previously_unresolved_arrivals_are_valid_without_fake_checkout(self):
+        cases = (
+            ('NGUVU #22', '06:56:27'),
+            ('nguvu #328', '06:56:28'),
+            ('metshi #334', '06:55:27'),
+        )
+        for worker, clock in cases:
+            with self.subTest(worker=worker):
+                plan = plan_attendance([attendance_event(clock)], resolution_with(None), TARGET_DATE)[0][0]
+                self.assertEqual(plan['check_in'], clock)
+                self.assertIsNone(plan['check_out'])
+                self.assertEqual(plan['proposed_status'], 'half_day')
+                self.assertEqual(plan['day_fraction'], 0.5)
 
     def test_next_day_tail_is_inclusive_through_0200_only(self):
         accepted = [
@@ -280,7 +309,7 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
 
         self.assertFalse(payload_changed(existing, payload))
 
-    def test_explicit_reconciliation_replaces_pre_seven_biometric_checkin(self):
+    def test_explicit_reconciliation_replaces_pre_boundary_biometric_checkin(self):
         existing = {
             'attendance_date': TARGET_DATE.isoformat(),
             'status': 'half_day',
@@ -353,7 +382,7 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
     def test_earliest_legitimate_arrival_wins_over_later_morning_event(self):
         events = [attendance_event('09:13:00', serial=2), attendance_event('06:45:00', serial=1)]
         plans, _ = plan_attendance(events, resolution_with(None), TARGET_DATE)
-        self.assertEqual(plans[0]['check_in'], '09:13:00')
+        self.assertEqual(plans[0]['check_in'], '06:45:00')
         self.assertEqual(plans[0]['proposed_status'], 'half_day')
 
     def test_exact_22_hour_checkout_is_preserved_on_same_workday(self):
