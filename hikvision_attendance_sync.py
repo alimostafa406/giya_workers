@@ -1436,8 +1436,14 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
 
 
 def payload_changed(existing: dict, payload: dict) -> bool:
-    fields = ('status', 'check_in', 'check_out', 'attendance_source', 'manual_override', 'biometric_sync_key', 'attendance_day_fraction', 'review_approved_check_out_at')
+    fields = ('status', 'check_in', 'check_out', 'attendance_source', 'manual_override', 'biometric_sync_key', 'attendance_day_fraction')
     if any(existing.get(field) != payload.get(field) for field in fields):
+        return True
+    existing_approval = existing.get('review_approved_check_out_at')
+    payload_approval = payload.get('review_approved_check_out_at')
+    if bool(existing_approval) != bool(payload_approval):
+        return True
+    if existing_approval and parse_event_time(str(existing_approval)) != parse_event_time(str(payload_approval)):
         return True
     return normalized_metadata(existing.get('biometric_sync_metadata')) != payload.get('biometric_sync_metadata')
 

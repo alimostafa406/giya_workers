@@ -268,6 +268,18 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(payload['check_out'], '00:31:00')
         self.assertEqual(payload['review_approved_check_out_at'], '2026-08-12T00:31:00+01:00')
 
+    def test_equivalent_next_day_approval_offsets_are_unchanged(self):
+        existing = {
+            'status': 'present', 'check_in': '07:11:00', 'check_out': '00:31:00',
+            'attendance_source': 'biometric', 'manual_override': False,
+            'biometric_sync_key': 'hikvision:worker-1:2026-08-11',
+            'attendance_day_fraction': 1.0, 'biometric_sync_metadata': None,
+            'review_approved_check_out_at': '2026-08-11T23:31:00+00:00',
+        }
+        payload = dict(existing, review_approved_check_out_at='2026-08-12T00:31:00+01:00')
+
+        self.assertFalse(payload_changed(existing, payload))
+
     def test_explicit_reconciliation_replaces_pre_seven_biometric_checkin(self):
         existing = {
             'attendance_date': TARGET_DATE.isoformat(),
