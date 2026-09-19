@@ -940,7 +940,7 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
     if for_apply:
         # Apply requires attendance_biometric_workflow_upgrade.sql to have been
         # approved and executed by the administrator first.
-        attendance_select += ',attendance_source,manual_override,biometric_sync_key,biometric_sync_metadata,attendance_day_fraction,updated_at'
+        attendance_select += ',attendance_source,manual_override,biometric_sync_key,biometric_sync_metadata,attendance_day_fraction,review_approved_check_out_at,updated_at'
     existing_attendance = client.read(
         'attendance',
         attendance_select,
@@ -1305,6 +1305,11 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             'use_new_earlier_check_in': use_new_earlier_check_in,
             'replace_out_of_window_existing_check_in': replace_out_of_window_existing_check_in,
             'check_out_next_day': bool(checkout_time and checkout_time.date() > target_date),
+            'review_approved_check_out_at': (
+                checkout_event[1].get('time')
+                if checkout_event and checkout_time and checkout_time.date() > target_date
+                else None
+            ),
             'sync_key': f'hikvision:{worker_id}:{target_date.isoformat()}',
             'existing_attendance_protection': existing_protection,
             # A future write stage may upgrade its own half_day row to present when
@@ -1415,11 +1420,19 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
         'biometric_sync_key': plan['sync_key'],
         'biometric_sync_metadata': metadata,
         'attendance_day_fraction': day_fraction,
+        # The existing database constraint requires the exact date-aware
+        # evidence whenever a next-calendar-day clock time closes the prior
+        # workday. Same-day attendance keeps this field empty.
+        'review_approved_check_out_at': (
+            plan.get('review_approved_check_out_at')
+            if plan.get('check_out_next_day') and check_out
+            else None
+        ),
     }
 
 
 def payload_changed(existing: dict, payload: dict) -> bool:
-    fields = ('status', 'check_in', 'check_out', 'attendance_source', 'manual_override', 'biometric_sync_key', 'attendance_day_fraction')
+    fields = ('status', 'check_in', 'check_out', 'attendance_source', 'manual_override', 'biometric_sync_key', 'attendance_day_fraction', 'review_approved_check_out_at')
     if any(existing.get(field) != payload.get(field) for field in fields):
         return True
     return normalized_metadata(existing.get('biometric_sync_metadata')) != payload.get('biometric_sync_metadata')

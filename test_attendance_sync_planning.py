@@ -240,6 +240,16 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
 
         self.assertTrue(plan['check_out_next_day'])
         self.assertEqual(payload['check_out'], '00:31:00')
+        self.assertEqual(payload['review_approved_check_out_at'], '2026-08-12T00:31:00+01:00')
+
+    def test_same_day_checkout_does_not_set_next_day_approval_timestamp(self):
+        events = [attendance_event('07:11:00'), attendance_event('18:00:00', serial=2)]
+        plans, _ = plan_attendance(events, resolution_with(None), TARGET_DATE)
+
+        payload = biometric_payload(plans[0], None)
+
+        self.assertEqual(payload['check_out'], '18:00:00')
+        self.assertIsNone(payload['review_approved_check_out_at'])
 
     def test_explicit_reconciliation_replaces_pre_seven_biometric_checkin(self):
         existing = {
