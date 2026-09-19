@@ -251,6 +251,23 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(payload['check_out'], '18:00:00')
         self.assertIsNone(payload['review_approved_check_out_at'])
 
+    def test_replay_preserves_existing_next_day_approval_timestamp(self):
+        existing = {
+            'attendance_date': TARGET_DATE.isoformat(),
+            'status': 'present',
+            'check_in': '07:11:00',
+            'check_out': '00:31:00',
+            'attendance_source': 'biometric',
+            'manual_override': False,
+            'review_approved_check_out_at': '2026-08-12T00:31:00+01:00',
+        }
+        plans, _ = plan_attendance([], resolution_with(existing), TARGET_DATE)
+
+        payload = biometric_payload(plans[0], existing)
+
+        self.assertEqual(payload['check_out'], '00:31:00')
+        self.assertEqual(payload['review_approved_check_out_at'], '2026-08-12T00:31:00+01:00')
+
     def test_explicit_reconciliation_replaces_pre_seven_biometric_checkin(self):
         existing = {
             'attendance_date': TARGET_DATE.isoformat(),

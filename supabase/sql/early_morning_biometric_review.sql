@@ -14,7 +14,7 @@ alter table public.attendance
   add constraint attendance_checkout_after_checkin check (
     check_in is null
     or check_out is null
-    or check_out > check_in
+    or check_out >= check_in
     or (
       review_approved_check_out_at is not null
       and (review_approved_check_out_at at time zone 'Africa/Kinshasa')::date = attendance_date + 1

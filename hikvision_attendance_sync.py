@@ -1426,7 +1426,11 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
         'review_approved_check_out_at': (
             plan.get('review_approved_check_out_at')
             if plan.get('check_out_next_day') and check_out
-            else None
+            else (
+                existing.get('review_approved_check_out_at')
+                if existing and check_out == existing.get('check_out')
+                else None
+            )
         ),
     }
 
@@ -1520,10 +1524,10 @@ def apply_biometric_attendance(client: SupabaseReadClient, plans: list[dict], ex
                 })
                 results['inserted'] += 1
         except requests.HTTPError as error:
-            if not existing and error.response is not None and error.response.status_code == 400:
+            if error.response is not None and error.response.status_code == 400:
                 # A 400 is a structural schema/validation mismatch. Continuing
                 # would repeat the same invalid write for every remaining plan.
-                log_structural_attendance_error(error, 'insert')
+                log_structural_attendance_error(error, 'update' if existing else 'insert')
                 results['structural_supabase_error'] += 1
                 results['aborted_structural_error'] += 1
                 break
