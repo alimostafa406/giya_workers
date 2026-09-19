@@ -418,6 +418,21 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
                 self.assertEqual(payload['attendance_day_fraction'], 1.0)
                 self.assertIsNone(payload['check_out'])
 
+    def test_saturday_later_morning_punch_keeps_earliest_checkin_and_earns_full_day(self):
+        saturday = date(2026, 8, 15)
+        events = [
+            attendance_event('06:34:37', serial=1, event_date=saturday.isoformat()),
+            attendance_event('07:18:42', serial=2, event_date=saturday.isoformat()),
+        ]
+        plan = plan_attendance(events, resolution_with(None), saturday)[0][0]
+        payload = biometric_payload(plan, None)
+
+        self.assertEqual(plan['check_in'], '06:34:37')
+        self.assertIsNone(plan['check_out'])
+        self.assertTrue(plan['saturday_morning_full_day'])
+        self.assertEqual(payload['status'], 'present')
+        self.assertEqual(payload['attendance_day_fraction'], 1.0)
+
     def test_saturday_non_morning_checkin_without_checkout_remains_half_day(self):
         saturday = date(2026, 8, 15)
         plans, _ = plan_attendance(

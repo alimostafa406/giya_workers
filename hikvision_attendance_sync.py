@@ -1236,8 +1236,13 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
         saturday_morning_full_day = bool(
             schedule
             and schedule['label'] == 'saturday'
-            and check_in
-            and schedule['morning_checkin_start'] <= check_in.timetz().replace(tzinfo=None) <= schedule['morning_checkin_end']
+            # Preserve the earliest valid workday arrival as check-in. Any
+            # safely mapped punch in Saturday's established morning window
+            # still earns the existing no-checkout full-day exception.
+            and any(
+                schedule['morning_checkin_start'] <= arrival[0].timetz().replace(tzinfo=None) <= schedule['morning_checkin_end']
+                for arrival in arrivals
+            )
         )
         checkout_only = bool(not check_in and checkout_time)
         # Existing attendance is keyed by worker and the selected attendance date.
