@@ -12,7 +12,7 @@ import os
 import socket
 import sys
 import time as time_module
-from datetime import date as date_type, timedelta
+from datetime import date as date_type, time, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -35,6 +35,12 @@ from hikvision_attendance_sync import (
 from hikvision_user_sync import check_hikvision_reachable, sync_users_dataset
 from hikvision_devices import configured_devices
 from hikvision_local_config import load_local_hikvision_config, require_local_settings
+from hikvision_attendance_verification import (
+    absence_plans_with_verification,
+    completed_morning_snapshot_compatibility,
+    reconcile_completed_morning_verification_children,
+    run_targeted_verification,
+)
 
 
 TEST_ONLY_DATE = date_type(2026, 8, 10)
@@ -79,6 +85,13 @@ def positive_int_env(name: str, default: int) -> int:
 
 def truthy_env(name: str) -> bool:
     return os.environ.get(name, '').strip().lower() in {'1', 'true', 'yes'}
+
+
+def time_env(name: str, default: time) -> time:
+    try:
+        return time.fromisoformat(os.environ.get(name, default.strftime('%H:%M')).strip())
+    except ValueError:
+        return default
 
 
 def configured_logger() -> logging.Logger:
@@ -222,6 +235,7 @@ class AttendanceAgent:
             events, device_reads = hikvision_events_with_devices(
                 target_date, diagnostics, include_next_day_tail=True,
             )
+            self.logger.info('Attendance collection: date=%s broad_events_read=%s', target_date.isoformat(), len(events))
             now = local_now().isoformat()
             for device_id, result in device_reads.items():
                 if result.get('state') == 'complete':
@@ -239,7 +253,14 @@ class AttendanceAgent:
             if self.dry_run:
                 self.logger.info('Attendance dry run: events=%s device_reads=%s %s', len(events), device_reads, dict(summary))
             else:
-                apply_plans = positive_evidence_plans(plans) if apply_blocked_reason else plans
+                verification = (
+                    self.client.morning_verification_for_date(target_date)
+                    if hasattr(self.client, 'morning_verification_for_date')
+                    else {'status': 'pending', 'verified_no_event_worker_ids': []}
+                )
+                apply_plans = absence_plans_with_verification(plans, verification)
+                if apply_blocked_reason:
+                    apply_plans = positive_evidence_plans(apply_plans)
                 if apply_blocked_reason:
                     self.logger.warning(
                         '%s Negative attendance decisions are blocked; processing positive biometric evidence only.',
@@ -267,6 +288,93 @@ class AttendanceAgent:
             # The scheduler loop and its independent heartbeat continue normally.
             message = f'{type(error).__name__}: {error}'
             self.logger.error('Attendance planning cycle failed: %s', message)
+            return False, message
+
+    def run_final_morning_verification(self) -> tuple[bool, str | None]:
+        """Close today's morning evidence gap without trusting a broad-read negative."""
+        target_date = local_now().date()
+        if workday_schedule(target_date) is None or target_date == TEST_ONLY_DATE:
+            return True, None
+        diagnostics = RequestDiagnostics(False)
+        try:
+            self.client = self.client or SupabaseReadClient(diagnostics)
+            current = self.client.morning_verification_for_date(target_date)
+            if current.get('status') == 'complete':
+                current_resolution = load_resolution_data(self.client, target_date, for_apply=True)
+                compatibility = completed_morning_snapshot_compatibility(
+                    current, current_resolution, configured_devices(),
+                )
+                if compatibility['compatible']:
+                    child_reconciliation = reconcile_completed_morning_verification_children(
+                        self.client, current, current_resolution,
+                    )
+                    if child_reconciliation['safe']:
+                        if compatibility['post_verification_worker_ids']:
+                            self.logger.info(
+                                'Final morning verification remains authoritative for its snapshot; '
+                                'post-completion workers excluded=%s',
+                                len(compatibility['post_verification_worker_ids']),
+                            )
+                        self.logger.info(
+                            'Completed morning verification child rows reconciled: %s',
+                            child_reconciliation,
+                        )
+                        return True, None
+                    self.logger.warning(
+                        'Completed morning verification child evidence is inconsistent; '
+                        'starting a new idempotent pass: %s',
+                        child_reconciliation,
+                    )
+                if not compatibility['compatible']:
+                    self.logger.warning(
+                        'Final morning verification snapshot changed; starting a new idempotent pass: %s',
+                        compatibility,
+                    )
+            if current.get('status') == 'migration_required':
+                message = 'Final morning verification migration is required; absence remains blocked.'
+                self.logger.error(message)
+                return False, message
+            result = run_targeted_verification(
+                client=self.client, target_date=target_date, devices=configured_devices(),
+                diagnostics=diagnostics, agent_id=self.agent_id, mode='morning',
+                dry_run=self.dry_run, logger=self.logger,
+            )
+            return result.get('status') == 'complete', None if result.get('status') == 'complete' else 'Final morning verification is incomplete.'
+        except (RuntimeError, requests.RequestException, ValueError) as error:
+            message = f'{type(error).__name__}: {error}'
+            if self.client is not None and hasattr(self.client, 'fail_open_attendance_verification_run'):
+                try:
+                    self.client.fail_open_attendance_verification_run(target_date, {
+                        'status': 'failed', 'completed_at': local_now().isoformat(),
+                        'agent_id': self.agent_id, 'device_failure_summary': {'error': message},
+                    })
+                except Exception:
+                    pass
+            self.logger.error('Final morning verification failed: %s', message)
+            return False, message
+
+    def run_checkout_verification(self) -> tuple[bool, str | None]:
+        """Recover missing qualifying checkout evidence; never gates morning reporting."""
+        target_date = local_now().date()
+        schedule = workday_schedule(target_date)
+        if schedule is None or target_date == TEST_ONLY_DATE or local_now().time() < schedule['checkout_start']:
+            return True, None
+        diagnostics = RequestDiagnostics(False)
+        try:
+            self.client = self.client or SupabaseReadClient(diagnostics)
+            result = run_targeted_verification(
+                client=self.client, target_date=target_date, devices=configured_devices(),
+                diagnostics=diagnostics, agent_id=self.agent_id, mode='checkout',
+                dry_run=self.dry_run, logger=self.logger,
+            )
+            return result.get('status') == 'complete', None if result.get('status') == 'complete' else 'Checkout verification is incomplete.'
+        except (RuntimeError, requests.RequestException, ValueError) as error:
+            message = f'{type(error).__name__}: {error}'
+            self.logger.error('Checkout verification failed: %s', message)
+            return False, message
+        except Exception as error:
+            message = f'{type(error).__name__}: {error}'
+            self.logger.error('Checkout verification failed: %s', message)
             return False, message
 
     def complete_previous_workday(self) -> tuple[bool, str | None]:
@@ -349,6 +457,8 @@ def run_agent_loop(
     users_interval: int,
     heartbeat_interval: int,
     reconciliation_interval: int = 1800,
+    verification_interval: int = 300,
+    checkout_verification_interval: int = 900,
     once: bool = False,
     max_iterations: int | None = None,
 ) -> None:
@@ -358,6 +468,8 @@ def run_agent_loop(
     last_heartbeat = 0.0
     last_reconciliation = None
     last_reconciliation_error = None
+    last_verification = 0.0
+    last_checkout_verification = 0.0
     iterations = 0
     while True:
         now = time_module.monotonic()
@@ -367,6 +479,11 @@ def run_agent_loop(
         if last_reconciliation is None:
             last_reconciliation = now
         reconciliation_due = now - last_reconciliation >= reconciliation_interval
+        clock = local_now()
+        verification_start = time_env('HIKVISION_MORNING_VERIFICATION_START', time(9, 15))
+        verification_due = hasattr(agent, 'run_final_morning_verification') and clock.time() >= verification_start and now - last_verification >= verification_interval
+        schedule = workday_schedule(clock.date())
+        checkout_due = bool(hasattr(agent, 'run_checkout_verification') and schedule and clock.time() >= schedule['checkout_start'] and now - last_checkout_verification >= checkout_verification_interval)
         try:
             # Publish liveness before potentially slow device work. Hikvision
             # requests are bounded, so a failed device cannot permanently stop
@@ -411,6 +528,26 @@ def run_agent_loop(
             last_reconciliation_error = agent.last_error
             agent.logger.exception('Scheduled previous-workday reconciliation failed; continuing: %s', agent.last_error)
 
+        if verification_due:
+            try:
+                verification_ok, verification_error = agent.run_final_morning_verification()
+                last_verification = now
+                if not verification_ok:
+                    agent.last_error = verification_error
+            except Exception as error:
+                agent.last_error = f'{type(error).__name__}: {error}'
+                agent.logger.exception('Scheduled final morning verification failed; continuing: %s', agent.last_error)
+
+        if checkout_due:
+            try:
+                checkout_ok, checkout_error = agent.run_checkout_verification()
+                last_checkout_verification = now
+                if not checkout_ok:
+                    agent.last_error = checkout_error
+            except Exception as error:
+                agent.last_error = f'{type(error).__name__}: {error}'
+                agent.logger.exception('Scheduled checkout verification failed; continuing: %s', agent.last_error)
+
         iterations += 1
         if once or (max_iterations is not None and iterations >= max_iterations):
             return
@@ -418,7 +555,15 @@ def run_agent_loop(
         next_attendance = max(0.0, attendance_interval - (time_module.monotonic() - last_attendance))
         next_heartbeat = max(0.0, heartbeat_interval - (time_module.monotonic() - last_heartbeat))
         next_reconciliation = max(0.0, reconciliation_interval - (time_module.monotonic() - last_reconciliation))
-        time_module.sleep(max(1.0, min(60.0, next_users, next_attendance, next_heartbeat, next_reconciliation)))
+        next_verification = (
+            60.0 if clock.time() < verification_start
+            else max(0.0, verification_interval - (time_module.monotonic() - last_verification))
+        )
+        next_checkout = (
+            60.0 if not schedule or clock.time() < schedule['checkout_start']
+            else max(0.0, checkout_verification_interval - (time_module.monotonic() - last_checkout_verification))
+        )
+        time_module.sleep(max(1.0, min(60.0, next_users, next_attendance, next_heartbeat, next_reconciliation, next_verification, next_checkout)))
 
 
 def run_startup_recovery(agent: AttendanceAgent) -> None:
@@ -459,6 +604,8 @@ def main() -> int:
     users_interval = positive_int_env('HIKVISION_AGENT_USERS_INTERVAL_SECONDS', 1800)
     heartbeat_interval = positive_int_env('HIKVISION_AGENT_HEARTBEAT_INTERVAL_SECONDS', 60)
     reconciliation_interval = positive_int_env('HIKVISION_AGENT_RECONCILIATION_INTERVAL_SECONDS', 1800)
+    verification_interval = positive_int_env('HIKVISION_MORNING_VERIFICATION_INTERVAL_SECONDS', 300)
+    checkout_verification_interval = positive_int_env('HIKVISION_CHECKOUT_VERIFICATION_INTERVAL_SECONDS', 900)
     attendance_writes_enabled = truthy_env('HIKVISION_AGENT_ENABLE_ATTENDANCE_WRITES') and not args.dry_run
     agent = AttendanceAgent(not attendance_writes_enabled, logger)
     logger.info('Attendance Agent started: agent_id=%s dry_run=%s attendance_interval=%ss users_interval=%ss heartbeat_interval=%ss reconciliation_interval=%ss', agent.agent_id, agent.dry_run, attendance_interval, users_interval, heartbeat_interval, reconciliation_interval)
@@ -471,6 +618,8 @@ def main() -> int:
         users_interval=users_interval,
         heartbeat_interval=heartbeat_interval,
         reconciliation_interval=reconciliation_interval,
+        verification_interval=verification_interval,
+        checkout_verification_interval=checkout_verification_interval,
         once=args.once,
     )
     return 0

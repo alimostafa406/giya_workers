@@ -17,6 +17,7 @@ from collections import Counter, defaultdict
 from datetime import date as date_type
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from uuid import uuid4
 
 import requests
 from hikvision_http import HIKVISION_REQUEST_TIMEOUT, HikvisionReadClient
@@ -268,6 +269,7 @@ def hikvision_events_for_device(
     start_time: time | None = None,
     end_time: time | None = None,
     search_suffix: str = '',
+    search_id: str | None = None,
 ) -> list[dict] | tuple[list[dict], dict]:
     hikvision = HikvisionReadClient(device.ip, device.username, device.password, device.device_id)
     url = hikvision.url('/ISAPI/AccessControl/AcsEvent?format=json')
@@ -277,19 +279,23 @@ def hikvision_events_for_device(
     successful_batches = 0
     read_error: Exception | None = None
     failed_position: int | None = None
+    reported_total_matches: int | None = None
+    pagination_complete = False
+    successful_pages = 0
     start_time = start_time or time(0, 0)
     end_time = end_time or END_OF_DAY
     try:
         while True:
-            payload = {'AcsEventCond': {
-                'searchID': f'attendance-{target_date.isoformat()}{search_suffix}',
+            condition = {
+                'searchID': search_id or f'attendance-{target_date.isoformat()}{search_suffix}',
                 'searchResultPosition': position,
                 'maxResults': HIKVISION_EVENT_BATCH_SIZE,
                 'major': 0,
                 'minor': 0,
                 'startTime': _query_timestamp(target_date, start_time),
                 'endTime': _query_timestamp(target_date, end_time),
-            }}
+            }
+            payload = {'AcsEventCond': condition}
             target = f'event search (batch position {position})'
             diagnostics.start('HIKVISION', target, 'POST', host)
             try:
@@ -316,11 +322,43 @@ def hikvision_events_for_device(
                 read_error = RuntimeError(f'Hikvision returned invalid JSON for {target}')
                 failed_position = position
                 break
+            successful_pages += 1
+            total_matches = acs.get('totalMatches')
+            if total_matches is not None:
+                try:
+                    total_matches = int(total_matches)
+                except (TypeError, ValueError):
+                    read_error = RuntimeError(f'Hikvision returned invalid totalMatches for {target}')
+                    failed_position = position
+                    break
+                if total_matches < 0:
+                    read_error = RuntimeError(f'Hikvision returned negative totalMatches for {target}')
+                    failed_position = position
+                    break
+                if reported_total_matches is None:
+                    reported_total_matches = total_matches
+                elif reported_total_matches != total_matches:
+                    read_error = RuntimeError(f'Hikvision totalMatches changed during pagination for {target}')
+                    failed_position = position
+                    break
             batch = acs.get('InfoList') or []
             if isinstance(batch, dict):
                 batch = [batch]
             events.extend(batch)
-            if acs.get('responseStatusStrg') != 'MORE' or not batch:
+            more_expected = (
+                len(events) < reported_total_matches
+                if reported_total_matches is not None
+                else acs.get('responseStatusStrg') == 'MORE'
+            )
+            if not batch:
+                if more_expected:
+                    read_error = RuntimeError(f'Hikvision pagination ended before all matches were retrieved for {target}')
+                    failed_position = position
+                else:
+                    pagination_complete = True
+                break
+            if not more_expected:
+                pagination_complete = True
                 break
             position += len(batch)
             time_module.sleep(HIKVISION_SUCCESSFUL_PAGE_DELAY_SECONDS)
@@ -328,9 +366,12 @@ def hikvision_events_for_device(
         hikvision.close()
 
     filtered_events = _filtered_device_events(events, target_date, device)
-    if read_error is None:
+    if read_error is None and pagination_complete:
         state = 'complete'
         error_message = None
+    elif read_error is None:
+        state = 'partial' if events else 'failed'
+        error_message = 'RuntimeError: Hikvision pagination completeness was not proven'
     elif events:
         state = 'partial'
         error_message = f'{type(read_error).__name__}: {read_error}'
@@ -360,8 +401,81 @@ def hikvision_events_for_device(
         'timed_out': timed_out,
         'query_start': start_time.strftime('%H:%M:%S'),
         'query_end': end_time.strftime('%H:%M:%S'),
+        'raw_event_count': len(events),
+        'reported_total_matches': reported_total_matches,
+        'successful_pages': successful_pages,
+        'pagination_complete': read_error is None and pagination_complete,
     }
     return (filtered_events, status) if return_status else filtered_events
+
+
+def _time_seconds(value: time) -> int:
+    return value.hour * 3600 + value.minute * 60 + value.second
+
+
+def verification_event_windows(start_time: time, end_time: time) -> list[tuple[time, time]]:
+    """Clip the proven recovery windows to one verification snapshot."""
+    if _time_seconds(end_time) < _time_seconds(start_time):
+        raise ValueError('Verification end time cannot precede its start time')
+    windows = []
+    for window_start, window_end in HIKVISION_EVENT_WINDOWS:
+        clipped_start = start_time if _time_seconds(start_time) > _time_seconds(window_start) else window_start
+        clipped_end = end_time if _time_seconds(end_time) < _time_seconds(window_end) else window_end
+        if _time_seconds(clipped_start) <= _time_seconds(clipped_end):
+            windows.append((clipped_start, clipped_end))
+    return windows
+
+
+def hikvision_events_for_device_segmented_verification(
+    target_date: date_type,
+    diagnostics: RequestDiagnostics,
+    device,
+    *,
+    start_time: time,
+    end_time: time = END_OF_DAY,
+) -> tuple[list[dict], dict]:
+    """Read each bounded device segment once; identity matching happens locally."""
+    all_events = []
+    segments = []
+    windows = verification_event_windows(start_time, end_time)
+    with HikvisionDeviceOperationLock(device.device_id, 'segmented event verification'):
+        for index, (segment_start, segment_end) in enumerate(windows):
+            segment_events, segment_status = hikvision_events_for_device(
+                target_date,
+                diagnostics,
+                device,
+                return_status=True,
+                start_time=segment_start,
+                end_time=segment_end,
+                search_id=(
+                    f'fv-{target_date.strftime("%Y%m%d")}-'
+                    f'{index}-{uuid4().hex[:12]}'
+                ),
+            )
+            all_events.extend(segment_events)
+            segments.append(segment_status)
+
+    merged_events = deduplicate_hikvision_events(all_events)
+    failed_segments = [segment for segment in segments if segment.get('state') != 'complete']
+    state = 'complete' if not failed_segments else 'partial' if merged_events else 'failed'
+    error = None if not failed_segments else 'segmented verification coverage incomplete: ' + ', '.join(
+        f"{segment.get('query_start')}-{segment.get('query_end')}={segment.get('state')}"
+        for segment in failed_segments
+    )
+    return merged_events, {
+        'device_id': device.device_id,
+        'state': state,
+        'event_count': len(merged_events),
+        'error': error,
+        'timed_out': any(bool(segment.get('timed_out')) for segment in segments),
+        'verification': 'segmented_device_scan',
+        'attempted': True,
+        'query_start': start_time.strftime('%H:%M:%S'),
+        'query_end': end_time.strftime('%H:%M:%S'),
+        'segment_count': len(segments),
+        'segments_complete': len(segments) - len(failed_segments),
+        'segments': segments,
+    }
 
 
 def hikvision_events_for_device_segmented_recovery(
@@ -657,7 +771,106 @@ class SupabaseReadClient:
     def upsert(self, table: str, payload: dict, conflict: str) -> dict:
         response = requests.post(f'{self.base_url}/rest/v1/{table}', headers={**self.headers, 'Prefer': 'resolution=merge-duplicates,return=representation'}, params={'on_conflict': conflict}, json=payload, timeout=30)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        return data[0] if isinstance(data, list) and data else data
+
+    def _attendance_verification_run(self, target_date: date_type, status_filter: str) -> dict | None:
+        runs = self.read(
+            'attendance_verification_run',
+            'id,work_date,verification_type,status,started_at,completed_at,created_at,updated_at,'
+            'target_worker_count,workers_expected_count,verified_worker_count,recovered_worker_count,'
+            'unresolved_worker_count,workers_verified_no_event_count,workers_with_checkin_count,'
+            'roster_worker_ids,active_normal_roster_count,biometric_in_scope_count,'
+            'non_biometric_excluded_count,unknown_biometric_status_count,'
+            'biometric_in_scope_worker_ids,non_biometric_excluded_worker_ids,'
+            'unknown_biometric_status_worker_ids,device_failure_summary,agent_id',
+            work_date=f'eq.{target_date.isoformat()}', verification_type='eq.morning',
+            status=status_filter, order='created_at.desc', limit='1',
+        )
+        return runs[0] if runs else None
+
+    def open_morning_verification_for_date(self, target_date: date_type) -> dict | None:
+        return self._attendance_verification_run(target_date, 'neq.complete')
+
+    def completed_morning_verification_for_date(self, target_date: date_type) -> dict | None:
+        return self._attendance_verification_run(target_date, 'eq.complete')
+
+    def create_attendance_verification_run(self, payload: dict) -> dict:
+        response = requests.post(
+            f'{self.base_url}/rest/v1/attendance_verification_run',
+            headers={**self.headers, 'Prefer': 'return=representation'},
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if isinstance(data, list) and data else data
+
+    def update_attendance_verification_run(self, run_id: str, payload: dict) -> dict:
+        """Update only a non-complete attempt; an immutable header fails closed."""
+        response = requests.patch(
+            f'{self.base_url}/rest/v1/attendance_verification_run',
+            headers={**self.headers, 'Prefer': 'return=representation'},
+            params={'id': f'eq.{run_id}', 'status': 'neq.complete'},
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        row = data[0] if isinstance(data, list) and data else None
+        if not row:
+            raise RuntimeError('Attendance verification run is complete or no longer available')
+        return row
+
+    def start_attendance_verification_run(self, payload: dict) -> dict:
+        """Retry one open attempt, or insert a distinct UUID-backed run."""
+        target_date = date_type.fromisoformat(str(payload['work_date']))
+        current = self.open_morning_verification_for_date(target_date)
+        if current:
+            return self.update_attendance_verification_run(str(current['id']), payload)
+        try:
+            return self.create_attendance_verification_run(payload)
+        except requests.HTTPError as error:
+            # A concurrent agent may have won the partial-unique insert. Reuse
+            # that open attempt; never fall back to a completed header.
+            response = getattr(error, 'response', None)
+            if response is None or response.status_code != 409:
+                raise
+            current = self.open_morning_verification_for_date(target_date)
+            if not current:
+                raise
+            return self.update_attendance_verification_run(str(current['id']), payload)
+
+    def fail_open_attendance_verification_run(self, target_date: date_type, payload: dict) -> dict | None:
+        current = self.open_morning_verification_for_date(target_date)
+        if not current:
+            return None
+        return self.update_attendance_verification_run(str(current['id']), payload)
+
+    def upsert_attendance_verification_worker(self, payload: dict) -> dict:
+        return self.upsert('attendance_verification_worker', payload, 'run_id,worker_id')
+
+    def morning_verification_for_date(self, target_date: date_type) -> dict:
+        """Read an open retry first, otherwise the latest immutable snapshot."""
+        try:
+            run = self.open_morning_verification_for_date(target_date)
+            if not run:
+                run = self.completed_morning_verification_for_date(target_date)
+            if not run:
+                return {'status': 'pending', 'verified_no_event_worker_ids': []}
+            worker_rows = self.read(
+                'attendance_verification_worker', 'worker_id,verification_result',
+                run_id=f"eq.{run['id']}", verification_result='eq.verified_no_event',
+            )
+            return {
+                **run,
+                'verified_no_event_worker_ids': [str(row['worker_id']) for row in worker_rows if row.get('worker_id')],
+            }
+        except requests.HTTPError as error:
+            response = getattr(error, 'response', None)
+            if response is not None and response.status_code in {400, 404}:
+                return {'status': 'migration_required', 'verified_no_event_worker_ids': []}
+            raise
 
     def insert_biometric_attendance_events(self, rows: list[dict]) -> None:
         """Append observed events once; duplicate device events are ignored."""
@@ -715,9 +928,13 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
         'worker_id,device_id,device_employee_no,is_active,mapping_review_state',
         is_active='eq.true',
     )
-    workers = client.read('workers', 'id,full_name,is_active,team_id')
+    workers = client.read('workers', 'id,full_name,employee_code,is_active,team_id,created_at,updated_at')
     teams = client.read('teams', 'id,name')
     classifications = client.read('worker_staff_classification', 'worker_id,classification')
+    biometric_participation_rows = client.read(
+        'worker_biometric_participation',
+        'worker_id,participation_state,decision_source,decision_note,decided_at,decided_by',
+    )
     ignored_identity_rows = client.read('biometric_device_identity_review', 'device_id,device_employee_no,review_state', review_state='eq.ignored')
     attendance_select = 'id,worker_id,attendance_date,status,check_in,check_out,note,recorded_by'
     if for_apply:
@@ -731,7 +948,7 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
     )
     workers_by_id = {str(worker['id']): worker for worker in workers if worker.get('id')}
     classifications_by_worker = {str(item['worker_id']): item.get('classification', 'normal') for item in classifications if item.get('worker_id')}
-    confirmed: dict[tuple[str | None, str], dict] = {}
+    confirmed_candidates: dict[tuple[str | None, str], list[dict]] = defaultdict(list)
     unconfirmed_device_numbers: set[tuple[str | None, str]] = set()
     for mapping in active_mappings:
         employee_no = str(mapping.get('device_employee_no') or '').strip()
@@ -739,12 +956,21 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
             continue
         mapping_key = (str(mapping.get('device_id') or '').strip() or None, employee_no)
         if mapping.get('mapping_review_state') == 'confirmed':
-            confirmed[mapping_key] = mapping
+            confirmed_candidates[mapping_key].append(mapping)
         else:
             unconfirmed_device_numbers.add(mapping_key)
+    mapping_conflicts = {
+        key for key, rows in confirmed_candidates.items()
+        if len({str(row.get('worker_id') or '') for row in rows}) != 1
+    }
+    confirmed = {
+        key: rows[0] for key, rows in confirmed_candidates.items()
+        if key not in mapping_conflicts
+    }
     return {
         'confirmed': confirmed,
         'unconfirmed': unconfirmed_device_numbers,
+        'mapping_conflicts': mapping_conflicts,
         'ignored': {
             (str(row.get('device_id') or '').strip() or None, str(row.get('device_employee_no') or '').strip())
             for row in ignored_identity_rows
@@ -752,6 +978,11 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
         'workers': workers_by_id,
         'teams': {str(team['id']): team for team in teams if team.get('id')},
         'classifications': classifications_by_worker,
+        'biometric_participation': {
+            str(row['worker_id']): row.get('participation_state', 'unknown')
+            for row in biometric_participation_rows
+            if row.get('worker_id')
+        },
         'existing_attendance': {
             str(row['worker_id']): row
             for row in existing_attendance
@@ -764,11 +995,14 @@ def biometric_mapping_for_event(resolution: dict, event: dict) -> dict | None:
     employee_no = str(event.get('employeeNoString') or event.get('employeeNo') or '').strip()
     device_id = str(event.get('_device_id') or event.get('device_id') or '').strip()
     confirmed = resolution.get('confirmed', {})
+    conflicts = resolution.get('mapping_conflicts', set())
+    if (device_id, employee_no) in conflicts:
+        return None
     # Exact device identity wins. Null-device mappings are compatibility rows
     # created before device-scoped mappings existed.
     return (
         confirmed.get((device_id, employee_no))
-        or confirmed.get((None, employee_no))
+        or (None if (None, employee_no) in conflicts else confirmed.get((None, employee_no)))
         or confirmed.get(employee_no)  # Backward-compatible test/fixture shape.
     )
 
@@ -777,21 +1011,51 @@ def biometric_identity_needs_review(resolution: dict, event: dict) -> bool:
     employee_no = str(event.get('employeeNoString') or event.get('employeeNo') or '').strip()
     device_id = str(event.get('_device_id') or event.get('device_id') or '').strip()
     unconfirmed = resolution.get('unconfirmed', set())
-    return (device_id, employee_no) in unconfirmed or (None, employee_no) in unconfirmed or employee_no in unconfirmed
+    conflicts = resolution.get('mapping_conflicts', set())
+    return (
+        (device_id, employee_no) in conflicts
+        or (None, employee_no) in conflicts
+        or (device_id, employee_no) in unconfirmed
+        or (None, employee_no) in unconfirmed
+        or employee_no in unconfirmed
+    )
+
+
+def _ignored_review_applies(resolution: dict, device_id: str | None, employee_no: str) -> bool:
+    """Apply scoped review before exact mapping, and legacy review as fallback.
+
+    A null-device review predates device-scoped identity ownership. It remains
+    authoritative only when no safe exact confirmed mapping exists for the
+    device being processed.
+    """
+    normalized_device_id = str(device_id or '').strip() or None
+    ignored = resolution.get('ignored', set())
+    exact_key = (normalized_device_id, employee_no)
+    if normalized_device_id is not None and exact_key in ignored:
+        return True
+
+    confirmed = resolution.get('confirmed', {})
+    conflicts = resolution.get('mapping_conflicts', set())
+    if (
+        normalized_device_id is not None
+        and exact_key not in conflicts
+        and confirmed.get(exact_key)
+    ):
+        return False
+
+    return (None, employee_no) in ignored or employee_no in ignored
 
 
 def biometric_identity_is_ignored(resolution: dict, event: dict) -> bool:
     employee_no = str(event.get('employeeNoString') or event.get('employeeNo') or '').strip()
-    device_id = str(event.get('_device_id') or event.get('device_id') or '').strip()
-    ignored = resolution.get('ignored', set())
-    return (device_id, employee_no) in ignored or (None, employee_no) in ignored or employee_no in ignored
+    device_id = str(event.get('_device_id') or event.get('device_id') or '').strip() or None
+    return _ignored_review_applies(resolution, device_id, employee_no)
 
 
 def biometric_mapping_is_ignored(resolution: dict, mapping: dict) -> bool:
     employee_no = str(mapping.get('device_employee_no') or '').strip()
     device_id = str(mapping.get('device_id') or '').strip() or None
-    ignored = resolution.get('ignored', set())
-    return (device_id, employee_no) in ignored or (None, employee_no) in ignored or employee_no in ignored
+    return _ignored_review_applies(resolution, device_id, employee_no)
 
 
 def worker_uses_legacy_chauffeur_window(worker: dict, resolution: dict) -> bool:
@@ -1107,8 +1371,9 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
         )
         if existing_status in {'present', 'late'} and existing.get('check_in') and existing.get('check_out'):
             # A partial/replayed read cannot replace the established biometric
-            # arrival or downgrade a completed day. Legacy late rows normalize
-            # to the simple completed-day status when safely processed again.
+            # arrival with a later value or downgrade a completed day. A safely
+            # resolved earlier arrival may still correct the check-in. Legacy
+            # late rows normalize to the simple completed-day status.
             status = 'present'
             check_in = preferred_check_in
             check_out = preferred_check_out
@@ -1368,7 +1633,6 @@ def main() -> int:
         'counts': dict(counters),
         'write_preflight': planned_writes,
         'write_results': dict(write_results) if write_results is not None else None,
-        'auto_reactivation': dict(reactivation_results or {}) if args.apply else None,
         'proposals': plans,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
