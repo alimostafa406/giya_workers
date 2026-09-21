@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
+import { kinshasaClock } from '../utils/attendanceOperationalGate.js'
 
 // The Agent processes attendance every five minutes.  Two intervals plus a
 // one-minute tolerance distinguish a healthy heartbeat from delayed work.
@@ -24,6 +25,26 @@ export const getAttendanceAgentDeviceStatusesRequest = async (agentId) => {
     .order('device_id')
   if (error) throw error
   return data || []
+}
+
+// This is read-only operational evidence written by the agent's final morning
+// verification.  Keep the diagnostic query separate from the heartbeat: an
+// agent can be online while its morning verification is incomplete.
+export const getMorningVerificationStatusRequest = async (workDate = kinshasaClock().date) => {
+  const { data, error } = await getSupabaseClient()
+    .from('attendance_verification_run')
+    .select('id,work_date,status,started_at,completed_at,created_at,updated_at,target_worker_count,workers_expected_count,verified_worker_count,recovered_worker_count,unresolved_worker_count,workers_verified_no_event_count,workers_with_checkin_count,unknown_biometric_status_count,device_failure_summary')
+    .eq('work_date', workDate)
+    .eq('verification_type', 'morning')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  const attempts = data || []
+  return {
+    workDate,
+    latestAttempt: attempts[0] || null,
+    lastSuccessfulAttempt: attempts.find((attempt) => attempt.status === 'complete') || null,
+  }
 }
 
 export const isAttendanceAgentOnline = (status, maxAgeMs = 3 * 60 * 1000) => {
