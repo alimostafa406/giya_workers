@@ -56,3 +56,15 @@ test('weekly payroll renders one selectable team summary and no legacy team tabl
   assert.match(summary, /values\(row\.byCurrency, 'total', true\)/)
   assert.match(summary, /values\(summary\.totals\.byCurrency, 'total'\)/)
 })
+
+test('all-teams summary hides transport, holiday, and adjustments without changing its final total', () => {
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  const summary = operations.match(/const allTeamsHeaders = \[(.*?)\]/)?.[1] || ''
+  const rows = operations.match(/const allTeamsRows = .*?\n/)?.[0] || ''
+  const totals = operations.match(/const allTeamsTotals = .*?\n/)?.[0] || ''
+  assert.doesNotMatch(summary, /payroll\.transport|payroll\.holidaySunday|payroll\.adjustments/)
+  assert.doesNotMatch(rows, /transportAmount|holidayAmount|bonusAmount|deductionAmount|advanceAmount|manualAdjustmentAmount/)
+  assert.doesNotMatch(totals, /transportAmount|holidayAmount|bonusAmount|deductionAmount|advanceAmount|manualAdjustmentAmount/)
+  assert.match(rows, /group\.totals\.finalAmount/)
+  assert.match(totals, /totals\.finalAmount/)
+})
