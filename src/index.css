@@ -237,6 +237,18 @@ textarea {
   @apply rounded-lg bg-slate-50 py-8 text-center text-sm text-(--muted);
 }
 
+.daily-report-print-root { @apply rounded-2xl border border-(--border) bg-white p-5; }
+.daily-report-header { @apply border-b-2 border-slate-800 pb-4 text-center; }
+.daily-report-header h1 { @apply mt-1 text-2xl font-extrabold; }
+.daily-report-header p { @apply mt-1 text-sm text-(--muted); }
+.daily-report-table-wrap { @apply mt-5 w-full overflow-x-auto; }
+.daily-report-table { @apply w-full min-w-[820px] border-collapse text-sm; }
+.daily-report-table th, .daily-report-table td { @apply border border-slate-300 px-2 py-2 text-center align-middle; }
+.daily-report-table th { @apply bg-slate-100 text-xs font-extrabold; }
+.daily-report-table td:nth-child(2) { @apply text-start; }
+.daily-report-worker { @apply font-extrabold; }
+.daily-report-empty { @apply py-10 text-center text-sm text-(--muted); }
+
 @media print {
   body {
     background: white !important;
@@ -286,6 +298,14 @@ textarea {
   .absence-today-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .daily-report-screen-only { display: none !important; }
+  .daily-report-print-root, .daily-report-print-root * { visibility: visible; }
+  .daily-report-print-root { position: absolute; inset: 0; width: 100%; border: 0; border-radius: 0; padding: 0; box-shadow: none; color: #111827; }
+  .daily-report-table { min-width: 0; font-size: 9pt; }
+  .daily-report-table thead { display: table-header-group; }
+  .daily-report-table tr { break-inside: avoid; }
+  .daily-report-table th, .daily-report-table td { padding: 2mm; }
 }
 
 .compensation-review-print-root {

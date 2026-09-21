@@ -17,6 +17,7 @@ import Dashboard from '../pages/Dashboard'
 import Login from '../pages/Login'
 import MissingAttendance from '../pages/MissingAttendance'
 import WeeklyAttendanceReport from '../pages/WeeklyAttendanceReport'
+import DailyOperationalReports from '../pages/DailyOperationalReports'
 import Teams from '../pages/Teams'
 import Supervisors from '../pages/Supervisors'
 import Workers from '../pages/Workers'
@@ -127,6 +128,8 @@ function AppRouter() {
             <Route path="/biometric-mapping" element={<BiometricMapping />} />
             <Route path="/missing-attendance" element={<MissingAttendance />} />
             <Route path="/reports/weekly-attendance" element={<WeeklyAttendanceReport />} />
+            <Route path="/reports/daily-attendance-exceptions" element={<DailyOperationalReports type="exceptions" />} />
+            <Route path="/reports/daily-overtime" element={<DailyOperationalReports type="overtime" />} />
             <Route path="/advanced-settings" element={<AdvancedSettings />} />
             <Route path="/payroll" element={<Payroll />} />
             <Route path="/payroll/publication" element={<PayrollPublication />} />

@@ -407,3 +407,10 @@ Object.assign(translations.fr.reports, {
   unmatchedIdentities: 'Identités biométriques non liées',
   reviewErrors: 'Erreurs',
 })
+
+Object.assign(translations.ar.navigation, { dailyExceptions: 'تقرير استثناءات الحضور اليومية', dailyOvertime: 'تقرير الوقت الإضافي اليومي' })
+Object.assign(translations.en.navigation, { dailyExceptions: 'Daily Attendance Exceptions', dailyOvertime: 'Daily Overtime Report' })
+Object.assign(translations.fr.navigation, { dailyExceptions: 'Anomalies quotidiennes de présence', dailyOvertime: 'Rapport quotidien des heures supplémentaires' })
+Object.assign(translations.ar.reports, { dailyExceptionsTitle: 'تقرير استثناءات الحضور اليومية', dailyOvertimeTitle: 'تقرير الوقت الإضافي اليومي', dailyReportDescription: 'تقرير تشغيلي للقراءة والطباعة فقط.', overtimeHours: 'الساعات الإضافية' })
+Object.assign(translations.en.reports, { dailyExceptionsTitle: 'Daily Attendance Exceptions', dailyOvertimeTitle: 'Daily Overtime Report', dailyReportDescription: 'Read-only operational print report.', overtimeHours: 'Overtime Hours' })
+Object.assign(translations.fr.reports, { dailyExceptionsTitle: 'Rapport quotidien des anomalies de présence', dailyOvertimeTitle: 'Rapport quotidien des heures supplémentaires', dailyReportDescription: 'Rapport opérationnel en lecture seule.', overtimeHours: 'Heures supplémentaires' })
