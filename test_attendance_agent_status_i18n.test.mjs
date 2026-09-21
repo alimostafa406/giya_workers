@@ -12,6 +12,12 @@ test('known morning-verification reasons resolve through translation keys in eve
   }
 })
 
+test('unknown biometric participation describes the worker participation state in every language', () => {
+  assert.equal(translations.ar.agentStatus.reasons.unknown_biometric_participation, 'حالة مشاركة العامل في نظام البصمة غير محددة.')
+  assert.equal(translations.en.agentStatus.reasons.unknown_biometric_participation, "The worker's biometric participation status is not defined.")
+  assert.equal(translations.fr.agentStatus.reasons.unknown_biometric_participation, 'Le statut de participation biométrique du travailleur n’est pas défini.')
+})
+
 test('agent controls and agent state labels are translated in Arabic, English, and French', () => {
   for (const language of ['ar', 'en', 'fr']) {
     const labels = translations[language].agentStatus
