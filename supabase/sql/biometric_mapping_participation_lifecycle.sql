@@ -20,14 +20,14 @@ begin
       'confirmed_active_mapping_trigger',
       'Active confirmed biometric mapping established enrollment',
       now(),
-      null
+      null::uuid
     )
     on conflict (worker_id) do update
       set participation_state = 'enrolled',
           decision_source = 'confirmed_active_mapping_trigger',
           decision_note = 'Active confirmed biometric mapping established enrollment',
           decided_at = now(),
-          decided_by = null
+          decided_by = null::uuid
       where public.worker_biometric_participation.participation_state is distinct from 'enrolled';
   end if;
   return new;
@@ -52,7 +52,7 @@ select distinct
   'confirmed_active_mapping_lifecycle_backfill',
   'Backfilled from an active confirmed biometric mapping',
   now(),
-  null
+  null::uuid
 from public.biometric_worker_mapping as mapping
 where mapping.is_active is true
   and mapping.mapping_review_state = 'confirmed'
@@ -61,7 +61,7 @@ on conflict (worker_id) do update
       decision_source = 'confirmed_active_mapping_lifecycle_backfill',
       decision_note = 'Backfilled from an active confirmed biometric mapping',
       decided_at = now(),
-      decided_by = null
+      decided_by = null::uuid
   where public.worker_biometric_participation.participation_state = 'unknown';
 
 commit;

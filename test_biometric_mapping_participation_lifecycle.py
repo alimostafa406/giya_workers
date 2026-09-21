@@ -28,6 +28,7 @@ class BiometricMappingParticipationLifecycleTests(unittest.TestCase):
         self.assertIn("'confirmed_active_mapping_trigger'", sql)
         self.assertIn("participation_state = 'enrolled'", sql)
         self.assertIn('security definer', sql)
+        self.assertEqual(sql.count('null::uuid'), 4)
 
     def test_backfill_repairs_missing_or_unknown_confirmed_mapping_participation(self):
         sql = MIGRATION.read_text(encoding='utf-8')
