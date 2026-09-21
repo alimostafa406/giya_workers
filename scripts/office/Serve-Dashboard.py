@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import sys
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from hikvision_agent_control import AgentControl, AgentControlError
 
 
 def configure_logger(dist: Path) -> logging.Logger:
@@ -28,8 +37,9 @@ def configure_logger(dist: Path) -> logging.Logger:
 class DashboardServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, request_handler, logger: logging.Logger):
+    def __init__(self, address, request_handler, logger: logging.Logger, controller):
         self.logger = logger
+        self.controller = controller
         super().__init__(address, request_handler)
 
     def handle_error(self, request, client_address):
@@ -61,11 +71,74 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_json(self, status: int, payload: dict):
+        body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _is_loopback_request(self):
+        return self.client_address[0] in {'127.0.0.1', '::1'}
+
+    def _read_json(self):
+        content_type = self.headers.get('Content-Type', '').split(';', 1)[0].strip().lower()
+        if content_type != 'application/json' or self.headers.get('X-Agent-Control') != 'local-dashboard':
+            raise AgentControlError('Invalid local control request.')
+        origin = self.headers.get('Origin')
+        if origin and urlparse(origin).hostname not in {'127.0.0.1', 'localhost', '::1'}:
+            raise AgentControlError('Request origin is not allowed.')
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except ValueError as error:
+            raise AgentControlError('Invalid request length.') from error
+        if length < 0 or length > 16_384:
+            raise AgentControlError('Request length is not allowed.')
+        try:
+            value = json.loads(self.rfile.read(length) or b'{}')
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise AgentControlError('Invalid request data.') from error
+        if not isinstance(value, dict):
+            raise AgentControlError('Invalid request data.')
+        return value
+
+    def _handle_api_get(self, requested_path: str):
+        if requested_path != '/api/agent-control/status':
+            return False
+        if not self._is_loopback_request():
+            self._send_json(403, {'error': 'Local access only.'})
+            return True
+        self._send_json(200, self.server.controller.status())
+        return True
+
+    def do_POST(self):
+        try:
+            if not self._is_loopback_request():
+                self._send_json(403, {'error': 'Local access only.'})
+                return
+            if urlparse(self.path).path != '/api/agent-control/action':
+                self._send_json(404, {'error': 'Not found.'})
+                return
+            result = self.server.controller.control_agent(str(self._read_json().get('action') or ''))
+            self._send_json(200, result)
+        except AgentControlError as error:
+            self._send_json(400, {'error': str(error)})
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception:
+            self.dashboard_logger.exception('Agent control request failed: path=%s', self.path)
+            self._send_json(500, {'error': 'Unable to complete the local action.'})
+
     def do_GET(self):
         try:
             requested_path = urlparse(self.path).path
             if requested_path == '/__health':
                 self._send_health()
+                return
+            if self._handle_api_get(requested_path):
                 return
             candidate = Path(self.translate_path(requested_path))
             relative = requested_path.lstrip('/')
@@ -91,7 +164,7 @@ def create_server(dist: Path, host: str = '127.0.0.1', port: int = 4173) -> Dash
         raise RuntimeError(f'Dashboard build is missing: {dist / "index.html"}')
     logger = configure_logger(dist)
     handler = partial(DashboardHandler, directory=str(dist), logger=logger)
-    server = DashboardServer((host, port), handler, logger)
+    server = DashboardServer((host, port), handler, logger, AgentControl())
     logger.info('Dashboard server started: http://%s:%s dist=%s', host, server.server_port, dist)
     return server
 
