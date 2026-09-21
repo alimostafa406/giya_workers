@@ -11,6 +11,7 @@ import logging
 import os
 import socket
 import sys
+import threading
 import time as time_module
 from datetime import date as date_type, time, timedelta
 from logging.handlers import RotatingFileHandler
@@ -44,6 +45,35 @@ from hikvision_attendance_verification import (
 
 
 TEST_ONLY_DATE = date_type(2026, 8, 10)
+FINAL_MORNING_VERIFICATION_INCOMPLETE_MESSAGE = 'Final morning verification is incomplete.'
+
+
+def run_final_morning_verification_with_heartbeats(agent, heartbeat_interval: int) -> tuple[bool, str | None]:
+    """Keep liveness current while the bounded final verification performs reads.
+
+    Attendance work remains serialized in the scheduler and retains the existing
+    per-device lock. This companion only publishes an already-known heartbeat
+    without probing devices, so it cannot alter attendance evidence or rules.
+    """
+    stop = threading.Event()
+    interval = max(1, min(int(heartbeat_interval), 60))
+
+    def publish_liveness() -> None:
+        while not stop.wait(interval):
+            try:
+                agent.heartbeat(probe_devices=False)
+            except Exception as error:
+                agent.logger.warning('Attendance Agent verification heartbeat failed: %s', error)
+
+    heartbeat_thread = threading.Thread(
+        target=publish_liveness, name='attendance-verification-heartbeat', daemon=True,
+    )
+    heartbeat_thread.start()
+    try:
+        return agent.run_final_morning_verification()
+    finally:
+        stop.set()
+        heartbeat_thread.join(timeout=interval + 1)
 
 
 def previous_workday(today: date_type) -> date_type:
@@ -484,6 +514,11 @@ def run_agent_loop(
         verification_due = hasattr(agent, 'run_final_morning_verification') and clock.time() >= verification_start and now - last_verification >= verification_interval
         schedule = workday_schedule(clock.date())
         checkout_due = bool(hasattr(agent, 'run_checkout_verification') and schedule and clock.time() >= schedule['checkout_start'] and now - last_checkout_verification >= checkout_verification_interval)
+        # A retry starts as a durable `running` verification. Do not leave the
+        # prior generic incomplete result visible as though this active retry
+        # had already failed.
+        if verification_due and agent.last_error == FINAL_MORNING_VERIFICATION_INCOMPLETE_MESSAGE:
+            agent.last_error = None
         try:
             # Publish liveness before potentially slow device work. Hikvision
             # requests are bounded, so a failed device cannot permanently stop
@@ -530,8 +565,10 @@ def run_agent_loop(
 
         if verification_due:
             try:
-                verification_ok, verification_error = agent.run_final_morning_verification()
-                last_verification = now
+                verification_ok, verification_error = run_final_morning_verification_with_heartbeats(
+                    agent, heartbeat_interval,
+                )
+                last_verification = time_module.monotonic()
                 if not verification_ok:
                     agent.last_error = verification_error
             except Exception as error:

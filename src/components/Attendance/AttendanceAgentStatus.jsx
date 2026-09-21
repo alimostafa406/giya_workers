@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getAttendanceAgentDeviceStatusesRequest, getAttendanceAgentStatusRequest, getMorningVerificationStatusRequest, isAttendanceAgentOnline, isAttendanceProcessingRecent } from '../../api/attendanceAgentApi'
+import { attendanceAgentHealth } from '../../utils/attendanceAgentHealth'
 import { morningVerificationDiagnostics } from '../../utils/morningVerificationDiagnostics'
 
 const formatDateTime = (value) => {
@@ -56,13 +57,20 @@ function AttendanceAgentStatus() {
   const online = isAttendanceAgentOnline(status)
   const processingRecent = isAttendanceProcessingRecent(status)
   const verificationDetails = morningVerificationDiagnostics({ verification, devices, status })
+  const agentHealth = attendanceAgentHealth({ status, verification })
+  const visibleLastError = agentHealth.verificationInProgress && status?.last_error === 'Final morning verification is incomplete.'
+    ? null
+    : status?.last_error
   const systemState = !status
     ? { label: 'غير مسجل بعد', className: 'status-badge--neutral' }
-    : !online
-      ? { label: 'وكيل الحضور غير متصل / يحتاج انتباه', className: 'status-badge--warning' }
-      : processingRecent
-        ? { label: 'يعمل بشكل طبيعي', className: 'status-badge--success' }
-        : { label: 'النظام متصل، لكن معالجة الحضور متأخرة', className: 'status-badge--warning' }
+    : ({
+      offline: { label: 'وكيل الحضور غير متصل / يحتاج انتباه', className: 'status-badge--warning' },
+      stale: { label: 'الوكيل متصل، لكن معالجة الحضور متأخرة', className: 'status-badge--warning' },
+      busy: { label: 'الوكيل متصل — التحقق الصباحي قيد التنفيذ', className: 'status-badge--neutral' },
+      warning: { label: 'الوكيل متصل، لكن التحقق الصباحي عالق', className: 'status-badge--warning' },
+      error: { label: 'الوكيل متصل، لكن توجد مشكلة تحتاج انتباه', className: 'status-badge--warning' },
+      healthy: { label: 'يعمل بشكل طبيعي', className: 'status-badge--success' },
+    }[agentHealth.state])
 
   return <div className="surface-card mb-5 flex flex-wrap items-center justify-between gap-4 p-4">
     <div>
@@ -79,19 +87,22 @@ function AttendanceAgentStatus() {
       {status ? <div className="w-full grid gap-2 border-t border-slate-100 pt-3 text-xs text-(--muted) sm:grid-cols-2">
       <span>آخر معالجة للحضور: {formatDateTime(status.last_attendance_sync_at)}</span>
       <span>آخر اتصال بالنظام: {formatDateTime(status.last_seen_at)}</span>
-      {status.last_error ? <span className="sm:col-span-2 text-amber-700">آخر خطأ: {status.last_error}</span> : null}
+      {visibleLastError ? <span className="sm:col-span-2 text-amber-700">آخر خطأ: {visibleLastError}</span> : null}
     </div> : error ? <p className="w-full text-xs text-amber-700">تعذر تحميل حالة التحقق: {errorMessage || 'خطأ في قاعدة البيانات أو RPC.'}</p> : null}
     {verification ? <div className="w-full border-t border-slate-100 pt-3 text-xs text-(--muted)">
       <div className="flex flex-wrap justify-between gap-x-5 gap-y-1">
         <span>آخر محاولة للتحقق الصباحي: <span dir="ltr">{formatDateTime(verificationDetails.latestAttemptAt)}</span></span>
         <span>آخر تحقق صباحي ناجح: <span dir="ltr">{formatDateTime(verificationDetails.lastSuccessfulAt)}</span></span>
       </div>
-      {verificationDetails.isIncomplete ? <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
+      {agentHealth.verificationInProgress ? <div className={`mt-2 rounded-md border p-2 ${agentHealth.verificationStuck ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-sky-200 bg-sky-50 text-sky-900'}`}>
+        <strong>التحقق الصباحي النهائي قيد التنفيذ.</strong>
+        {agentHealth.verificationStuck ? <p className="mt-1">تنبيه: استمرت المحاولة أكثر من 10 دقائق؛ تحقق من قراءة الأجهزة وسجل الوكيل.</p> : <p className="mt-1">هذه حالة معلوماتية؛ يستمر الوكيل في نشر نبض الاتصال أثناء التحقق.</p>}
+      </div> : verificationDetails.isIncomplete ? <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
         <strong>تنبيه: التحقق الصباحي النهائي لم يكتمل.</strong>
         <ul className="mt-1 list-inside list-disc space-y-0.5">
           {verificationDetails.reasons.map((reason) => <li key={reason}>السبب: {reason}</li>)}
         </ul>
-      </div> : <p className="mt-2 text-emerald-700">حالة التحقق الصباحي النهائي: مكتمل.</p>}
+      </div> : verificationDetails.isComplete ? <p className="mt-2 text-emerald-700">حالة التحقق الصباحي النهائي: مكتمل.</p> : <p className="mt-2">حالة التحقق الصباحي النهائي: لم يحن موعده بعد.</p>}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
         <span>نبض الوكيل: {online ? 'سليم' : 'متأخر'}</span>
         <span>معالجة الحضور: {processingRecent ? 'حديثة' : 'متأخرة'}</span>

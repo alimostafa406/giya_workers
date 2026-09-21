@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { attendanceAgentHealth } from './src/utils/attendanceAgentHealth.js'
 import { morningVerificationDiagnostics } from './src/utils/morningVerificationDiagnostics.js'
 
 const afterVerificationStart = new Date('2026-09-21T09:30:00+01:00')
@@ -82,4 +83,49 @@ test('does not warn before the final morning verification schedule and recognize
   assert.equal(beforeSchedule.isIncomplete, false)
   assert.equal(complete.isIncomplete, false)
   assert.equal(complete.lastSuccessfulAt, '2026-09-21T09:18:00+01:00')
+})
+
+test('an in-progress verification with a fresh heartbeat is busy, online, and not an error', () => {
+  const now = Date.parse('2026-09-21T10:30:00+01:00')
+  const health = attendanceAgentHealth({
+    status: {
+      last_seen_at: '2026-09-21T10:29:30+01:00',
+      last_attendance_sync_at: '2026-09-21T10:15:00+01:00',
+      last_error: 'Final morning verification is incomplete.',
+    },
+    verification: { latestAttempt: { status: 'running', started_at: '2026-09-21T10:26:00+01:00' } },
+    now,
+  })
+
+  assert.deepEqual(health, {
+    state: 'busy', online: true, processingRecent: false, verificationInProgress: true, verificationStuck: false,
+  })
+})
+
+test('a real completed verification failure is an error while an old heartbeat is offline', () => {
+  const now = Date.parse('2026-09-21T10:30:00+01:00')
+  const failed = attendanceAgentHealth({
+    status: { last_seen_at: '2026-09-21T10:29:30+01:00', last_attendance_sync_at: '2026-09-21T10:29:00+01:00' },
+    verification: { latestAttempt: { status: 'failed', started_at: '2026-09-21T10:20:00+01:00' } },
+    now,
+  })
+  const offline = attendanceAgentHealth({
+    status: { last_seen_at: '2026-09-21T10:26:59+01:00', last_attendance_sync_at: '2026-09-21T10:29:00+01:00' },
+    verification: { latestAttempt: { status: 'complete' } },
+    now,
+  })
+
+  assert.equal(failed.state, 'error')
+  assert.equal(offline.state, 'offline')
+})
+
+test('an old running verification is clearly identified as stuck', () => {
+  const health = attendanceAgentHealth({
+    status: { last_seen_at: '2026-09-21T10:30:00+01:00', last_attendance_sync_at: '2026-09-21T10:29:00+01:00' },
+    verification: { latestAttempt: { status: 'running', started_at: '2026-09-21T10:19:59+01:00' } },
+    now: Date.parse('2026-09-21T10:30:00+01:00'),
+  })
+
+  assert.equal(health.state, 'warning')
+  assert.equal(health.verificationStuck, true)
 })

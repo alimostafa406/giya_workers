@@ -41,6 +41,7 @@ export const morningVerificationDiagnostics = ({ verification, devices = [], sta
   const lastSuccessfulAttempt = verification?.lastSuccessfulAttempt || null
   const runStatus = latestAttempt?.status || 'not_started'
   const isComplete = runStatus === 'complete'
+  const isInProgress = runStatus === 'running'
   const reasons = isComplete
     ? []
     : latestAttempt
@@ -49,7 +50,7 @@ export const morningVerificationDiagnostics = ({ verification, devices = [], sta
         ? ['لم تُنفذ خطوة التحقق الصباحي النهائي بعد اليوم.']
         : ['لم يحن موعد التحقق الصباحي النهائي بعد.']
 
-  if (!isComplete && latestAttempt?.status === 'running') reasons.unshift('التحقق الصباحي النهائي قيد التنفيذ.')
+  if (!isComplete && isInProgress) reasons.unshift('التحقق الصباحي النهائي قيد التنفيذ.')
   if (!isComplete && latestAttempt?.status === 'failed' && !reasons.length) reasons.push('فشلت خطوة التحقق الصباحي النهائي.')
   if (!isComplete && latestAttempt?.status === 'pending' && !reasons.length) reasons.push('خطوة التحقق الصباحي النهائي لم تبدأ بعد.')
 
@@ -61,7 +62,10 @@ export const morningVerificationDiagnostics = ({ verification, devices = [], sta
   }))
 
   return {
-    isIncomplete: !isComplete && (Boolean(latestAttempt) || afterScheduledStart),
+    isIncomplete: !isComplete && !isInProgress && (Boolean(latestAttempt) || afterScheduledStart),
+    isInProgress,
+    isComplete,
+    isAwaitingSchedule: !latestAttempt && !afterScheduledStart,
     runStatus,
     reasons,
     latestAttemptAt: latestAttempt?.started_at || latestAttempt?.created_at || null,

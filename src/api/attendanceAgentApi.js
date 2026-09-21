@@ -1,9 +1,7 @@
 import { getSupabaseClient } from '../lib/supabase'
 import { kinshasaClock } from '../utils/attendanceOperationalGate.js'
+export { ATTENDANCE_AGENT_OFFLINE_AFTER_MS, ATTENDANCE_PROCESSING_STALE_AFTER_MS, attendanceAgentHealth, FINAL_MORNING_VERIFICATION_STUCK_AFTER_MS, isAttendanceAgentOnline, isAttendanceProcessingRecent, isMorningVerificationStuck } from '../utils/attendanceAgentHealth.js'
 
-// The Agent processes attendance every five minutes.  Two intervals plus a
-// one-minute tolerance distinguish a healthy heartbeat from delayed work.
-export const ATTENDANCE_PROCESSING_STALE_AFTER_MS = (2 * 300 + 60) * 1000
 
 export const getAttendanceAgentStatusRequest = async () => {
   const { data, error } = await getSupabaseClient()
@@ -26,7 +24,6 @@ export const getAttendanceAgentDeviceStatusesRequest = async (agentId) => {
   if (error) throw error
   return data || []
 }
-
 // This is read-only operational evidence written by the agent's final morning
 // verification.  Keep the diagnostic query separate from the heartbeat: an
 // agent can be online while its morning verification is incomplete.
@@ -45,16 +42,4 @@ export const getMorningVerificationStatusRequest = async (workDate = kinshasaClo
     latestAttempt: attempts[0] || null,
     lastSuccessfulAttempt: attempts.find((attempt) => attempt.status === 'complete') || null,
   }
-}
-
-export const isAttendanceAgentOnline = (status, maxAgeMs = 3 * 60 * 1000) => {
-  if (!status?.last_seen_at) return false
-  const heartbeat = new Date(status.last_seen_at).getTime()
-  return Number.isFinite(heartbeat) && Date.now() - heartbeat <= maxAgeMs
-}
-
-export const isAttendanceProcessingRecent = (status, maxAgeMs = ATTENDANCE_PROCESSING_STALE_AFTER_MS) => {
-  if (!status?.last_attendance_sync_at) return false
-  const processedAt = new Date(status.last_attendance_sync_at).getTime()
-  return Number.isFinite(processedAt) && Date.now() - processedAt <= maxAgeMs
 }

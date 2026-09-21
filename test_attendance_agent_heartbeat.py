@@ -1,13 +1,15 @@
 """Focused non-writing tests for agent heartbeat validity on skipped attendance."""
 
 import logging
+import threading
+import time
 import unittest
 from types import SimpleNamespace
 from collections import Counter
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
-from hikvision_attendance_agent import AttendanceAgent, completion_plans, positive_evidence_plans, previous_workday, run_agent_loop, run_startup_recovery
+from hikvision_attendance_agent import AttendanceAgent, completion_plans, positive_evidence_plans, previous_workday, run_agent_loop, run_final_morning_verification_with_heartbeats, run_startup_recovery
 from hikvision_device_lock import HikvisionDeviceLockTimeout
 from hikvision_attendance_sync import biometric_payload, is_manual_protected, payload_changed
 
@@ -75,6 +77,34 @@ class AttendanceAgentHeartbeatTests(unittest.TestCase):
             agent.client.payloads[-1]['last_attendance_sync_at'],
             '2026-08-11T10:14:26+00:00',
         )
+
+    def test_final_verification_keeps_a_liveness_heartbeat_while_it_is_running(self):
+        started = threading.Event()
+        release = threading.Event()
+        heartbeat_calls = []
+
+        def verify():
+            started.set()
+            release.wait(timeout=3)
+            return True, None
+
+        agent = SimpleNamespace(
+            logger=logging.getLogger('attendance-agent-verification-heartbeat-test'),
+            run_final_morning_verification=verify,
+            heartbeat=lambda **kwargs: heartbeat_calls.append(kwargs),
+        )
+        thread = threading.Thread(
+            target=run_final_morning_verification_with_heartbeats,
+            args=(agent, 1),
+        )
+        thread.start()
+        self.assertTrue(started.wait(timeout=1))
+        time.sleep(1.1)
+        release.set()
+        thread.join(timeout=2)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(heartbeat_calls, [{'probe_devices': False}])
 
     def test_successful_attendance_apply_updates_processing_timestamp(self):
         agent = self.make_agent(dry_run=False)
