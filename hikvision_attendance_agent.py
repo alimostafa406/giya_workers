@@ -48,7 +48,13 @@ TEST_ONLY_DATE = date_type(2026, 8, 10)
 FINAL_MORNING_VERIFICATION_INCOMPLETE_MESSAGE = 'Final morning verification is incomplete.'
 
 
-def run_final_morning_verification_with_heartbeats(agent, heartbeat_interval: int) -> tuple[bool, str | None]:
+def run_final_morning_verification_with_heartbeats(
+    agent,
+    heartbeat_interval: int,
+    *,
+    target_date: date_type | None = None,
+    allow_run: bool = True,
+) -> tuple[bool, str | None]:
     """Keep liveness current while the bounded final verification performs reads.
 
     Attendance work remains serialized in the scheduler and retains the existing
@@ -70,7 +76,9 @@ def run_final_morning_verification_with_heartbeats(agent, heartbeat_interval: in
     )
     heartbeat_thread.start()
     try:
-        return agent.run_final_morning_verification()
+        if target_date is None and allow_run:
+            return agent.run_final_morning_verification()
+        return agent.run_final_morning_verification(target_date=target_date, allow_run=allow_run)
     finally:
         stop.set()
         heartbeat_thread.join(timeout=interval + 1)
@@ -320,9 +328,14 @@ class AttendanceAgent:
             self.logger.error('Attendance planning cycle failed: %s', message)
             return False, message
 
-    def run_final_morning_verification(self) -> tuple[bool, str | None]:
-        """Close today's morning evidence gap without trusting a broad-read negative."""
-        target_date = local_now().date()
+    def run_final_morning_verification(
+        self,
+        target_date: date_type | None = None,
+        *,
+        allow_run: bool = True,
+    ) -> tuple[bool, str | None]:
+        """Close a workday's morning evidence gap without trusting a broad-read negative."""
+        target_date = target_date or local_now().date()
         if workday_schedule(target_date) is None or target_date == TEST_ONLY_DATE:
             return True, None
         diagnostics = RequestDiagnostics(False)
@@ -364,6 +377,8 @@ class AttendanceAgent:
                 message = 'Final morning verification migration is required; absence remains blocked.'
                 self.logger.error(message)
                 return False, message
+            if not allow_run:
+                return False, 'Final morning verification is incomplete.'
             result = run_targeted_verification(
                 client=self.client, target_date=target_date, devices=configured_devices(),
                 diagnostics=diagnostics, agent_id=self.agent_id, mode='morning',
@@ -407,8 +422,8 @@ class AttendanceAgent:
             self.logger.error('Checkout verification failed: %s', message)
             return False, message
 
-    def complete_previous_workday(self) -> tuple[bool, str | None]:
-        target_date = previous_workday(local_now().date())
+    def complete_previous_workday(self, target_date: date_type | None = None) -> tuple[bool, str | None]:
+        target_date = target_date or previous_workday(local_now().date())
         if target_date == TEST_ONLY_DATE:
             self.logger.warning('Previous workday completion skipped: 2026-08-10 is test-only and is never imported automatically.')
             return True, None
@@ -480,6 +495,39 @@ class AttendanceAgent:
             self.last_error = None
 
 
+def finalize_previous_workday_before_current_collection(
+    agent,
+    heartbeat_interval: int,
+) -> tuple[bool, str | None]:
+    """Finish yesterday before admitting new-day collection after agent startup.
+
+    A completed, compatible verification is authoritative and avoids a second
+    device read. Otherwise the established previous-workday reconciliation runs
+    first, followed by the same final-verification path used for attendance.
+    """
+    target_date = previous_workday(local_now().date())
+    agent.logger.info('Startup catch-up: finalizing previous workday %s', target_date.isoformat())
+
+    complete, _ = run_final_morning_verification_with_heartbeats(
+        agent, heartbeat_interval, target_date=target_date, allow_run=False,
+    )
+    if complete:
+        agent.logger.info('Previous workday complete. Starting current-day attendance collection for %s', local_now().date().isoformat())
+        return True, None
+
+    recovery_ok, recovery_error = agent.complete_previous_workday(target_date)
+    if not recovery_ok:
+        return False, recovery_error
+
+    verification_ok, verification_error = run_final_morning_verification_with_heartbeats(
+        agent, heartbeat_interval, target_date=target_date,
+    )
+    if verification_ok:
+        agent.logger.info('Previous workday complete. Starting current-day attendance collection for %s', local_now().date().isoformat())
+        return True, None
+    return False, verification_error
+
+
 def run_agent_loop(
     agent: AttendanceAgent,
     *,
@@ -489,6 +537,8 @@ def run_agent_loop(
     reconciliation_interval: int = 1800,
     verification_interval: int = 300,
     checkout_verification_interval: int = 900,
+    startup_previous_workday_complete: bool = True,
+    startup_retry_interval: int = 60,
     once: bool = False,
     max_iterations: int | None = None,
 ) -> None:
@@ -500,6 +550,8 @@ def run_agent_loop(
     last_reconciliation_error = None
     last_verification = 0.0
     last_checkout_verification = 0.0
+    last_startup_catchup = 0.0
+    previous_workday_complete = startup_previous_workday_complete
     iterations = 0
     while True:
         now = time_module.monotonic()
@@ -531,6 +583,29 @@ def run_agent_loop(
         except Exception as error:
             agent.last_error = f'{type(error).__name__}: {error}'
             agent.logger.exception('Attendance Agent heartbeat failed; continuing: %s', agent.last_error)
+
+        if not previous_workday_complete:
+            if now - last_startup_catchup >= startup_retry_interval:
+                previous_workday_complete, startup_error = finalize_previous_workday_before_current_collection(
+                    agent, heartbeat_interval,
+                )
+                last_startup_catchup = now
+                if previous_workday_complete:
+                    agent.last_error = None
+                else:
+                    agent.last_error = startup_error or 'Previous workday finalization is incomplete.'
+                    agent.logger.warning(
+                        'Startup catch-up remains incomplete; current-day attendance collection is paused: %s',
+                        agent.last_error,
+                    )
+            if not previous_workday_complete:
+                iterations += 1
+                if once or (max_iterations is not None and iterations >= max_iterations):
+                    return
+                next_heartbeat = max(0.0, heartbeat_interval - (time_module.monotonic() - last_heartbeat))
+                next_catchup = max(0.0, startup_retry_interval - (time_module.monotonic() - last_startup_catchup))
+                time_module.sleep(max(1.0, min(60.0, next_heartbeat, next_catchup)))
+                continue
 
         try:
             if users_due or attendance_due:
@@ -603,8 +678,8 @@ def run_agent_loop(
         time_module.sleep(max(1.0, min(60.0, next_users, next_attendance, next_heartbeat, next_reconciliation, next_verification, next_checkout)))
 
 
-def run_startup_recovery(agent: AttendanceAgent) -> None:
-    """Publish liveness before attempting bounded previous-workday recovery."""
+def run_startup_recovery(agent: AttendanceAgent, heartbeat_interval: int) -> bool:
+    """Publish liveness, then gate current-day collection on prior-day completion."""
     try:
         agent.heartbeat(probe_devices=False)
     except KeyboardInterrupt:
@@ -614,14 +689,18 @@ def run_startup_recovery(agent: AttendanceAgent) -> None:
         agent.logger.exception('Initial Attendance Agent heartbeat failed; continuing: %s', agent.last_error)
 
     try:
-        recovery_ok, recovery_error = agent.complete_previous_workday()
+        recovery_ok, recovery_error = finalize_previous_workday_before_current_collection(
+            agent, heartbeat_interval,
+        )
         if not recovery_ok:
-            agent.last_error = recovery_error
+            agent.last_error = recovery_error or 'Previous workday finalization is incomplete.'
+        return recovery_ok
     except KeyboardInterrupt:
         raise
     except Exception as error:
         agent.last_error = f'{type(error).__name__}: {error}'
         agent.logger.exception('Previous-workday startup recovery failed; continuing: %s', agent.last_error)
+        return False
 
 
 def main() -> int:
@@ -647,7 +726,7 @@ def main() -> int:
     agent = AttendanceAgent(not attendance_writes_enabled, logger)
     logger.info('Attendance Agent started: agent_id=%s dry_run=%s attendance_interval=%ss users_interval=%ss heartbeat_interval=%ss reconciliation_interval=%ss', agent.agent_id, agent.dry_run, attendance_interval, users_interval, heartbeat_interval, reconciliation_interval)
 
-    run_startup_recovery(agent)
+    startup_previous_workday_complete = run_startup_recovery(agent, heartbeat_interval)
 
     run_agent_loop(
         agent,
@@ -657,6 +736,7 @@ def main() -> int:
         reconciliation_interval=reconciliation_interval,
         verification_interval=verification_interval,
         checkout_verification_interval=checkout_verification_interval,
+        startup_previous_workday_complete=startup_previous_workday_complete,
         once=args.once,
     )
     return 0

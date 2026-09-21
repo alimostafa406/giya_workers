@@ -9,7 +9,7 @@ from collections import Counter
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
-from hikvision_attendance_agent import AttendanceAgent, completion_plans, positive_evidence_plans, previous_workday, run_agent_loop, run_final_morning_verification_with_heartbeats, run_startup_recovery
+from hikvision_attendance_agent import AttendanceAgent, completion_plans, finalize_previous_workday_before_current_collection, positive_evidence_plans, previous_workday, run_agent_loop, run_final_morning_verification_with_heartbeats, run_startup_recovery
 from hikvision_device_lock import HikvisionDeviceLockTimeout
 from hikvision_attendance_sync import biometric_payload, is_manual_protected, payload_changed
 
@@ -252,7 +252,7 @@ class AttendanceAgentHeartbeatTests(unittest.TestCase):
 
         self.assertEqual(calls, ['heartbeat', 'cycle', 'heartbeat', 'cycle'])
 
-    def test_startup_heartbeat_precedes_previous_workday_device_recovery(self):
+    def test_startup_checks_completed_previous_workday_before_device_recovery(self):
         logger = logging.getLogger('attendance-agent-startup-order-test')
         logger.handlers = [logging.NullHandler()]
         calls = []
@@ -260,14 +260,70 @@ class AttendanceAgentHeartbeatTests(unittest.TestCase):
             last_error=None,
             logger=logger,
             heartbeat=lambda **kwargs: calls.append(('heartbeat', kwargs)),
-            complete_previous_workday=lambda: calls.append(('recovery', {})) or (False, 'office-secondary timeout'),
+            complete_previous_workday=lambda *_: calls.append(('recovery', {})) or (True, None),
+            run_final_morning_verification=lambda **kwargs: calls.append(('verification', kwargs)) or (True, None),
         )
 
-        run_startup_recovery(agent)
+        with patch('hikvision_attendance_agent.previous_workday', return_value=date(2026, 8, 15)):
+            complete = run_startup_recovery(agent, heartbeat_interval=1)
 
         self.assertEqual(calls[0], ('heartbeat', {'probe_devices': False}))
-        self.assertEqual(calls[1], ('recovery', {}))
-        self.assertEqual(agent.last_error, 'office-secondary timeout')
+        self.assertEqual(calls[1], ('verification', {'target_date': date(2026, 8, 15), 'allow_run': False}))
+        self.assertTrue(complete)
+        self.assertNotIn(('recovery', {}), calls)
+
+    def test_startup_finalizes_previous_day_before_today_collection(self):
+        logger = logging.getLogger('attendance-agent-startup-finalization-order-test')
+        logger.handlers = [logging.NullHandler()]
+        calls = []
+        agent = SimpleNamespace(
+            logger=logger,
+            complete_previous_workday=lambda target: calls.append(('recovery', target)) or (True, None),
+        )
+
+        def verify(**kwargs):
+            calls.append(('verification', kwargs))
+            return (kwargs['allow_run'], None if kwargs['allow_run'] else 'incomplete')
+
+        agent.run_final_morning_verification = verify
+        with patch('hikvision_attendance_agent.previous_workday', return_value=date(2026, 8, 15)), patch(
+            'hikvision_attendance_agent.local_now', return_value=datetime(2026, 8, 17, 8, 0, tzinfo=timezone.utc),
+        ):
+            complete, error = finalize_previous_workday_before_current_collection(agent, heartbeat_interval=1)
+
+        self.assertTrue(complete)
+        self.assertIsNone(error)
+        self.assertEqual(calls[0], ('verification', {'target_date': date(2026, 8, 15), 'allow_run': False}))
+        self.assertEqual(calls[1], ('recovery', date(2026, 8, 15)))
+        self.assertEqual(calls[2], ('verification', {'target_date': date(2026, 8, 15), 'allow_run': True}))
+
+    def test_startup_gate_retries_previous_day_before_processing_today_events(self):
+        logger = logging.getLogger('attendance-agent-startup-gate-retry-test')
+        logger.handlers = [logging.NullHandler()]
+        calls = []
+        heartbeats = []
+        agent = SimpleNamespace(
+            last_error=None,
+            logger=logger,
+            heartbeat=lambda: heartbeats.append(True),
+            run_cycle=lambda *_: calls.append('today-collection'),
+        )
+
+        with patch(
+            'hikvision_attendance_agent.finalize_previous_workday_before_current_collection',
+            side_effect=[(False, 'previous verification incomplete'), (True, None)],
+        ) as catch_up, patch('hikvision_attendance_agent.time_module.monotonic', side_effect=range(1, 40)), patch(
+            'hikvision_attendance_agent.time_module.sleep'
+        ):
+            run_agent_loop(
+                agent, attendance_interval=1, users_interval=1, heartbeat_interval=1,
+                startup_previous_workday_complete=False, startup_retry_interval=1, max_iterations=2,
+            )
+
+        self.assertEqual(catch_up.call_count, 2)
+        self.assertEqual(calls, ['today-collection'])
+        self.assertGreaterEqual(len(heartbeats), 2)
+        self.assertIsNone(agent.last_error)
 
     def test_running_scheduler_retries_previous_workday_after_transient_failure(self):
         logger = logging.getLogger('attendance-agent-reconciliation-retry-test')
