@@ -44,6 +44,35 @@ const boundedActiveNormalRows = (attendance = []) => (Array.isArray(attendance) 
 
 const workerKey = (value) => String(value || '')
 
+const clockValue = (timestamp) => {
+  const instant = new Date(timestamp)
+  if (Number.isNaN(instant.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Kinshasa', hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(instant)
+  const value = (type) => parts.find((part) => part.type === type)?.value
+  const hour = value('hour'); const minute = value('minute'); const second = value('second')
+  return hour && minute && second ? `${hour}:${minute}:${second}` : null
+}
+
+const clockSeconds = (value) => {
+  const match = String(value || '').match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/)
+  return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3] || 0) : null
+}
+
+const latestPunchesByWorker = (evidence = [], date) => {
+  const latest = new Map()
+  ;(Array.isArray(evidence) ? evidence : []).forEach((event) => {
+    if (date && String(event?.attendance_date || '') !== date) return
+    const workerId = workerKey(event?.worker_id)
+    const clock = clockValue(event?.event_timestamp)
+    if (!workerId || !clock || clockSeconds(clock) == null) return
+    const current = latest.get(workerId)
+    if (!current || clockSeconds(clock) > clockSeconds(current)) latest.set(workerId, clock)
+  })
+  return latest
+}
+
 const biometricIdsByWorker = (mappings = []) => {
   const idsByWorker = new Map()
   ;(Array.isArray(mappings) ? mappings : []).forEach((mapping) => {
@@ -117,11 +146,19 @@ const rosterAttendanceRows = ({ workers = [], attendance = [], date } = {}) => {
     })
 }
 
-export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], mappings = [], date } = {}) => {
+export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], evidence = [], mappings = [], date } = {}) => {
   const biometricIds = biometricIdsByWorker(mappings)
+  const latestPunches = latestPunchesByWorker(evidence, date)
   return rosterAttendanceRows({ workers, attendance, date })
     .filter(isAttendanceException)
-    .map((row) => reportRow(row, biometricIds))
+    .map((row) => {
+      const checkInSeconds = clockSeconds(row.check_in)
+      const latestPunch = latestPunches.get(workerKey(row.worker_id || row.worker?.id)) || null
+      return {
+        ...reportRow(row, biometricIds),
+        lastPunch: checkInSeconds != null && latestPunch && clockSeconds(latestPunch) > checkInSeconds ? latestPunch : '—',
+      }
+    })
     .sort((left, right) => left.team.localeCompare(right.team) || left.worker.localeCompare(right.worker))
 }
 

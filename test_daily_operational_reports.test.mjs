@@ -45,6 +45,38 @@ test('daily exceptions exclude canonical full-day present rows without checkout'
   assert.deepEqual(report, [])
 })
 
+test('daily exceptions display later mapped biometric evidence without changing canonical checkout', () => {
+  const augustine = worker('augustine')
+  const attendance = [row('augustine', {
+    worker: augustine,
+    status: 'half_day',
+    check_in: '09:08:30',
+    check_out: null,
+    attendance_date: '2026-09-21',
+  })]
+  const evidence = [
+    { worker_id: 'augustine', attendance_date: '2026-09-21', event_timestamp: '2026-09-21T08:08:30Z' },
+    { worker_id: 'augustine', attendance_date: '2026-09-21', event_timestamp: '2026-09-21T15:07:50Z' },
+  ]
+  const report = buildDailyAttendanceExceptions({ workers: [augustine], attendance, evidence, date: '2026-09-21' })
+
+  assert.equal(report[0].status, 'half_day')
+  assert.equal(report[0].checkOut, '—')
+  assert.equal(report[0].lastPunch, '16:07:50')
+})
+
+test('daily exceptions do not duplicate a single check-in as last punch evidence', () => {
+  const workerWithOnePunch = worker('one-punch')
+  const report = buildDailyAttendanceExceptions({
+    workers: [workerWithOnePunch],
+    attendance: [row('one-punch', { worker: workerWithOnePunch, status: 'half_day', check_in: '09:08:30', check_out: null, attendance_date: '2026-09-21' })],
+    evidence: [{ worker_id: 'one-punch', attendance_date: '2026-09-21', event_timestamp: '2026-09-21T08:08:30Z' }],
+    date: '2026-09-21',
+  })
+
+  assert.equal(report[0].lastPunch, '—')
+})
+
 test('daily exceptions left-join the eligible roster and derive absent only for missing selected-date rows', () => {
   const noRowWorker = worker('no-row')
   const halfDayWorker = worker('half-day')
@@ -99,8 +131,10 @@ test('daily exceptions page loads the selected date with pagination and derives 
   assert.match(source, /getAttendanceRequest\(\{ date: selectedDate, staff_classification: 'normal', paginate: true \}\)/)
   assert.match(source, /getWorkersRequest\(\)/)
   assert.match(source, /getBiometricMappingsRequest\(\)/)
-  assert.match(source, /buildDailyAttendanceExceptions\(\{ workers, attendance, mappings, date: selectedDate \}\)/)
+  assert.match(source, /getCurrentAttendanceEvidenceRequest\(selectedDate\)/)
+  assert.match(source, /buildDailyAttendanceExceptions\(\{ workers, attendance, evidence, mappings, date: selectedDate \}\)/)
   assert.match(source, /reports\.biometricId/)
+  assert.match(source, /reports\.lastPunch/)
   assert.match(source, /rows\.map\(/)
   assert.match(attendanceApi, /attendance_day_fraction/)
 })
