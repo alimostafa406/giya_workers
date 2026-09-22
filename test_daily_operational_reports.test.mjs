@@ -135,6 +135,7 @@ test('daily exceptions page loads the selected date with pagination and derives 
   assert.match(source, /buildDailyAttendanceExceptions\(\{ workers, attendance, evidence, mappings, date: selectedDate \}\)/)
   assert.match(source, /reports\.biometricId/)
   assert.match(source, /reports\.lastPunch/)
+  assert.match(source, /row\.checkOut === '—' \? row\.lastPunch : row\.checkOut/)
   assert.match(source, /rows\.map\(/)
   assert.match(attendanceApi, /attendance_day_fraction/)
 })
