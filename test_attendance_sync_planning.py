@@ -338,20 +338,68 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertIsNone(plans[0]['check_in'])
         self.assertIsNone(plans[0]['check_out'])
 
-    def test_chauffeur_keeps_legacy_calendar_day_window(self):
+    def test_chauffeur_any_single_valid_punch_is_present_without_fabricated_checkout(self):
+        resolution = resolution_with(None)
+        resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur-team'
+        resolution['teams'] = {'chauffeur-team': {'id': 'chauffeur-team', 'name': 'Chauffeur'}}
+        plan = plan_attendance([attendance_event('05:43:00')], resolution, TARGET_DATE)[0][0]
+        payload = biometric_payload(plan, None)
+
+        self.assertEqual(plan['check_in'], '05:43:00')
+        self.assertIsNone(plan['check_out'])
+        self.assertEqual(plan['proposed_status'], 'present')
+        self.assertTrue(plan['chauffeur_any_punch_full_day'])
+        self.assertEqual(payload['status'], 'present')
+        self.assertIsNone(payload['check_out'])
+
+    def test_chauffeur_uses_earliest_and_latest_real_punches(self):
+        resolution = resolution_with(None)
+        resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur-team'
+        resolution['teams'] = {'chauffeur-team': {'id': 'chauffeur-team', 'name': 'Chauffeur'}}
+        events = [attendance_event('05:43:00', serial=1), attendance_event('12:15:00', serial=2)]
+
+        plan = plan_attendance(events, resolution, TARGET_DATE)[0][0]
+
+        self.assertEqual(plan['check_in'], '05:43:00')
+        self.assertEqual(plan['check_out'], '12:15:00')
+        self.assertEqual(plan['proposed_status'], 'present')
+
+    def test_chauffeur_several_real_punches_preserve_earliest_and_latest(self):
         resolution = resolution_with(None)
         resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur-team'
         resolution['teams'] = {'chauffeur-team': {'id': 'chauffeur-team', 'name': 'Chauffeur'}}
         events = [
-            attendance_event('06:16:00', serial=1),
-            attendance_event('17:00:00', serial=2),
-            attendance_event('00:31:00', serial=3, event_date='2026-08-12'),
+            attendance_event('05:43:00', serial=1),
+            attendance_event('08:10:00', serial=2),
+            attendance_event('17:00:00', serial=3),
         ]
 
         plan = plan_attendance(events, resolution, TARGET_DATE)[0][0]
 
-        self.assertEqual(plan['check_in'], '06:16:00')
+        self.assertEqual(plan['check_in'], '05:43:00')
         self.assertEqual(plan['check_out'], '17:00:00')
+        self.assertEqual(plan['proposed_status'], 'present')
+
+    def test_chauffeur_manual_protected_row_remains_authoritative(self):
+        class NoWriteClient:
+            def insert_attendance(self, _payload):
+                raise AssertionError('manual Chauffeur row must not be inserted')
+
+            def update_attendance(self, _attendance_id, _payload):
+                raise AssertionError('manual Chauffeur row must not be updated')
+
+        resolution = resolution_with({
+            'id': 'chauffeur-manual', 'attendance_date': TARGET_DATE.isoformat(),
+            'status': 'absent', 'check_in': None, 'check_out': None,
+            'attendance_source': 'manual', 'manual_override': True,
+        })
+        resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur-team'
+        resolution['teams'] = {'chauffeur-team': {'id': 'chauffeur-team', 'name': 'Chauffeur'}}
+
+        plans, _ = plan_attendance([attendance_event('05:43:00')], resolution, TARGET_DATE)
+        result = apply_biometric_attendance(NoWriteClient(), plans, resolution['existing_attendance'])
+
+        self.assertEqual(result['skipped_manual_protected'], 1)
 
     def test_saturday_morning_rule_remains_full_day_without_checkout(self):
         saturday = date(2026, 8, 15)

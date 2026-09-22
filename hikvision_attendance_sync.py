@@ -1154,7 +1154,11 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             and event_timestamp.date() == target_date + timedelta(days=1)
             and event_timestamp.timetz().replace(tzinfo=None) <= time(2, 0)
         )
-        if is_early_morning_review_time(event_timestamp) and not is_previous_workday_tail:
+        if (
+            not is_chauffeur
+            and is_early_morning_review_time(event_timestamp)
+            and not is_previous_workday_tail
+        ):
             # Preserve unusual early events for review, but permit the normal
             # workday's bounded next-day tail to close its previous attendance.
             counters['early_morning_needs_review'] += 1
@@ -1225,14 +1229,29 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
         if check_in_from_existing:
             check_in = stored_check_in
             check_in_event = None
-        checkout = [] if schedule is None else [
-            item for item in parsed
-            if datetime.combine(target_date, schedule['checkout_start'], tzinfo=MONITORING_TIME_ZONE) <= item[0] <= workday_end
-            and (check_in is None or item[0] > check_in)
-        ]
+        if schedule is None:
+            checkout = []
+        elif is_chauffeur:
+            checkout = [
+                item for item in parsed
+                if workday_start <= item[0] <= workday_end
+                and (check_in is None or item[0] > check_in)
+            ]
+        else:
+            checkout = [
+                item for item in parsed
+                if datetime.combine(target_date, schedule['checkout_start'], tzinfo=MONITORING_TIME_ZONE) <= item[0] <= workday_end
+                and (check_in is None or item[0] > check_in)
+            ]
         checkout_event = checkout[-1] if checkout else None
         checkout_time = checkout_event[0] if checkout_event else None
         status, fraction = proposed_status(target_date, check_in, checkout_time)
+        chauffeur_any_punch_full_day = bool(is_chauffeur and check_in)
+        if chauffeur_any_punch_full_day:
+            # Temporary Chauffeur protection: a safely mapped real punch in
+            # the legacy calendar-day window proves attendance.  It neither
+            # invents a checkout nor changes the normal-worker schedule.
+            status, fraction = 'present', 1.0
         saturday_morning_full_day = bool(
             schedule
             and schedule['label'] == 'saturday'
@@ -1300,6 +1319,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             'proposed_status': status,
             'day_fraction': fraction,
             'saturday_morning_full_day': saturday_morning_full_day,
+            'chauffeur_any_punch_full_day': chauffeur_any_punch_full_day,
             'checkout_only': checkout_only,
             # Metadata is also populated for normal check-in/check-out audit data;
             # evening-only fields exist only for checkout-only attendance.
@@ -1405,7 +1425,11 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
     if status in {'present', 'late', 'half_day'} and check_in:
         # Normalize legacy automatic late rows without changing their real
         # timestamps: checkout means present; otherwise the day is half day.
-        status = 'present' if check_out or plan.get('saturday_morning_full_day') is True else 'half_day'
+        status = 'present' if (
+            check_out
+            or plan.get('saturday_morning_full_day') is True
+            or plan.get('chauffeur_any_punch_full_day') is True
+        ) else 'half_day'
 
     if status == 'present':
         day_fraction = 1.0
