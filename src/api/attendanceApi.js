@@ -3,7 +3,7 @@ import { isActiveWorker } from '../utils/activeWorkers'
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
 
-const attendanceFields = 'id,worker_id,attendance_date,status,check_in,check_out,note,recorded_by,created_at,updated_at'
+const attendanceFields = 'id,worker_id,attendance_date,status,check_in,check_out,attendance_day_fraction,note,recorded_by,created_at,updated_at'
 
 const isMissingManualSyncColumnError = (error) => (
   error?.code === '42703'

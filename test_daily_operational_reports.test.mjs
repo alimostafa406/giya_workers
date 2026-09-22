@@ -15,6 +15,7 @@ test('daily exceptions exclude completed present rows despite informational late
     row('absent', { status: 'absent', check_in: null, check_out: null }),
     row('late-status', { status: 'late', check_in: '09:30:00', check_out: '17:00:00' }),
     row('incomplete-present', { status: 'present', check_in: '07:08:00', check_out: null }),
+    row('canonical-full-day', { status: 'present', check_in: '17:13:11', check_out: null, attendance_day_fraction: 1 }),
     row('administration', { status: 'absent', team: { name: 'Adminstration' } }),
     row('inactive', { status: 'absent', active: false }),
   ] })
@@ -24,6 +25,24 @@ test('daily exceptions exclude completed present rows despite informational late
     ['Worker incomplete-present', 'half_day'],
     ['Worker late-status', 'late'],
   ])
+})
+
+test('daily exceptions exclude canonical full-day present rows without checkout', () => {
+  const benjamin = { ...worker('benjamin'), employee_code: '68' }
+  const report = buildDailyAttendanceExceptions({
+    workers: [benjamin],
+    attendance: [row('benjamin', {
+      worker: benjamin,
+      status: 'present',
+      check_in: '17:13:11',
+      check_out: null,
+      attendance_day_fraction: 1,
+      attendance_date: '2026-09-21',
+    })],
+    date: '2026-09-21',
+  })
+
+  assert.deepEqual(report, [])
 })
 
 test('daily exceptions left-join the eligible roster and derive absent only for missing selected-date rows', () => {
@@ -76,12 +95,14 @@ test('daily reports display only active confirmed biometric mapping IDs, never w
 
 test('daily exceptions page loads the selected date with pagination and derives its print rows from the same roster report', () => {
   const source = readFileSync('./src/pages/DailyOperationalReports.jsx', 'utf8')
+  const attendanceApi = readFileSync('./src/api/attendanceApi.js', 'utf8')
   assert.match(source, /getAttendanceRequest\(\{ date: selectedDate, staff_classification: 'normal', paginate: true \}\)/)
   assert.match(source, /getWorkersRequest\(\)/)
   assert.match(source, /getBiometricMappingsRequest\(\)/)
   assert.match(source, /buildDailyAttendanceExceptions\(\{ workers, attendance, mappings, date: selectedDate \}\)/)
   assert.match(source, /reports\.biometricId/)
   assert.match(source, /rows\.map\(/)
+  assert.match(attendanceApi, /attendance_day_fraction/)
 })
 
 test('daily overtime report reuses canonical weekday overtime and excludes zero or inactive rows', () => {

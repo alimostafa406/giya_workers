@@ -13,7 +13,12 @@ export const attendanceStatusKey = (row = {}) => {
 
 const exceptionStatus = (row = {}) => {
   const status = attendanceStatusKey(row)
-  return row.check_in && !row.check_out && status === 'present' ? 'half_day' : status
+  // A canonical full-day present row is authoritative even when its valid
+  // attendance model does not require checkout (for example Chauffeur).
+  // Retain the defensive one-punch exception only for legacy/partial rows
+  // that were marked present without a full-day fraction.
+  const canonicalFullDay = Number(row.attendance_day_fraction) === 1
+  return row.check_in && !row.check_out && status === 'present' && !canonicalFullDay ? 'half_day' : status
 }
 
 export const isAttendanceException = (row = {}) => {
