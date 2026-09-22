@@ -82,7 +82,15 @@ export default function PayrollOperations() {
       presentDays: Number(stored.present_days || 0), halfDays: Number(stored.half_days || 0), absentDays: Number(stored.absent_days || 0), unresolvedDays: Number(summary.unresolved_days || 0),
       attendanceWage: Number(calculation.attendance_wage ?? stored.base_amount ?? 0), baseAmount: Number(stored.base_amount || 0), transportAmount: Number(stored.transport_amount || 0), morningOvertimeMinutes: Number(calculation.morning_overtime_minutes || 0), eveningOvertimeMinutes: Number(calculation.evening_overtime_minutes || 0), overtimeHours: Number(stored.overtime_hours || 0), overtimeAmount: Number(stored.overtime_amount || 0), holidayAmount: Number(stored.holiday_amount || 0), sundayDate: sundayBefore(stored.attendance_period_start), sundayPayment: (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(stored.worker_id) && payment.work_date === sundayBefore(stored.attendance_period_start)) || null, bonusAmount: Number(stored.bonus_amount || 0), deductionAmount: Number(stored.deduction_amount || 0), advanceAmount: Number(stored.advance_amount || 0), manualAdjustmentAmount: Number(stored.manual_adjustment_amount || 0), finalAmount: Number(stored.final_amount || 0),
       calculationSnapshotHasAdjustments: Object.prototype.hasOwnProperty.call(calculation, 'adjustment_summary'),
-      details: (summary.days || []).map((detail) => ({ ...detail, row: detail.check_in || detail.check_out ? { check_in: detail.check_in, check_out: detail.check_out } : null })),
+      details: (summary.days || []).map((detail) => ({
+        ...detail,
+        row: detail.check_in || detail.check_out ? {
+          check_in: detail.check_in,
+          check_out: detail.check_out,
+          biometric_sync_metadata: detail.check_out_event_timestamp ? { check_out_event_timestamp: detail.check_out_event_timestamp } : null,
+          review_approved_check_out_at: detail.review_approved_check_out_at || null,
+        } : null,
+      })),
     }
   }), [data, weeklyRun])
   const lines = weeklyRun && weeklyRun.status !== 'draft' ? weeklyPayrollEligibleLines(storedLines) : calculatedLines

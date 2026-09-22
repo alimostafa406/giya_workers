@@ -5,6 +5,15 @@ import { calculatePayrollLine } from './src/utils/payrollCalculations.js'
 import { formatEveningOvertimeMinutes, formatOvertimeMinutes, weeklyPayrollDisplayStatus, weeklyPayrollOvertimeForDetail, weeklyPayrollOvertimeForLine } from './src/utils/weeklyPayrollOvertime.js'
 
 const monday = (checkIn, checkOut) => ({ date: '2026-09-14', status: 'present', row: { check_in: checkIn, check_out: checkOut } })
+const nextDayCheckout = (checkIn, checkOut) => ({
+  date: '2026-09-14',
+  status: 'present',
+  row: {
+    check_in: checkIn,
+    check_out: checkOut,
+    biometric_sync_metadata: { check_out_event_timestamp: `2026-09-15T${checkOut}+01:00` },
+  },
+})
 
 test('morning overtime is disabled until worker schedules are approved', () => {
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', null)).morningOvertimeMinutes, 0)
@@ -26,6 +35,35 @@ test('evening overtime awards the first completed hour then completed half-hour 
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '19:30:00')).eveningOvertimeMinutes, 150)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '22:00:00')).eveningOvertimeMinutes, 300)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', null)).eveningOvertimeMinutes, 0)
+})
+
+test('verified next-day checkouts within the workday tail use the previous workday chronology', () => {
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '23:59:00')).eveningOvertimeMinutes, 390)
+  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '00:31:00')).eveningOvertimeMinutes, 450)
+  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '00:33:00')).eveningOvertimeMinutes, 450)
+  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '01:02:00')).eveningOvertimeMinutes, 480)
+  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '02:00:00')).eveningOvertimeMinutes, 540)
+})
+
+test('approved next-day checkout evidence also preserves cross-midnight chronology', () => {
+  assert.equal(weeklyPayrollOvertimeForDetail({
+    date: '2026-09-14',
+    status: 'present',
+    row: { check_in: '08:00:00', check_out: '00:31:00', review_approved_check_out_at: '2026-09-15T00:31:00+01:00' },
+  }).eveningOvertimeMinutes, 450)
+})
+
+test('new weekly payroll snapshots retain verified next-day checkout evidence', () => {
+  const api = readFileSync('./src/api/payrollOperationsApi.js', 'utf8')
+  const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
+  assert.match(api, /check_out_event_timestamp: detail\.row\?\.biometric_sync_metadata\?\.check_out_event_timestamp/)
+  assert.match(api, /review_approved_check_out_at: detail\.row\?\.review_approved_check_out_at/)
+  assert.match(operations, /biometric_sync_metadata: detail\.check_out_event_timestamp/)
+  assert.match(operations, /review_approved_check_out_at: detail\.review_approved_check_out_at/)
+})
+
+test('an ambiguous early clock without next-day evidence is not treated as overtime', () => {
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '00:31:00')).eveningOvertimeMinutes, 0)
 })
 
 test('missing checkout stays half day, earns no evening overtime, and is not mutated', () => {

@@ -150,6 +150,18 @@ test('daily overtime preserves Saturday zero-overtime behavior', () => {
   assert.equal(buildDailyOvertimeReport({ date: '2026-09-19', attendance: [row('saturday', { check_out: '22:00:00' })] }).length, 0)
 })
 
+test('daily overtime includes a verified next-day checkout from the selected weekday workday', () => {
+  const report = buildDailyOvertimeReport({
+    date: '2026-09-21',
+    attendance: [row('overnight', {
+      check_out: '00:31:30',
+      biometric_sync_metadata: { check_out_event_timestamp: '2026-09-22T00:31:30+01:00' },
+    })],
+  })
+  assert.equal(report.length, 1)
+  assert.equal(report[0].overtimeMinutes, 450)
+})
+
 test('daily reports default helper selects the previous business date', () => {
   assert.equal(yesterdayFromBusinessDate('2026-09-21'), '2026-09-20')
 })

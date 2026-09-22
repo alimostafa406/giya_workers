@@ -59,7 +59,16 @@ const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
   worker_name_snapshot: line.worker.full_name || '-', payment_type_snapshot: line.paymentType, currency_code_snapshot: payrollLineCurrencySnapshot(line),
   monthly_payroll_cycle_start_date_snapshot: line.term?.monthly_payroll_cycle_start_date || null,
   compensation_snapshot: line.term || {}, rule_snapshot: line.rules || {},
-  attendance_summary_snapshot: { present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({ date: detail.date, status: detail.status, check_in: detail.row?.check_in || null, check_out: detail.row?.check_out || null })) },
+  attendance_summary_snapshot: { present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
+    date: detail.date,
+    status: detail.status,
+    check_in: detail.row?.check_in || null,
+    check_out: detail.row?.check_out || null,
+    // Preserve the evidence date for a real 00:00–02:00 checkout. A bare
+    // clock alone is ambiguous when a saved payroll line is displayed later.
+    check_out_event_timestamp: detail.row?.biometric_sync_metadata?.check_out_event_timestamp || null,
+    review_approved_check_out_at: detail.row?.review_approved_check_out_at || null,
+  })) },
   calculation_snapshot: { daily_value: line.dailyValue, attendance_wage: line.attendanceWage, absence_deduction: line.absenceDeduction, half_day_deduction: line.halfDayDeduction, transport_days: line.transportDays, morning_overtime_minutes: line.morningOvertimeMinutes || 0, evening_overtime_minutes: line.eveningOvertimeMinutes || 0, overtime_hourly_rate: line.overtimeRate ?? null, overtime_pay: line.overtimeAmount || 0, unresolved_configuration: { daily_rate: line.term?.daily_rate == null, monthly_salary: line.paymentType === 'monthly' && line.term?.monthly_salary == null, transport: line.term?.daily_transport_allowance == null, overtime_rate: Number(line.eveningOvertimeMinutes || 0) > 0 && line.term?.overtime_rate_per_hour == null }, adjustment_summary: line.adjustmentSummary || {}, final_amount: line.finalAmount },
   present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, base_amount: line.baseAmount, transport_amount: line.transportAmount,
   overtime_hours: line.overtimeHours, overtime_amount: line.overtimeAmount, holiday_amount: line.holidayAmount,

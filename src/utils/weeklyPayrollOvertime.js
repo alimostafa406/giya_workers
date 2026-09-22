@@ -26,6 +26,57 @@ const isWeekday = (date) => {
   return day >= 1 && day <= 5
 }
 
+const nextCalendarDate = (date) => {
+  const value = new Date(`${date}T12:00:00Z`)
+  if (Number.isNaN(value.getTime())) return null
+  value.setUTCDate(value.getUTCDate() + 1)
+  return value.toISOString().slice(0, 10)
+}
+
+const timestampDateAndMinutes = (value) => {
+  if (!value) return null
+  const instant = new Date(value)
+  if (Number.isNaN(instant.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: KINSHASA_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant)
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  const minutes = (Number(values.hour) * 60) + Number(values.minute) + (Number(values.second) / 60)
+  if (!values.year || !values.month || !values.day || !Number.isFinite(minutes)) return null
+  return { date: `${values.year}-${values.month}-${values.day}`, minutes }
+}
+
+const checkoutEvidenceTimestamp = (detail) => {
+  const row = detail?.row || {}
+  const metadata = typeof row.biometric_sync_metadata === 'string'
+    ? (() => { try { return JSON.parse(row.biometric_sync_metadata) } catch { return null } })()
+    : row.biometric_sync_metadata
+  return metadata?.check_out_event_timestamp || row.review_approved_check_out_at || null
+}
+
+const normalizedCheckoutMinutes = (detail) => {
+  const checkOut = clockMinutes(detail?.row?.check_out ?? detail?.check_out)
+  if (checkOut == null) return null
+
+  // A plain 00:xx clock is ambiguous.  Add a day only when the attendance row
+  // carries timestamp evidence proving that this checkout belongs to the next
+  // calendar day of the selected workday, and stays within the accepted 02:00
+  // workday tail.
+  const evidence = timestampDateAndMinutes(checkoutEvidenceTimestamp(detail))
+  const isVerifiedNextDayCheckout = evidence
+    && evidence.date === nextCalendarDate(detail?.date)
+    && evidence.minutes <= 120
+    && Math.abs(evidence.minutes - checkOut) < (1 / 60)
+  return isVerifiedNextDayCheckout ? checkOut + (24 * 60) : checkOut
+}
+
 export const weeklyPayrollDisplayStatus = (detail) => {
   if (!detail || ['future', 'pending', 'in_progress', 'not_recorded'].includes(detail.status)) return 'neutral'
   if (detail.status === 'present') return 'present'
@@ -38,7 +89,7 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
   if (!detail?.date || !isWeekday(detail.date)) {
     return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   }
-  const checkOut = clockMinutes(detail.row?.check_out ?? detail.check_out)
+  const checkOut = normalizedCheckoutMinutes(detail)
   const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(Math.floor(checkOut - 1020), 0)
   return {
     morningOvertimeMinutes: 0,
