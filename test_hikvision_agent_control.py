@@ -1,7 +1,7 @@
 """No-network tests for the restored local attendance-agent controls."""
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import hikvision_agent_control as control_module
 
@@ -34,6 +34,26 @@ class AgentControlTests(unittest.TestCase):
     def test_rejects_unknown_control_actions(self):
         with self.assertRaises(control_module.AgentControlError):
             self.controller.control_agent('delete-attendance')
+
+    @patch('hikvision_agent_control.subprocess.run')
+    def test_powershell_status_read_uses_no_console_window(self, run):
+        run.return_value = Mock(returncode=0, stdout='[]')
+
+        self.controller._powershell('$null')
+
+        self.assertEqual(run.call_args.kwargs['creationflags'], control_module.NO_CONSOLE_WINDOW)
+        self.assertTrue(run.call_args.kwargs['capture_output'])
+        self.assertEqual(run.call_args.kwargs['timeout'], 15)
+
+    @patch('hikvision_agent_control.subprocess.run')
+    def test_task_control_uses_no_console_window(self, run):
+        run.return_value = Mock(returncode=0, stdout='')
+
+        self.controller._run_task_command('/Run')
+
+        self.assertEqual(run.call_args.kwargs['creationflags'], control_module.NO_CONSOLE_WINDOW)
+        self.assertTrue(run.call_args.kwargs['capture_output'])
+        self.assertEqual(run.call_args.kwargs['timeout'], 20)
 
 
 if __name__ == '__main__':

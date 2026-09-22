@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 AGENT_SCRIPT = (PROJECT_ROOT / 'hikvision_attendance_agent.py').resolve()
 AGENT_TASK_NAME = 'WorkersHikvisionAttendanceAgent'
 CONTROL_LOCK = threading.Lock()
+NO_CONSOLE_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 
 class AgentControlError(RuntimeError):
@@ -27,6 +28,7 @@ class AgentControl:
         result = subprocess.run(
             ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
             cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=15, check=False,
+            creationflags=NO_CONSOLE_WINDOW,
         )
         if result.returncode != 0:
             raise AgentControlError('Unable to read the local Windows service status.')
@@ -61,6 +63,7 @@ class AgentControl:
         result = subprocess.run(
             ['schtasks.exe', *arguments, '/TN', AGENT_TASK_NAME],
             cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=20, check=False,
+            creationflags=NO_CONSOLE_WINDOW,
         )
         if result.returncode != 0:
             raise AgentControlError('Unable to run the attendance-agent Scheduled Task command.')
