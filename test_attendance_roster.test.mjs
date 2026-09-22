@@ -124,6 +124,19 @@ test('team switching uses only the selected active normal roster', () => {
   assert.deepEqual(mergeAttendanceRoster({ workers: mixedWorkers, attendance: [], date: '2026-08-24', teamId: 'team-b', businessDate: '2026-08-24' }).map((row) => row.worker_id), ['other'])
 })
 
+test('the exactly named Adminstration team is excluded from operational attendance rosters', () => {
+  const rows = mergeAttendanceRoster({
+    workers: [
+      { id: 'admin', full_name: 'SUPERVISOR', is_active: true, staff_classification: 'normal', team_name: 'Adminstration' },
+      { id: 'near-match', full_name: 'ADMIN', is_active: true, staff_classification: 'normal', team_name: 'Administration' },
+    ],
+    attendance: [],
+    date: '2026-08-24',
+    businessDate: '2026-08-24',
+  })
+  assert.deepEqual(rows.map((row) => row.worker_id), ['near-match'])
+})
+
 test('virtual roster display performs no write and manual edits reuse the existing safe correction API', () => {
   const rosterSource = readFileSync('./src/utils/attendanceRoster.js', 'utf8')
   const pageSource = readFileSync('./src/pages/Attendance.jsx', 'utf8')

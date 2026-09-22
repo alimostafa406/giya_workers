@@ -18,6 +18,7 @@ import {
   summarizeWeeklyAttendanceDays,
 } from '../utils/weeklyAttendanceReport'
 import { reportWorkerMatchesSearch } from '../utils/reportWorkerSearch'
+import { isOperationalAttendanceTeam, isOperationalAttendanceWorker } from '../utils/activeWorkers'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -137,7 +138,7 @@ function WeeklyAttendanceReport() {
 
   const supervisorsOptions = useMemo(() => {
     const byId = new Map()
-    teams.forEach((team) => {
+    teams.filter(isOperationalAttendanceTeam).forEach((team) => {
       if (!team.supervisor_id) {
         return
       }
@@ -156,9 +157,14 @@ function WeeklyAttendanceReport() {
     [weeklyFilters.startDate, weeklyFilters.endDate],
   )
 
+  const operationalTeams = useMemo(
+    () => teams.filter(isOperationalAttendanceTeam),
+    [teams],
+  )
+
   const selectedTeam = useMemo(
-    () => teams.find((team) => String(team.id) === String(weeklyFilters.teamId)) || null,
-    [teams, weeklyFilters.teamId],
+    () => operationalTeams.find((team) => String(team.id) === String(weeklyFilters.teamId)) || null,
+    [operationalTeams, weeklyFilters.teamId],
   )
 
   const reportBaseTitle = selectedTeam
@@ -199,6 +205,10 @@ function WeeklyAttendanceReport() {
 
       const teamId = String(worker.team_id || '')
       const team = teamsById.get(teamId)
+
+      if (!isOperationalAttendanceWorker(worker, team)) {
+        return false
+      }
 
       if (weeklyFilters.teamId && teamId !== String(weeklyFilters.teamId)) {
         return false
@@ -425,7 +435,7 @@ function WeeklyAttendanceReport() {
             className="input-base"
           >
             <option value="">{t('common.chooseTeam')}</option>
-            {teams.map((team) => (
+            {operationalTeams.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
               </option>

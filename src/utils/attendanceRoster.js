@@ -1,4 +1,4 @@
-import { isActiveWorker } from './activeWorkers.js'
+import { isOperationalAttendanceWorker } from './activeWorkers.js'
 
 const workerKey = (value) => String(value || '')
 
@@ -38,7 +38,7 @@ export const mergeAttendanceRoster = ({
 
   return workers
     .filter((worker) => (
-      isActiveWorker(worker)
+      isOperationalAttendanceWorker(worker)
       && (worker.staff_classification || 'normal') === 'normal'
       && (!teamId || workerKey(worker.team_id) === workerKey(teamId))
       && (!workerId || workerKey(worker.id) === workerKey(workerId))

@@ -14,6 +14,7 @@ test('daily exceptions exclude completed present rows despite informational late
     row('absent', { status: 'absent', check_in: null, check_out: null }),
     row('late-status', { status: 'late', check_in: '09:30:00', check_out: '17:00:00' }),
     row('incomplete-present', { status: 'present', check_in: '07:08:00', check_out: null }),
+    row('administration', { status: 'absent', team: { name: 'Adminstration' } }),
     row('inactive', { status: 'absent', active: false }),
   ] })
   assert.deepEqual(report.map((item) => item.worker), ['Worker absent', 'Worker half', 'Worker incomplete-present', 'Worker late-status'])

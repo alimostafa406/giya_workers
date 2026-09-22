@@ -13,6 +13,7 @@ import {
   prepareAttendanceOutput,
 } from '../utils/attendanceOperationalGate'
 import { absenceWeekDates, buildAbsenceReport, createAbsenceReportRefreshCoordinator } from '../utils/absenceReport'
+import { isOperationalAttendanceTeam } from '../utils/activeWorkers'
 
 const asArray = (value) => Array.isArray(value) ? value : Array.isArray(value?.data) ? value.data : []
 const currentBusinessDate = () => kinshasaClock().date
@@ -143,7 +144,7 @@ export default function AbsenceReport() {
   const statusLabel = (state) => ({ morning_recorded: t('absenceReport.morningRecorded'), morning_missing: t('absenceReport.morningMissing'), future: '—' }[state] || '—')
   const title = mode === 'today' ? t('absenceReport.todayTitle') : t('absenceReport.weekTitle')
   const range = mode === 'today' ? formatDate(selectedDate) : `${formatDate(dates[0])} → ${formatDate(dates.at(-1))}`
-  const teams = snapshot.teams
+  const teams = snapshot.teams.filter(isOperationalAttendanceTeam)
   const reportLoading = loading || (!locked && snapshot.key !== requestKey)
 
   return <section>

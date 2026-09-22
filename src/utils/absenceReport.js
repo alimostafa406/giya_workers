@@ -1,4 +1,4 @@
-import { isActiveWorker } from './activeWorkers.js'
+import { isOperationalAttendanceWorker } from './activeWorkers.js'
 import { reportWorkerMatchesSearch } from './reportWorkerSearch.js'
 
 const BUSINESS_TIME_ZONE = 'Africa/Kinshasa'
@@ -55,7 +55,7 @@ export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'toda
     if (worker?.id && !workersById.has(String(worker.id))) workersById.set(String(worker.id), worker)
   })
   const rosterWorkers = [...workersById.values()].filter((worker) => (
-    isActiveWorker(worker)
+    isOperationalAttendanceWorker(worker)
     && (worker.staff_classification || 'normal') === 'normal'
     && (!teamId || String(worker.team_id || '') === String(teamId))
     && reportWorkerMatchesSearch(worker, search)

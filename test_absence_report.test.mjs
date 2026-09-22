@@ -14,6 +14,7 @@ const workers = [
   { id: 'w1', full_name: 'NIVA', employee_code: '211', team_id: 'a', team_name: 'Cleaner', team: { id: 'a', name: 'Cleaner' }, is_active: true, staff_classification: 'normal' },
   { id: 'w2', full_name: 'JOHN', employee_code: '212', team_id: 'a', team_name: 'Cleaner', team: { id: 'a', name: 'Cleaner' }, is_active: true, staff_classification: 'normal' },
   { id: 'w3', full_name: 'DAVID', employee_code: '301', team_id: 'b', team_name: 'Administration', team: { id: 'b', name: 'Administration' }, is_active: true, staff_classification: 'normal' },
+  { id: 'administration', full_name: 'SUPERVISOR', employee_code: '302', team_id: 'admin', team_name: 'Adminstration', team: { id: 'admin', name: 'Adminstration' }, is_active: true, staff_classification: 'normal' },
   { id: 'inactive', full_name: 'INACTIVE', team_id: 'b', team_name: 'Administration', is_active: false, staff_classification: 'normal' },
   { id: 'special', full_name: 'SPECIAL', team_id: 'b', team_name: 'Administration', is_active: true, staff_classification: 'special_staff' },
 ]
@@ -60,6 +61,12 @@ test('active normal worker with no check-in is missing', () => {
 test('inactive and special-staff workers are excluded', () => {
   const report = reportFor([], { workers: workers.slice(3) })
   assert.equal(report.missingMorningWorkers, 0)
+})
+
+test('only the exactly named Adminstration team is excluded from operational absence reports', () => {
+  const report = reportFor([], { workers: [workers[2], workers[3]] })
+  assert.equal(report.missingMorningWorkers, 1)
+  assert.equal(report.groups[0].workers[0].id, 'w3')
 })
 
 test('attendance must match both worker and selected date', () => {

@@ -1,8 +1,9 @@
-import { isActiveWorker } from './activeWorkers.js'
+import { isOperationalAttendanceWorker } from './activeWorkers.js'
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
 
-const normalActiveWorker = (worker) => (
-  isActiveWorker(worker) && (worker?.staff_classification || 'normal') === 'normal'
+const normalActiveWorker = (row) => (
+  isOperationalAttendanceWorker(row?.worker, row?.team || row?.team_name)
+  && (row?.worker?.staff_classification || 'normal') === 'normal'
 )
 
 export const attendanceStatusKey = (row = {}) => {
@@ -32,7 +33,7 @@ const reportRow = (row) => ({
 })
 
 const boundedActiveNormalRows = (attendance = []) => (Array.isArray(attendance) ? attendance : [])
-  .filter((row) => normalActiveWorker(row.worker))
+  .filter(normalActiveWorker)
 
 export const buildDailyAttendanceExceptions = ({ attendance = [] } = {}) => (
   boundedActiveNormalRows(attendance)

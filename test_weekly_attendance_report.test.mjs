@@ -10,6 +10,7 @@ import {
   shiftWeeklyReportRange,
   summarizeWeeklyAttendanceDays,
 } from './src/utils/weeklyAttendanceReport.js'
+import { isOperationalAttendanceTeam, isOperationalAttendanceWorker } from './src/utils/activeWorkers.js'
 
 const summarize = (dates, statuses, businessDate = '2026-08-26') => (
   summarizeWeeklyAttendanceDays({
@@ -36,6 +37,13 @@ test('anchors the report cycle to Monday through Saturday and omits Sunday', () 
     '2026-08-28',
     '2026-08-29',
   ])
+})
+
+test('only the exactly named Adminstration team is excluded from operational attendance reports', () => {
+  const worker = { id: 'admin', is_active: true, team_name: 'Adminstration' }
+  assert.equal(isOperationalAttendanceWorker(worker), false)
+  assert.equal(isOperationalAttendanceTeam({ name: 'Adminstration' }), false)
+  assert.equal(isOperationalAttendanceTeam({ name: 'Administration' }), true)
 })
 
 test('JEREMIE example does not turn half-day or future dates into absences', () => {
@@ -179,6 +187,7 @@ test('screen, print, PDF, and Excel use the same calculated report and export ro
   assert.match(source, /reportBaseTitle.*weeklyFilters\.startDate.*weeklyFilters\.endDate/s)
   assert.doesNotMatch(source, /\|\|\s*['"]absent['"]/)
   assert.match(source, /data=\{weeklyReportRows\}/)
+  assert.match(source, /isOperationalAttendanceWorker\(worker, team\)/)
   assert.doesNotMatch(source, /return t\('attendance\.late'\)/)
   assert.match(source, /const tableRows = exportRows/)
   assert.match(source, /<html dir="\$\{language === 'ar' \? 'rtl' : 'ltr'\}">/)
