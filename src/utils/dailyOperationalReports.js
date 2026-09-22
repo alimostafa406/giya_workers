@@ -11,14 +11,16 @@ export const attendanceStatusKey = (row = {}) => {
   return status || 'not_recorded'
 }
 
-export const isAttendanceException = (row = {}) => {
+const exceptionStatus = (row = {}) => {
   const status = attendanceStatusKey(row)
-  const hasMissingCheckout = Boolean(row.check_in) && !row.check_out
+  return row.check_in && !row.check_out && status === 'present' ? 'half_day' : status
+}
 
+export const isAttendanceException = (row = {}) => {
   // A completed automatic day is canonicalized to `present`, even when its
   // audit metadata retains an informational late-arrival flag. Supervisors
   // need only non-present states and genuinely incomplete punch records.
-  return status !== 'present' || hasMissingCheckout
+  return exceptionStatus(row) !== 'present'
 }
 
 const reportRow = (row) => ({
@@ -26,7 +28,7 @@ const reportRow = (row) => ({
   worker: row.worker_name || row.worker?.full_name || '—',
   employeeCode: row.worker?.employee_code || row.employee_code || '—',
   team: row.team_name || row.team?.name || '—',
-  status: attendanceStatusKey(row),
+  status: exceptionStatus(row),
   checkIn: row.check_in || '—',
   checkOut: row.check_out || '—',
   note: String(row.note || '').trim() || '—',
@@ -35,8 +37,69 @@ const reportRow = (row) => ({
 const boundedActiveNormalRows = (attendance = []) => (Array.isArray(attendance) ? attendance : [])
   .filter(normalActiveWorker)
 
-export const buildDailyAttendanceExceptions = ({ attendance = [] } = {}) => (
-  boundedActiveNormalRows(attendance)
+const workerKey = (value) => String(value || '')
+
+const isLaterAttendanceRow = (candidate, current) => {
+  if (!current) return true
+  const candidateTimestamp = candidate.updated_at || candidate.created_at || ''
+  const currentTimestamp = current.updated_at || current.created_at || ''
+  if (candidateTimestamp || currentTimestamp) return String(candidateTimestamp) > String(currentTimestamp)
+  return String(candidate.id || '') > String(current.id || '')
+}
+
+const rosterAttendanceRows = ({ workers = [], attendance = [], date } = {}) => {
+  const attendanceByWorkerId = new Map()
+  ;(Array.isArray(attendance) ? attendance : []).forEach((row) => {
+    if (date && (row.attendance_date || row.date) !== date) return
+    const key = workerKey(row.worker_id || row.worker?.id)
+    if (key && isLaterAttendanceRow(row, attendanceByWorkerId.get(key))) attendanceByWorkerId.set(key, row)
+  })
+
+  const rosterWorkers = Array.isArray(workers) && workers.length
+    ? workers
+    : [...attendanceByWorkerId.values()]
+      .filter((row) => row.worker)
+      .map((row) => ({
+        ...row.worker,
+        team: row.worker.team || row.team,
+        team_name: row.worker.team_name || row.team_name || row.team?.name,
+      }))
+
+  return rosterWorkers
+    .filter((worker) => (
+      isOperationalAttendanceWorker(worker)
+      && (worker.staff_classification || 'normal') === 'normal'
+    ))
+    .map((worker) => {
+      const attendanceRow = attendanceByWorkerId.get(workerKey(worker.id))
+      if (attendanceRow) {
+        return {
+          ...attendanceRow,
+          worker: attendanceRow.worker || worker,
+          worker_name: attendanceRow.worker_name || worker.full_name,
+          team: attendanceRow.team || worker.team,
+          team_name: attendanceRow.team_name || worker.team_name || worker.team?.name,
+        }
+      }
+      return {
+        id: `daily-exception-${worker.id}-${date || 'selected-date'}`,
+        worker_id: worker.id,
+        attendance_date: date || null,
+        worker,
+        worker_name: worker.full_name,
+        team: worker.team || null,
+        team_name: worker.team_name || worker.team?.name,
+        status: 'absent',
+        check_in: null,
+        check_out: null,
+        note: null,
+        is_virtual: true,
+      }
+    })
+}
+
+export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], date } = {}) => (
+  rosterAttendanceRows({ workers, attendance, date })
     .filter(isAttendanceException)
     .map(reportRow)
     .sort((left, right) => left.team.localeCompare(right.team) || left.worker.localeCompare(right.worker))

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
+import { getWorkersRequest } from '../api/workersApi'
 import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
 import { attendanceStatusKey, buildDailyAttendanceExceptions, buildDailyOvertimeReport, yesterdayFromBusinessDate } from '../utils/dailyOperationalReports'
@@ -13,6 +14,7 @@ export default function DailyOperationalReports({ type }) {
   const { t, language } = useTranslation()
   const [selectedDate, setSelectedDate] = useState(yesterday)
   const [attendance, setAttendance] = useState([])
+  const [workers, setWorkers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const overtime = type === 'overtime'
@@ -23,9 +25,13 @@ export default function DailyOperationalReports({ type }) {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const result = await getAttendanceRequest({ date: selectedDate, staff_classification: 'normal', paginate: true })
-      setAttendance(result.data || [])
-    } catch (requestError) { setError(getErrorMessage(requestError)); setAttendance([]) }
+      const [attendanceResult, workersResult] = await Promise.all([
+        getAttendanceRequest({ date: selectedDate, staff_classification: 'normal', paginate: true }),
+        getWorkersRequest(),
+      ])
+      setAttendance(attendanceResult.data || [])
+      setWorkers(workersResult.data || [])
+    } catch (requestError) { setError(getErrorMessage(requestError)); setAttendance([]); setWorkers([]) }
     finally { setLoading(false) }
   }, [selectedDate])
 
@@ -33,7 +39,7 @@ export default function DailyOperationalReports({ type }) {
 
   const rows = useMemo(() => (overtime
     ? buildDailyOvertimeReport({ attendance, date: selectedDate })
-    : buildDailyAttendanceExceptions({ attendance })), [attendance, overtime, selectedDate])
+    : buildDailyAttendanceExceptions({ workers, attendance, date: selectedDate })), [attendance, overtime, selectedDate, workers])
   const label = (status) => t(`attendance.${({ in_progress: 'inProgress', half_day: 'halfDay', not_recorded: 'notRecorded' }[status] || status)}`)
 
   return <section>

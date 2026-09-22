@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { buildDailyAttendanceExceptions, buildDailyOvertimeReport, yesterdayFromBusinessDate } from './src/utils/dailyOperationalReports.js'
 
@@ -17,7 +18,46 @@ test('daily exceptions exclude completed present rows despite informational late
     row('administration', { status: 'absent', team: { name: 'Adminstration' } }),
     row('inactive', { status: 'absent', active: false }),
   ] })
-  assert.deepEqual(report.map((item) => item.worker), ['Worker absent', 'Worker half', 'Worker incomplete-present', 'Worker late-status'])
+  assert.deepEqual(report.map((item) => [item.worker, item.status]), [
+    ['Worker absent', 'absent'],
+    ['Worker half', 'half_day'],
+    ['Worker incomplete-present', 'half_day'],
+    ['Worker late-status', 'late'],
+  ])
+})
+
+test('daily exceptions left-join the eligible roster and derive absent only for missing selected-date rows', () => {
+  const noRowWorker = worker('no-row')
+  const halfDayWorker = worker('half-day')
+  const completeWorker = worker('complete')
+  const administrationWorker = { ...worker('admin'), team_name: 'Adminstration', team: { name: 'Adminstration' } }
+  const attendance = [
+    row('half-day', { worker: halfDayWorker, status: 'half_day', check_in: '07:08:00', check_out: null, attendance_date: '2026-09-21' }),
+    row('half-day-later', { worker: halfDayWorker, worker_name: 'Worker half-day', status: 'half_day', check_in: '07:08:00', check_out: null, attendance_date: '2026-09-21', updated_at: '2026-09-21T18:00:00Z' }),
+    row('complete', { worker: completeWorker, status: 'present', attendance_date: '2026-09-21' }),
+    row('admin', { worker: administrationWorker, status: 'absent', check_in: null, check_out: null, attendance_date: '2026-09-21' }),
+    row('no-row', { worker: noRowWorker, status: 'present', attendance_date: '2026-09-20' }),
+  ]
+  const originalAttendance = structuredClone(attendance)
+  const report = buildDailyAttendanceExceptions({
+    workers: [noRowWorker, halfDayWorker, completeWorker, administrationWorker],
+    attendance,
+    date: '2026-09-21',
+  })
+
+  assert.deepEqual(report.map((item) => [item.worker, item.status]), [
+    ['Worker no-row', 'absent'],
+    ['Worker half-day', 'half_day'],
+  ])
+  assert.deepEqual(attendance, originalAttendance)
+})
+
+test('daily exceptions page loads the selected date with pagination and derives its print rows from the same roster report', () => {
+  const source = readFileSync('./src/pages/DailyOperationalReports.jsx', 'utf8')
+  assert.match(source, /getAttendanceRequest\(\{ date: selectedDate, staff_classification: 'normal', paginate: true \}\)/)
+  assert.match(source, /getWorkersRequest\(\)/)
+  assert.match(source, /buildDailyAttendanceExceptions\(\{ workers, attendance, date: selectedDate \}\)/)
+  assert.match(source, /rows\.map\(/)
 })
 
 test('daily overtime report reuses canonical weekday overtime and excludes zero or inactive rows', () => {
