@@ -16,6 +16,7 @@ test('morning overtime is disabled until worker schedules are approved', () => {
 })
 
 test('evening overtime awards the first completed hour then completed half-hour blocks', () => {
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('09:08:30', '16:07:50')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:00:00')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:15:00')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:59:00')).eveningOvertimeMinutes, 0)

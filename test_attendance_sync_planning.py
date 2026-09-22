@@ -401,6 +401,99 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
 
         self.assertEqual(result['skipped_manual_protected'], 1)
 
+    def test_maison_weekday_checkout_qualifies_at_1600(self):
+        resolution = resolution_with(None)
+        resolution['workers'][WORKER_ID]['team_id'] = 'maison-team'
+        resolution['teams'] = {'maison-team': {'id': 'maison-team', 'name': 'Maison'}}
+
+        plan = plan_attendance(
+            [attendance_event('09:08:30', serial=1), attendance_event('16:07:50', serial=2)],
+            resolution,
+            TARGET_DATE,
+        )[0][0]
+
+        self.assertEqual(plan['check_in'], '09:08:30')
+        self.assertEqual(plan['check_out'], '16:07:50')
+        self.assertEqual(plan['proposed_status'], 'present')
+
+    def test_maison_weekday_punch_before_1600_does_not_qualify_as_checkout(self):
+        resolution = resolution_with(None)
+        resolution['workers'][WORKER_ID]['team_id'] = 'maison-team'
+        resolution['teams'] = {'maison-team': {'id': 'maison-team', 'name': 'Maison'}}
+
+        plan = plan_attendance(
+            [attendance_event('09:08:00', serial=1), attendance_event('15:59:00', serial=2)],
+            resolution,
+            TARGET_DATE,
+        )[0][0]
+
+        self.assertEqual(plan['check_in'], '09:08:00')
+        self.assertIsNone(plan['check_out'])
+        self.assertEqual(plan['proposed_status'], 'half_day')
+
+    def test_non_maison_weekday_1607_remains_below_normal_checkout_threshold(self):
+        plan = plan_attendance(
+            [attendance_event('09:08:00', serial=1), attendance_event('16:07:00', serial=2)],
+            resolution_with(None),
+            TARGET_DATE,
+        )[0][0]
+
+        self.assertIsNone(plan['check_out'])
+        self.assertEqual(plan['proposed_status'], 'half_day')
+
+    def test_non_maison_weekday_1630_keeps_existing_checkout_behavior(self):
+        plan = plan_attendance(
+            [attendance_event('09:08:00', serial=1), attendance_event('16:30:00', serial=2)],
+            resolution_with(None),
+            TARGET_DATE,
+        )[0][0]
+
+        self.assertEqual(plan['check_out'], '16:30:00')
+        self.assertEqual(plan['proposed_status'], 'present')
+
+    def test_maison_saturday_keeps_the_existing_saturday_checkout_threshold(self):
+        saturday = date(2026, 8, 15)
+        resolution = resolution_with(None)
+        resolution['workers'][WORKER_ID]['team_id'] = 'maison-team'
+        resolution['teams'] = {'maison-team': {'id': 'maison-team', 'name': 'Maison'}}
+
+        plan = plan_attendance(
+            [
+                attendance_event('07:40:00', serial=1, event_date=saturday.isoformat()),
+                attendance_event('14:15:00', serial=2, event_date=saturday.isoformat()),
+            ],
+            resolution,
+            saturday,
+        )[0][0]
+
+        self.assertEqual(plan['check_out'], '14:15:00')
+        self.assertEqual(plan['proposed_status'], 'present')
+
+    def test_maison_manual_protected_row_remains_unchanged(self):
+        class NoWriteClient:
+            def insert_attendance(self, _payload):
+                raise AssertionError('manual Maison row must not be inserted')
+
+            def update_attendance(self, _attendance_id, _payload):
+                raise AssertionError('manual Maison row must not be updated')
+
+        existing = {
+            'id': 'maison-manual', 'attendance_date': TARGET_DATE.isoformat(),
+            'status': 'absent', 'check_in': None, 'check_out': None,
+            'attendance_source': 'manual', 'manual_override': True,
+        }
+        resolution = resolution_with(existing)
+        resolution['workers'][WORKER_ID]['team_id'] = 'maison-team'
+        resolution['teams'] = {'maison-team': {'id': 'maison-team', 'name': 'Maison'}}
+
+        plans, _ = plan_attendance(
+            [attendance_event('09:08:00', serial=1), attendance_event('16:07:00', serial=2)],
+            resolution,
+            TARGET_DATE,
+        )
+        result = apply_biometric_attendance(NoWriteClient(), plans, resolution['existing_attendance'])
+        self.assertEqual(result['skipped_manual_protected'], 1)
+
     def test_saturday_morning_rule_remains_full_day_without_checkout(self):
         saturday = date(2026, 8, 15)
         event = attendance_event('07:11:00', event_date=saturday.isoformat())

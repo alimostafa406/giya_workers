@@ -20,6 +20,7 @@ MORNING_CHECKIN_END = time(9, 0)
 WEEKDAY_OFFICIAL_END = time(17, 0)
 SATURDAY_OFFICIAL_END = time(14, 30)
 WEEKDAY_CHECKOUT_START = time(16, 30)
+MAISON_WEEKDAY_CHECKOUT_START = time(16, 0)
 SATURDAY_CHECKOUT_START = time(14, 0)
 WEEKDAY_FINALIZATION = time(17, 15)
 SATURDAY_FINALIZATION = time(14, 45)
@@ -74,6 +75,23 @@ def workday_schedule(target_date: date) -> dict | None:
             "finalization_time": SATURDAY_FINALIZATION,
         }
     return None
+
+
+def checkout_qualification_start(schedule: dict | None, team_name: str | None, *, is_chauffeur: bool = False) -> time | None:
+    """Return the attendance-only checkout threshold for one worker.
+
+    Maison cleaners have an approved 16:00 Monday-Friday checkout threshold.
+    This does not affect Saturday, Chauffeur, workday boundaries, or overtime.
+    """
+    if schedule is None:
+        return None
+    if (
+        not is_chauffeur
+        and schedule.get('label') == 'monday_friday'
+        and team_name == 'Maison'
+    ):
+        return MAISON_WEEKDAY_CHECKOUT_START
+    return schedule['checkout_start']
 
 
 def public_schedule(target_date: date) -> dict | None:

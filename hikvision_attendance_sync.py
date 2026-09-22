@@ -29,6 +29,7 @@ from attendance_business_rules import (
     OFFICIAL_START,
     VALID_ATTENDANCE_MAJOR,
     VALID_ATTENDANCE_MINOR,
+    checkout_qualification_start,
     workday_schedule,
 )
 from early_morning_attendance_review import is_early_morning_review_time
@@ -1238,9 +1239,13 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
                 and (check_in is None or item[0] > check_in)
             ]
         else:
+            team = resolution.get('teams', {}).get(str(worker.get('team_id') or ''), {})
+            checkout_start = checkout_qualification_start(
+                schedule, team.get('name'), is_chauffeur=is_chauffeur,
+            )
             checkout = [
                 item for item in parsed
-                if datetime.combine(target_date, schedule['checkout_start'], tzinfo=MONITORING_TIME_ZONE) <= item[0] <= workday_end
+                if datetime.combine(target_date, checkout_start, tzinfo=MONITORING_TIME_ZONE) <= item[0] <= workday_end
                 and (check_in is None or item[0] > check_in)
             ]
         checkout_event = checkout[-1] if checkout else None
