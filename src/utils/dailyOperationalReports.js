@@ -5,20 +5,20 @@ const normalActiveWorker = (worker) => (
   isActiveWorker(worker) && (worker?.staff_classification || 'normal') === 'normal'
 )
 
-const metadata = (row) => {
-  if (!row?.biometric_sync_metadata) return null
-  if (typeof row.biometric_sync_metadata === 'object') return row.biometric_sync_metadata
-  try { return JSON.parse(row.biometric_sync_metadata) } catch { return null }
-}
-
 export const attendanceStatusKey = (row = {}) => {
   const status = String(row.status || '').trim()
   return status || 'not_recorded'
 }
 
-export const isAttendanceException = (row = {}) => (
-  attendanceStatusKey(row) !== 'present' || metadata(row)?.late_arrival === true
-)
+export const isAttendanceException = (row = {}) => {
+  const status = attendanceStatusKey(row)
+  const hasMissingCheckout = Boolean(row.check_in) && !row.check_out
+
+  // A completed automatic day is canonicalized to `present`, even when its
+  // audit metadata retains an informational late-arrival flag. Supervisors
+  // need only non-present states and genuinely incomplete punch records.
+  return status !== 'present' || hasMissingCheckout
+}
 
 const reportRow = (row) => ({
   id: row.id,
