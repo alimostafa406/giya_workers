@@ -13,6 +13,7 @@ import socket
 import sys
 import threading
 import time as time_module
+from collections import Counter
 from datetime import date as date_type, time, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -24,11 +25,15 @@ from hikvision_attendance_sync import (
     SupabaseReadClient,
     attendance_apply_blocked_reason,
     apply_biometric_attendance,
+    deduplicate_hikvision_events,
     hikvision_events,
     hikvision_events_with_devices,
+    impacted_previous_workdays,
     load_resolution_data,
     local_now,
+    parse_monitoring_event_time,
     plan_attendance,
+    persisted_biometric_events,
     resolved_biometric_event_rows,
     workday_schedule,
     write_summary,
@@ -112,6 +117,20 @@ def completion_plans(plans: list[dict], existing_attendance: dict) -> list[dict]
 def positive_evidence_plans(plans: list[dict]) -> list[dict]:
     """Under incomplete coverage, allow positive evidence but never absence."""
     return [plan for plan in plans if plan.get('proposed_status') != 'absent']
+
+
+def late_tail_reconciliation_plans(
+    plans: list[dict],
+    impacted_worker_ids: set[str],
+) -> list[dict]:
+    """Keep only positive normal-workday plans proven by a next-day tail event."""
+    return [
+        plan for plan in plans
+        if str(plan.get('worker_id') or '') in impacted_worker_ids
+        and plan.get('check_in')
+        and plan.get('check_out')
+        and plan.get('check_out_next_day') is True
+    ]
 
 
 def positive_int_env(name: str, default: int) -> int:
@@ -260,13 +279,53 @@ class AttendanceAgent:
             self.logger.error('Biometric monitoring event persistence failed: %s: %s', type(error).__name__, error)
             return []
 
+    def reconcile_impacted_previous_workdays(
+        self,
+        events: list[dict],
+        observed_resolution: dict,
+        observed_date: date_type,
+    ) -> dict:
+        """Replay only worker-days reopened by safely mapped next-day tail evidence.
+
+        Current-day polling calls this immediately after persistence.  The
+        replay combines durable prior-day observations with the live tail event
+        so a late terminal response can extend an already completed biometric
+        day without waiting for a restart or a broad historical review.
+        """
+        impacted = impacted_previous_workdays(events, observed_resolution, observed_date)
+        totals = Counter()
+        for workday, worker_ids in sorted(impacted.items()):
+            resolution = load_resolution_data(self.client, workday, for_apply=True)
+            persisted_events, _ = persisted_biometric_events(self.client, workday)
+            tail_events = []
+            for event in events:
+                try:
+                    event_time = parse_monitoring_event_time(str(event.get('time') or ''))
+                except ValueError:
+                    continue
+                if (
+                    event_time.date() == observed_date
+                    and event_time.timetz().replace(tzinfo=None) <= time(2, 0)
+                ):
+                    tail_events.append(event)
+            replay_events = deduplicate_hikvision_events([*persisted_events, *tail_events])
+            plans, counters = plan_attendance(replay_events, resolution, workday)
+            recovery_plans = late_tail_reconciliation_plans(plans, worker_ids)
+            if self.dry_run:
+                results = Counter(write_summary(recovery_plans, resolution['existing_attendance'], counters))
+            else:
+                results = apply_biometric_attendance(self.client, recovery_plans, resolution['existing_attendance'])
+            totals.update(results)
+            self.logger.info(
+                'Late previous-workday reconciliation: workday=%s workers=%s tail_events=%s %s',
+                workday.isoformat(), len(worker_ids), len(tail_events), dict(results),
+            )
+        return dict(totals)
+
     def process_today_attendance(self) -> tuple[bool, str | None]:
         target_date = local_now().date()
         if target_date == TEST_ONLY_DATE:
             self.logger.warning('Attendance cycle skipped: 2026-08-10 is test-only and is never imported automatically.')
-            return True, None
-        if workday_schedule(target_date) is None:
-            self.logger.info('Attendance cycle skipped: Sunday has no automatic normal attendance.')
             return True, None
         diagnostics = RequestDiagnostics(False)
         try:
@@ -284,7 +343,31 @@ class AttendanceAgent:
                     self.device_statuses[device_id].update(reachable=False, last_error=result.get('error'))
             self.client = self.client or SupabaseReadClient(diagnostics)
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
-            persisted_rows = self.persist_observed_biometric_events(events, resolution, target_date)
+            schedule = workday_schedule(target_date)
+            observed_events = events
+            if schedule is None:
+                # Sunday remains outside normal automatic attendance.  Retain
+                # only its 00:00-02:00 observations needed to close Saturday.
+                observed_events = []
+                for event in events:
+                    try:
+                        event_time = parse_monitoring_event_time(str(event.get('time') or ''))
+                    except ValueError:
+                        continue
+                    if (
+                        event_time.date() == target_date
+                        and event_time.timetz().replace(tzinfo=None) <= time(2, 0)
+                    ):
+                        observed_events.append(event)
+            self.persist_observed_biometric_events(observed_events, resolution, target_date)
+            tail_results = self.reconcile_impacted_previous_workdays(observed_events, resolution, target_date)
+            if tail_results:
+                self.logger.info('Late previous-workday reconciliation summary: %s', tail_results)
+            if schedule is None:
+                self.logger.info('Sunday has no automatic normal attendance; processed only prior-workday tail evidence.')
+                self.hikvision_reachable = True
+                self.hikvision_probe_failures = 0
+                return True, None
             apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
             plans, counters = plan_attendance(events, resolution, target_date)
             summary = write_summary(plans, resolution['existing_attendance'], counters)

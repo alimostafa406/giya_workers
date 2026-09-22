@@ -1065,6 +1065,38 @@ def worker_uses_legacy_chauffeur_window(worker: dict, resolution: dict) -> bool:
     return str(team.get('name') or '').strip().casefold() == 'chauffeur'
 
 
+def impacted_previous_workdays(events: list[dict], resolution: dict, observed_date: date_type) -> dict[date_type, set[str]]:
+    """Return normal worker-days reopened by a newly observed 00:00-02:00 event.
+
+    A terminal observation retains its calendar timestamp, but the bounded tail
+    closes the immediately preceding normal workday.  Chauffeurs deliberately
+    keep their separate calendar-day behavior.  This helper only identifies
+    safe, confirmed worker identities; the existing planner remains the sole
+    authority for attendance status and payload updates.
+    """
+    impacted: dict[date_type, set[str]] = defaultdict(set)
+    for event in deduplicate_hikvision_events(events):
+        try:
+            event_timestamp = parse_monitoring_event_time(str(event.get('time') or ''))
+        except ValueError:
+            continue
+        if (
+            event_timestamp.date() != observed_date
+            or event_timestamp.timetz().replace(tzinfo=None) > time(2, 0)
+        ):
+            continue
+        if biometric_identity_is_ignored(resolution, event):
+            continue
+        mapping = biometric_mapping_for_event(resolution, event)
+        worker = resolution.get('workers', {}).get(str(mapping.get('worker_id') or '')) if mapping else None
+        if not worker or worker.get('is_active') is False or worker_uses_legacy_chauffeur_window(worker, resolution):
+            continue
+        workday = observed_date - timedelta(days=1)
+        if workday_schedule(workday) is not None:
+            impacted[workday].add(str(worker['id']))
+    return dict(impacted)
+
+
 def eligible_for_automatic_absence(
     target_date: date_type,
     now_kinshasa: datetime | None = None,

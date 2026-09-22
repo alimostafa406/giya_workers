@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import requests
 
-from hikvision_attendance_sync import apply_biometric_attendance, biometric_payload, eligible_for_automatic_absence, is_manual_protected, payload_changed, plan_attendance, proposed_status, safe_postgrest_error_details, write_summary
+from hikvision_attendance_sync import apply_biometric_attendance, biometric_payload, eligible_for_automatic_absence, impacted_previous_workdays, is_manual_protected, payload_changed, plan_attendance, proposed_status, safe_postgrest_error_details, write_summary
 
 
 TARGET_DATE = date(2026, 8, 11)  # Tuesday
@@ -270,6 +270,40 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertTrue(plan['check_out_next_day'])
         self.assertEqual(payload['check_out'], '00:31:00')
         self.assertEqual(payload['review_approved_check_out_at'], '2026-08-12T00:31:00+01:00')
+
+    def test_replayed_tail_upgrades_completed_biometric_day_once_without_duplicate_write(self):
+        existing = {
+            'attendance_date': TARGET_DATE.isoformat(), 'status': 'present',
+            'check_in': '08:00:00', 'check_out': '17:14:00',
+            'attendance_source': 'biometric', 'manual_override': False,
+        }
+        events = [
+            attendance_event('08:00:00', serial=1),
+            attendance_event('17:14:00', serial=2),
+            attendance_event('00:15:00', serial=3, event_date='2026-08-12'),
+            attendance_event('00:31:00', serial=4, event_date='2026-08-12'),
+            attendance_event('01:20:00', serial=5, event_date='2026-08-12'),
+        ]
+        plan = plan_attendance(events, resolution_with(existing), TARGET_DATE)[0][0]
+        payload = biometric_payload(plan, existing)
+        self.assertEqual(plan['check_out'], '01:20:00')
+        self.assertEqual(payload['check_out'], '01:20:00')
+        self.assertTrue(payload_changed(existing, payload))
+        self.assertFalse(payload_changed({**existing, **payload}, payload))
+
+    def test_next_day_tail_reopens_only_the_previous_normal_workday(self):
+        tail = attendance_event('00:31:00', event_date='2026-08-12')
+        impacts = impacted_previous_workdays([tail], resolution_with(None), date(2026, 8, 12))
+        self.assertEqual(impacts, {TARGET_DATE: {WORKER_ID}})
+
+    def test_tail_after_0200_and_chauffeur_do_not_reopen_normal_workday(self):
+        after_tail = attendance_event('02:00:01', event_date='2026-08-12')
+        self.assertEqual(impacted_previous_workdays([after_tail], resolution_with(None), date(2026, 8, 12)), {})
+        chauffeur_resolution = resolution_with(None)
+        chauffeur_resolution['teams'] = {'chauffeur-team': {'name': 'Chauffeur'}}
+        chauffeur_resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur-team'
+        valid_tail = attendance_event('00:31:00', event_date='2026-08-12')
+        self.assertEqual(impacted_previous_workdays([valid_tail], chauffeur_resolution, date(2026, 8, 12)), {})
 
     def test_same_day_checkout_does_not_set_next_day_approval_timestamp(self):
         events = [attendance_event('07:11:00'), attendance_event('18:00:00', serial=2)]

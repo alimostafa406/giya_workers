@@ -9,7 +9,7 @@ from collections import Counter
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
-from hikvision_attendance_agent import AttendanceAgent, completion_plans, finalize_previous_workday_before_current_collection, positive_evidence_plans, previous_workday, run_agent_loop, run_final_morning_verification_with_heartbeats, run_startup_recovery
+from hikvision_attendance_agent import AttendanceAgent, completion_plans, finalize_previous_workday_before_current_collection, late_tail_reconciliation_plans, positive_evidence_plans, previous_workday, run_agent_loop, run_final_morning_verification_with_heartbeats, run_startup_recovery
 from hikvision_device_lock import HikvisionDeviceLockTimeout
 from hikvision_attendance_sync import biometric_payload, is_manual_protected, payload_changed
 
@@ -129,6 +129,63 @@ class AttendanceAgentHeartbeatTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIsNone(error)
         self.assertEqual(agent.last_attendance_sync_at, processing_time.isoformat())
+
+    def test_current_poll_immediately_reconciles_a_safely_mapped_previous_day_tail(self):
+        agent = self.make_agent(dry_run=False)
+        agent.device_statuses['office-main'] = {
+            'reachable': False, 'last_successful_read_at': None, 'last_error': None,
+        }
+        processing_time = datetime(2026, 8, 12, 0, 31, tzinfo=timezone.utc)
+        complete_read = {'office-main': {'state': 'complete', 'event_count': 1, 'error': None}}
+        resolution = {'existing_attendance': {}}
+        tail = {'employeeNoString': '8', 'time': '2026-08-12T00:31:00+01:00'}
+
+        with patch('hikvision_attendance_agent.local_now', return_value=processing_time), patch(
+            'hikvision_attendance_agent.hikvision_events_with_devices', return_value=([tail], complete_read),
+        ), patch('hikvision_attendance_agent.load_resolution_data', return_value=resolution), patch.object(
+            agent, 'persist_observed_biometric_events', return_value=[]
+        ), patch.object(agent, 'reconcile_impacted_previous_workdays', return_value={'updated': 1}) as reconcile, patch(
+            'hikvision_attendance_agent.plan_attendance', return_value=([], Counter()),
+        ), patch('hikvision_attendance_agent.write_summary', return_value=Counter()), patch(
+            'hikvision_attendance_agent.apply_biometric_attendance', return_value=Counter(updated=1),
+        ):
+            ok, error = agent.process_today_attendance()
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        reconcile.assert_called_once_with([tail], resolution, processing_time.date())
+
+    def test_tail_reconciliation_replays_prior_day_and_upgrades_its_checkout(self):
+        agent = self.make_agent(dry_run=False)
+        worker_id = 'worker-1'
+        observed_date = date(2026, 8, 12)
+        worker = {'id': worker_id, 'is_active': True, 'team_id': None}
+        observed_resolution = {
+            'confirmed': {('office-main', '8'): {'worker_id': worker_id}},
+            'mapping_conflicts': set(), 'unconfirmed': set(), 'ignored': set(),
+            'workers': {worker_id: worker}, 'teams': {}, 'classifications': {},
+        }
+        existing = {
+            'id': 'attendance-1', 'attendance_date': '2026-08-11', 'status': 'present',
+            'check_in': '08:00:00', 'check_out': '17:14:00',
+            'attendance_source': 'biometric', 'manual_override': False,
+        }
+        workday_resolution = {**observed_resolution, 'existing_attendance': {worker_id: existing}}
+        prior_events = [
+            {'employeeNoString': '8', '_device_id': 'office-main', 'major': 5, 'minor': 75, 'serialNo': 1, 'time': '2026-08-11T08:00:00+01:00'},
+            {'employeeNoString': '8', '_device_id': 'office-main', 'major': 5, 'minor': 75, 'serialNo': 2, 'time': '2026-08-11T17:14:00+01:00'},
+        ]
+        tail = {'employeeNoString': '8', '_device_id': 'office-main', 'major': 5, 'minor': 75, 'serialNo': 3, 'time': '2026-08-12T00:31:00+01:00'}
+
+        with patch('hikvision_attendance_agent.load_resolution_data', return_value=workday_resolution), patch(
+            'hikvision_attendance_agent.persisted_biometric_events', return_value=(prior_events, []),
+        ), patch('hikvision_attendance_agent.apply_biometric_attendance', return_value=Counter(updated=1)) as apply:
+            result = agent.reconcile_impacted_previous_workdays([tail], observed_resolution, observed_date)
+
+        self.assertEqual(result['updated'], 1)
+        recovery_plan = apply.call_args.args[1][0]
+        self.assertEqual(recovery_plan['check_out'], '00:31:00')
+        self.assertTrue(recovery_plan['check_out_next_day'])
 
     def test_partial_cycle_processes_positive_evidence_without_advancing_complete_sync_timestamp(self):
         agent = self.make_agent(dry_run=False)
@@ -396,6 +453,15 @@ class PreviousWorkdayCompletionTests(unittest.TestCase):
         for row in excluded:
             with self.subTest(row=row):
                 self.assertEqual(completion_plans([plan], {'worker-1': row}), [])
+
+    def test_late_tail_reconciliation_only_applies_positive_next_day_checkout_plans(self):
+        valid = {
+            'worker_id': 'worker-1', 'check_in': '08:00:00', 'check_out': '00:31:00',
+            'check_out_next_day': True, 'proposed_status': 'present',
+        }
+        same_day = {**valid, 'check_out': '17:14:00', 'check_out_next_day': False}
+        missing_arrival = {**valid, 'worker_id': 'worker-2', 'check_in': None}
+        self.assertEqual(late_tail_reconciliation_plans([valid, same_day, missing_arrival], {'worker-1', 'worker-2'}), [valid])
 
     def test_previous_workday_uses_shared_resilient_device_reader(self):
         logger = logging.getLogger('attendance-agent-previous-workday-test')
