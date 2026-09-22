@@ -23,10 +23,10 @@ export const isAttendanceException = (row = {}) => {
   return exceptionStatus(row) !== 'present'
 }
 
-const reportRow = (row) => ({
+const reportRow = (row, biometricIds = new Map()) => ({
   id: row.id,
   worker: row.worker_name || row.worker?.full_name || '—',
-  employeeCode: row.worker?.employee_code || row.employee_code || '—',
+  biometricId: biometricIds.get(workerKey(row.worker_id || row.worker?.id)) || '—',
   team: row.team_name || row.team?.name || '—',
   status: exceptionStatus(row),
   checkIn: row.check_in || '—',
@@ -38,6 +38,20 @@ const boundedActiveNormalRows = (attendance = []) => (Array.isArray(attendance) 
   .filter(normalActiveWorker)
 
 const workerKey = (value) => String(value || '')
+
+const biometricIdsByWorker = (mappings = []) => {
+  const idsByWorker = new Map()
+  ;(Array.isArray(mappings) ? mappings : []).forEach((mapping) => {
+    const workerId = workerKey(mapping?.worker_id)
+    const biometricId = String(mapping?.device_employee_no || '').trim()
+    if (!workerId || !biometricId || mapping?.is_active !== true || mapping?.mapping_review_state !== 'confirmed') return
+    idsByWorker.set(workerId, new Set([...(idsByWorker.get(workerId) || []), biometricId]))
+  })
+  return new Map([...idsByWorker.entries()].map(([workerId, ids]) => [
+    workerId,
+    [...ids].sort((left, right) => left.localeCompare(right, undefined, { numeric: true })).join(' · '),
+  ]))
+}
 
 const isLaterAttendanceRow = (candidate, current) => {
   if (!current) return true
@@ -98,19 +112,21 @@ const rosterAttendanceRows = ({ workers = [], attendance = [], date } = {}) => {
     })
 }
 
-export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], date } = {}) => (
-  rosterAttendanceRows({ workers, attendance, date })
+export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], mappings = [], date } = {}) => {
+  const biometricIds = biometricIdsByWorker(mappings)
+  return rosterAttendanceRows({ workers, attendance, date })
     .filter(isAttendanceException)
-    .map(reportRow)
+    .map((row) => reportRow(row, biometricIds))
     .sort((left, right) => left.team.localeCompare(right.team) || left.worker.localeCompare(right.worker))
-)
+}
 
-export const buildDailyOvertimeReport = ({ attendance = [], date } = {}) => (
-  boundedActiveNormalRows(attendance)
-    .map((row) => ({ ...reportRow(row), overtimeMinutes: weeklyPayrollOvertimeForDetail({ date, status: row.status, row }).eveningOvertimeMinutes }))
+export const buildDailyOvertimeReport = ({ attendance = [], mappings = [], date } = {}) => {
+  const biometricIds = biometricIdsByWorker(mappings)
+  return boundedActiveNormalRows(attendance)
+    .map((row) => ({ ...reportRow(row, biometricIds), overtimeMinutes: weeklyPayrollOvertimeForDetail({ date, status: row.status, row }).eveningOvertimeMinutes }))
     .filter((row) => row.overtimeMinutes > 0)
     .sort((left, right) => left.team.localeCompare(right.team) || left.worker.localeCompare(right.worker))
-)
+}
 
 export const yesterdayFromBusinessDate = (businessDate) => {
   const value = new Date(`${businessDate}T12:00:00`)

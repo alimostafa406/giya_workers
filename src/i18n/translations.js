@@ -411,9 +411,9 @@ Object.assign(translations.fr.reports, {
 Object.assign(translations.ar.navigation, { dailyExceptions: 'تقرير استثناءات الحضور اليومية', dailyOvertime: 'تقرير الوقت الإضافي اليومي' })
 Object.assign(translations.en.navigation, { dailyExceptions: 'Daily Attendance Exceptions', dailyOvertime: 'Daily Overtime Report' })
 Object.assign(translations.fr.navigation, { dailyExceptions: 'Anomalies quotidiennes de présence', dailyOvertime: 'Rapport quotidien des heures supplémentaires' })
-Object.assign(translations.ar.reports, { dailyExceptionsTitle: 'تقرير استثناءات الحضور اليومية', dailyOvertimeTitle: 'تقرير الوقت الإضافي اليومي', dailyReportDescription: 'تقرير تشغيلي للقراءة والطباعة فقط.', overtimeHours: 'الساعات الإضافية' })
-Object.assign(translations.en.reports, { dailyExceptionsTitle: 'Daily Attendance Exceptions', dailyOvertimeTitle: 'Daily Overtime Report', dailyReportDescription: 'Read-only operational print report.', overtimeHours: 'Overtime Hours' })
-Object.assign(translations.fr.reports, { dailyExceptionsTitle: 'Rapport quotidien des anomalies de présence', dailyOvertimeTitle: 'Rapport quotidien des heures supplémentaires', dailyReportDescription: 'Rapport opérationnel en lecture seule.', overtimeHours: 'Heures supplémentaires' })
+Object.assign(translations.ar.reports, { dailyExceptionsTitle: 'تقرير استثناءات الحضور اليومية', dailyOvertimeTitle: 'تقرير الوقت الإضافي اليومي', dailyReportDescription: 'تقرير تشغيلي للقراءة والطباعة فقط.', overtimeHours: 'الساعات الإضافية', biometricId: 'رقم جهاز البصمة' })
+Object.assign(translations.en.reports, { dailyExceptionsTitle: 'Daily Attendance Exceptions', dailyOvertimeTitle: 'Daily Overtime Report', dailyReportDescription: 'Read-only operational print report.', overtimeHours: 'Overtime Hours', biometricId: 'Biometric ID' })
+Object.assign(translations.fr.reports, { dailyExceptionsTitle: 'Rapport quotidien des anomalies de présence', dailyOvertimeTitle: 'Rapport quotidien des heures supplémentaires', dailyReportDescription: 'Rapport opérationnel en lecture seule.', overtimeHours: 'Heures supplémentaires', biometricId: 'ID biométrique' })
 
 Object.assign(translations.ar, { agentStatus: {
   title: 'حالة نظام الحضور', description: 'تفصل آخر معالجة حضور ناجحة عن نبض اتصال الوكيل بالنظام.', notAvailable: '—', hikvision: 'Hikvision', supabase: 'Supabase', connected: 'متصل', disconnected: 'غير متصل', running: 'يعمل', stopped: 'متوقف', healthy: 'سليم', stale: 'متأخر', recent: 'حديثة', delayed: 'متأخرة',

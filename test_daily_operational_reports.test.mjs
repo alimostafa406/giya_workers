@@ -52,11 +52,35 @@ test('daily exceptions left-join the eligible roster and derive absent only for 
   assert.deepEqual(attendance, originalAttendance)
 })
 
+test('daily reports display only active confirmed biometric mapping IDs, never worker employee codes', () => {
+  const benjamin = { ...worker('benjamin'), employee_code: '68' }
+  const unmapped = { ...worker('unmapped'), employee_code: '99' }
+  const mappings = [
+    { worker_id: 'benjamin', device_employee_no: '149', is_active: true, mapping_review_state: 'confirmed' },
+    { worker_id: 'benjamin', device_employee_no: '150', is_active: false, mapping_review_state: 'confirmed' },
+    { worker_id: 'benjamin', device_employee_no: '151', is_active: true, mapping_review_state: 'needs_review' },
+  ]
+  const attendance = [
+    row('benjamin', { worker: benjamin, status: 'half_day', check_in: '17:13:11', check_out: null, attendance_date: '2026-09-21' }),
+    row('unmapped', { worker: unmapped, status: 'half_day', check_in: '08:00:00', check_out: null, attendance_date: '2026-09-21' }),
+  ]
+  const exceptions = buildDailyAttendanceExceptions({ workers: [benjamin, unmapped], attendance, mappings, date: '2026-09-21' })
+  const overtime = buildDailyOvertimeReport({ attendance: [row('benjamin', { worker: benjamin, check_out: '19:00:00' })], mappings, date: '2026-09-14' })
+
+  assert.deepEqual(exceptions.map((item) => [item.worker, item.biometricId]), [
+    ['Worker benjamin', '149'],
+    ['Worker unmapped', '—'],
+  ])
+  assert.equal(overtime[0].biometricId, '149')
+})
+
 test('daily exceptions page loads the selected date with pagination and derives its print rows from the same roster report', () => {
   const source = readFileSync('./src/pages/DailyOperationalReports.jsx', 'utf8')
   assert.match(source, /getAttendanceRequest\(\{ date: selectedDate, staff_classification: 'normal', paginate: true \}\)/)
   assert.match(source, /getWorkersRequest\(\)/)
-  assert.match(source, /buildDailyAttendanceExceptions\(\{ workers, attendance, date: selectedDate \}\)/)
+  assert.match(source, /getBiometricMappingsRequest\(\)/)
+  assert.match(source, /buildDailyAttendanceExceptions\(\{ workers, attendance, mappings, date: selectedDate \}\)/)
+  assert.match(source, /reports\.biometricId/)
   assert.match(source, /rows\.map\(/)
 })
 
