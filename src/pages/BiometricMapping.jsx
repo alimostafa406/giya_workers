@@ -211,7 +211,7 @@ export default function BiometricMapping() {
       setLinkingWorker(false)
     }
   }
-  const createWorkerFromDevice = async ({ fullName, employeeCode, teamId }) => {
+  const createWorkerFromDevice = async ({ fullName, employeeCode, teamId, staffClassification, paymentType }) => {
     if (!selectedDevice || creatingWorker) return
     if (selectedDevice.hasActiveMapping) {
       setError(activityLabels.activeMappingCannotCreate)
@@ -224,7 +224,7 @@ export default function BiometricMapping() {
     setPostSaveWarning('')
     try {
       await completeCriticalBiometricWorkerCreation({
-        createWorker: () => createWorkerAndConfirmBiometricMappingRequest({ deviceUser, fullName, employeeCode, teamId }),
+        createWorker: () => createWorkerAndConfirmBiometricMappingRequest({ deviceUser, fullName, employeeCode, teamId, staffClassification, paymentType }),
         onCreated: () => {
           setCommittedEmployeeCodes((previous) => [...previous, String(employeeCode || '').trim()])
           setOptimisticallyMappedEmployeeNos((previous) => new Set(previous).add(deviceUser.identityKey))

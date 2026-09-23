@@ -260,13 +260,34 @@ export const getBiometricMappingWorkspaceRequest = async () => {
   }
 }
 
-export const createWorkerAndConfirmBiometricMappingRequest = async ({ deviceUser, fullName, employeeCode, teamId }) => {
+export const createWorkerAndConfirmBiometricMappingRequest = async ({ deviceUser, fullName, employeeCode, teamId, staffClassification = 'normal', paymentType = 'weekly' }) => {
   const employeeNo = normalizeDeviceEmployeeNo(deviceUser?.employeeNo)
   const deviceId = String(deviceUser?.deviceId || '').trim()
   const name = String(fullName || '').trim()
   const code = String(employeeCode || '').trim()
-  if (!deviceId || !employeeNo || !name || !code || !teamId) {
-    throw new Error('Device identity, worker name, employee code, and team are required.')
+  if (!deviceId || !employeeNo || !name || !code) {
+    throw new Error('Device identity, worker name, and employee code are required.')
+  }
+  const isTeamlessSpecialOrMonthly = staffClassification === 'special_staff' || paymentType === 'monthly'
+  if (!teamId && !isTeamlessSpecialOrMonthly) {
+    throw new Error('A team is required for a normal operational worker.')
+  }
+  if (!teamId) {
+    const { data: worker } = await createWorkerRequest({
+      full_name: name,
+      employee_code: code,
+      phone: null,
+      team_id: null,
+      is_active: true,
+      staff_classification: staffClassification,
+      payment_type: paymentType,
+    })
+    try {
+      await saveBiometricMappingRequest({ deviceUser, workerId: worker.id, reviewState: 'confirmed' })
+    } catch (mappingError) {
+      throw new Error(`Worker was created but biometric mapping could not be completed: ${mappingError.message || 'unknown error'}`)
+    }
+    return { data: worker }
   }
   const { data, error } = await getSupabaseClient().rpc('create_worker_and_confirm_biometric_mapping', {
     p_full_name: name,

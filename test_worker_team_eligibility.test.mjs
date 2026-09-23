@@ -49,8 +49,14 @@ test('monthly payroll flow continues to identify active teamless monthly staff',
 
 test('worker form renders the translated no-team option and preserves normal team validation', async () => {
   const form = await readFile(new URL('./src/components/Forms/WorkerForm.jsx', import.meta.url), 'utf8')
+  const biometricForm = await readFile(new URL('./src/components/Biometric/CreateWorkerFromDeviceModal.jsx', import.meta.url), 'utf8')
+  const biometricApi = await readFile(new URL('./src/api/biometricMappingApi.js', import.meta.url), 'utf8')
   const api = await readFile(new URL('./src/api/workersApi.js', import.meta.url), 'utf8')
   assert.match(form, /workers\.noTeam/)
   assert.match(form, /required=\{teamRequired\}/)
+  assert.match(biometricForm, /workers\.noTeam/)
+  assert.match(biometricForm, /required=\{teamRequired\}/)
+  assert.match(biometricApi, /if \(!teamId && !isTeamlessSpecialOrMonthly\)/)
+  assert.match(biometricApi, /if \(!teamId\) \{/)
   assert.match(api, /validateWorkerTeamAssignment\(payload\)/)
 })
