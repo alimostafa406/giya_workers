@@ -73,3 +73,13 @@ test('dashboard renders the unresolved warning and Workers uses truthful coverag
   assert.match(workers, /buildBiometricCoverageByWorker/)
   assert.doesNotMatch(workers, /if \(mappings\.length > 1\).*conflict/)
 })
+
+test('Edit Worker owns scoped unlink and explicit reassignment controls', async () => {
+  const workers = await readFile(new URL('./src/pages/Workers.jsx', import.meta.url), 'utf8')
+  assert.match(workers, /WorkerBiometricMappings/)
+  assert.match(workers, /mapping\.device_id.*mapping\.device_employee_no/)
+  assert.match(workers, /await onChange\(\{ mapping \}\)/)
+  assert.match(workers, /setPendingMove\(\{ selected, owner \}\)/)
+  assert.match(workers, /onClick=\{\(\) => link\(true\)\}/)
+  assert.match(workers, /saveBiometricMappingRequest\(\{ deviceUser, workerId: selectedWorker\.id, replaceExisting, reviewState: 'confirmed' \}\)/)
+})

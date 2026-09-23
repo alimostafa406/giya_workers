@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { getBiometricMappingsRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
+import { getBiometricMappingsRequest, saveBiometricMappingRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
+import { getHikvisionDeviceUsers } from '../data/hikvisionRawData'
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import {
@@ -35,7 +35,6 @@ const getWorkerIsActive = (worker) => {
 
 function Workers() {
   const { t, language } = useTranslation()
-  const navigate = useNavigate()
   const [workers, setWorkers] = useState([])
   const [teams, setTeams] = useState([])
   const [biometricMappings, setBiometricMappings] = useState([])
@@ -160,24 +159,14 @@ function Workers() {
     }
   }
 
-  const handleUnlinkBiometric = async (worker) => {
-    const mappings = biometricByWorkerId.get(String(worker.id)) || []
-    const mapping = mappings[0]
-    if (!mapping) {
-      navigate(`/biometric-mapping?workerId=${encodeURIComponent(worker.id)}`)
-      return
-    }
-
-    const confirmed = window.confirm(t('workers.unlinkConfirm'))
-    if (!confirmed) return
-
-    setError('')
+  const handleMappingChange = async ({ mapping, deviceUser, replaceExisting = false }) => {
+    setIsSaving(true); setError('')
     try {
-      await unlinkBiometricMappingRequest(mapping.id)
+      if (mapping) await unlinkBiometricMappingRequest(mapping.id)
+      else await saveBiometricMappingRequest({ deviceUser, workerId: selectedWorker.id, replaceExisting, reviewState: 'confirmed' })
       await loadData()
-    } catch (err) {
-      setError(getErrorMessage(err))
-    }
+    } catch (err) { setError(getErrorMessage(err)); throw err }
+    finally { setIsSaving(false) }
   }
 
   const columns = [
@@ -234,20 +223,6 @@ function Workers() {
           >
             {getWorkerIsActive(row) ? t('common.disable') : t('common.enable')}
           </button>
-          <button
-            type="button"
-            onClick={() => navigate(`/biometric-mapping?workerId=${encodeURIComponent(row.id)}`)}
-            className="btn-secondary px-3 py-1"
-          >
-            {(biometricByWorkerId.get(String(row.id)) || []).length ? t('workers.changeBiometric') : t('workers.linkBiometric')}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleUnlinkBiometric(row)}
-            className="btn-secondary px-3 py-1"
-          >
-            {t('workers.unlinkBiometric')}
-          </button>
         </div>
       ),
     },
@@ -296,9 +271,39 @@ function Workers() {
           onSubmit={handleSubmit}
           isSaving={isSaving}
         />
+        {selectedWorker ? <WorkerBiometricMappings worker={selectedWorker} mappings={biometricByWorkerId.get(String(selectedWorker.id)) || []} allMappings={biometricMappings} workers={workers} deviceUsers={getHikvisionDeviceUsers()} isSaving={isSaving} onChange={handleMappingChange} /> : null}
       </Modal>
     </section>
   )
+}
+
+function WorkerBiometricMappings({ worker, mappings, allMappings, workers, deviceUsers, isSaving, onChange }) {
+  const { t } = useTranslation()
+  const [identityKey, setIdentityKey] = useState('')
+  const [pendingMove, setPendingMove] = useState(null)
+  const active = mappings.filter((mapping) => mapping.is_active !== false)
+  const available = deviceUsers.filter((user) => user?.deviceId && user?.employeeNo && user.isCurrentlyReturned !== false)
+  const selected = available.find((user) => `${user.deviceId}::${user.employeeNo}` === identityKey) || null
+  const ownerFor = (user) => allMappings.find((mapping) => mapping.is_active !== false && String(mapping.device_employee_no) === String(user.employeeNo) && (!mapping.device_id || String(mapping.device_id) === String(user.deviceId))) || null
+  const ownerName = (mapping) => workers.find((candidate) => String(candidate.id) === String(mapping?.worker_id))?.full_name || t('common.unknown')
+  const link = async (replaceExisting = false) => {
+    if (!selected) return
+    const owner = ownerFor(selected)
+    if (owner && String(owner.worker_id) !== String(worker.id) && !replaceExisting) { setPendingMove({ selected, owner }); return }
+    await onChange({ deviceUser: selected, replaceExisting })
+    setIdentityKey(''); setPendingMove(null)
+  }
+  const unlink = async (mapping) => {
+    if (!window.confirm(t('workers.unlinkConfirm'))) return
+    await onChange({ mapping })
+  }
+  return <section className="mt-5 border-t border-(--border) pt-4">
+    <h3 className="font-extrabold">{t('workers.biometricMappingTitle')}</h3>
+    <p className="mt-1 text-sm text-(--muted)">{t('workers.biometricMappingHint')}</p>
+    <div className="mt-3 space-y-2">{active.length ? active.map((mapping) => <div key={mapping.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-(--border) px-3 py-2"><span dir="ltr"><b>{mapping.device_id || 'legacy'} · {mapping.device_employee_no}</b></span><span className="text-xs">{mapping.mapping_review_state === 'confirmed' ? t('biometric.confirmed') : t('biometric.unconfirmed')} · {mapping.is_active === false ? t('common.inactive') : t('common.active')}</span><button type="button" className="btn-secondary px-2 py-1 text-xs" disabled={isSaving} onClick={() => unlink(mapping)}>{t('workers.unlinkBiometric')}</button></div>) : <p className="text-sm text-(--muted)">{t('workers.unlinked')}</p>}</div>
+    <div className="mt-3 flex flex-wrap items-end gap-2"><label className="min-w-64 flex-1 text-sm font-semibold">{t('workers.linkAnotherBiometric')}<select className="input-base mt-1" value={identityKey} onChange={(event) => { setIdentityKey(event.target.value); setPendingMove(null) }}><option value="">{t('biometricMapping.selectIdentity')}</option>{available.map((user) => <option key={`${user.deviceId}::${user.employeeNo}`} value={`${user.deviceId}::${user.employeeNo}`}>{user.deviceId} · {user.employeeNo} · {user.name}</option>)}</select></label><button type="button" className="btn-primary" disabled={!selected || isSaving} onClick={() => link(false)}>{t('workers.linkBiometric')}</button></div>
+    {pendingMove ? <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm"><b>{t('workers.biometricConflict', { worker: ownerName(pendingMove.owner) })}</b><div className="mt-2 flex gap-2"><button type="button" className="btn-primary" disabled={isSaving} onClick={() => link(true)}>{t('workers.confirmMoveBiometric')}</button><button type="button" className="btn-secondary" onClick={() => setPendingMove(null)}>{t('common.cancel')}</button></div></div> : null}
+  </section>
 }
 
 export default Workers
