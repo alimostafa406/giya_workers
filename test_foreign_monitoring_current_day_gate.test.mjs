@@ -6,6 +6,10 @@ const migration = readFileSync(
   './supabase/sql/foreign_monitoring_current_day_verification_gate.sql',
   'utf8',
 )
+const snapshotMigration = readFileSync(
+  './supabase/sql/foreign_monitoring_normal_report_snapshot.sql',
+  'utf8',
+)
 
 const reportIsAvailable = ({ dateFrom, dateTo, today, morningStatus }) => {
   const requestsToday = dateFrom <= today && dateTo >= today
@@ -48,4 +52,24 @@ test('the central token-authenticated RPC performs the readiness check without e
   assert.match(migration, /verification\.status = 'complete'/)
   assert.match(migration, /v_today date := \(now\(\) at time zone 'Africa\/Kinshasa'\)::date/)
   assert.doesNotMatch(migration, /grant\s+(?:select|all).*on\s+(?:table\s+)?public\.attendance_verification_run/i)
+})
+
+test('a completed morning verification freezes one idempotent public snapshot', () => {
+  assert.match(snapshotMigration, /foreign_monitoring_normal_report_snapshot/)
+  assert.match(snapshotMigration, /after insert or update of status on public\.attendance_verification_run/)
+  assert.match(snapshotMigration, /new\.verification_type='morning' and new\.status='complete'/)
+  assert.match(snapshotMigration, /on conflict \(report_date\) do nothing/)
+})
+
+test('today reads only its frozen snapshot while historical ranges use the normal payload', () => {
+  assert.match(snapshotMigration, /select payload into v_snapshot from public\.foreign_monitoring_normal_report_snapshot where report_date=v_today/)
+  assert.match(snapshotMigration, /if v_snapshot is null then[\s\S]*'reportAvailable',false/)
+  assert.match(snapshotMigration, /select public\.foreign_monitoring_normal_report_payload\(p_date_from,p_date_to\) into v_snapshot/)
+})
+
+test('snapshot payload excludes Administration and has the existing export data fields', () => {
+  assert.match(snapshotMigration, /t\.name is distinct from 'Adminstration'/)
+  for (const key of ['workers', 'teams', 'attendance', 'mappedBiometricEvents']) {
+    assert.match(snapshotMigration, new RegExp(`'${key}'`))
+  }
 })
