@@ -97,7 +97,9 @@ function AttendanceAgentStatus() {
       setRebuildMessage(t('agentStatus.rebuildTodayReportSuccess'))
       await load()
     } catch (nextError) {
-      setRebuildError(nextError instanceof Error ? nextError.message : t('agentStatus.rebuildTodayReportFailed'))
+      setRebuildError(nextError instanceof Error && nextError.message
+        ? nextError.message
+        : t('agentStatus.rebuildTodayReportFailed'))
     } finally {
       setRebuildBusy(false)
     }
@@ -163,7 +165,7 @@ function AttendanceAgentStatus() {
       {Boolean(admin?.id) && verificationDetails.isComplete ? <div className="mt-3 border-t border-slate-100 pt-3">
         <button type="button" className="btn-secondary" disabled={rebuildBusy} onClick={rebuildTodayReport}>{rebuildBusy ? t('agentStatus.rebuildingTodayReport') : t('agentStatus.rebuildTodayReport')}</button>
         {rebuildMessage ? <p className="mt-2 text-emerald-700">{rebuildMessage}</p> : null}
-        {rebuildError ? <p className="mt-2 text-amber-700">{t('agentStatus.rebuildTodayReportFailed')}: {rebuildError}</p> : null}
+        {rebuildError ? <p className="mt-2 text-amber-700">{rebuildError}</p> : null}
       </div> : null}
     </div> : null}
     {devices.length ? <div className="w-full border-t border-slate-100 pt-3 text-xs text-(--muted)">{devices.map((device) => <div key={device.device_id} className="flex flex-wrap justify-between gap-2 py-1"><span>{device.device_id}: {device.hikvision_reachable ? t('agentStatus.connected') : t('agentStatus.disconnected')}</span><span>{t('agentStatus.lastDeviceRead')}: <span dir="ltr">{time(device.last_successful_read_at)}</span></span>{device.last_error ? <span className="text-amber-700">{device.last_error}</span> : null}</div>)}</div> : null}
