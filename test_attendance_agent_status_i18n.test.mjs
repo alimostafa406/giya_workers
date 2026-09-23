@@ -28,3 +28,12 @@ test('agent controls and agent state labels are translated in Arabic, English, a
     assert.equal(typeof labels.verificationInProgress, 'string')
   }
 })
+
+test('today report rebuild action is translated in Arabic, English, and French', () => {
+  for (const language of ['ar', 'en', 'fr']) {
+    const labels = translations[language].agentStatus
+    assert.equal(typeof labels.rebuildTodayReport, 'string')
+    assert.equal(typeof labels.rebuildTodayReportConfirm, 'string')
+    assert.equal(typeof labels.rebuildTodayReportSuccess, 'string')
+  }
+})

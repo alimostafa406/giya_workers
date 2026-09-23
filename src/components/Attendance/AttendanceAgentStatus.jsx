@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { getAgentControlStatus, runAgentControlAction } from '../../api/agentControlApi'
-import { getAttendanceAgentDeviceStatusesRequest, getAttendanceAgentStatusRequest, getMorningVerificationStatusRequest, isAttendanceAgentOnline, isAttendanceProcessingRecent } from '../../api/attendanceAgentApi'
+import { getAttendanceAgentDeviceStatusesRequest, getAttendanceAgentStatusRequest, getMorningVerificationStatusRequest, rebuildTodayPublicNormalReportSnapshotRequest, isAttendanceAgentOnline, isAttendanceProcessingRecent } from '../../api/attendanceAgentApi'
 import { useTranslation } from '../../i18n/LanguageContext'
+import { useAuthStore } from '../../store/authStore'
 import { attendanceAgentHealth } from '../../utils/attendanceAgentHealth'
 import { morningVerificationDiagnostics, morningVerificationReasonKey } from '../../utils/morningVerificationDiagnostics'
 
@@ -19,6 +20,7 @@ const formatDateTime = (value, language, fallback) => {
 
 function AttendanceAgentStatus() {
   const { language, t } = useTranslation()
+  const admin = useAuthStore((state) => state.admin)
   const [status, setStatus] = useState(null)
   const [error, setError] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
@@ -28,6 +30,9 @@ function AttendanceAgentStatus() {
   const [controlBusy, setControlBusy] = useState('')
   const [controlMessage, setControlMessage] = useState('')
   const [controlError, setControlError] = useState('')
+  const [rebuildBusy, setRebuildBusy] = useState(false)
+  const [rebuildMessage, setRebuildMessage] = useState('')
+  const [rebuildError, setRebuildError] = useState('')
 
   const refreshControls = async () => {
     try {
@@ -79,6 +84,22 @@ function AttendanceAgentStatus() {
       setControlError(nextError instanceof Error ? nextError.message : t('agentStatus.control.failed'))
     } finally {
       setControlBusy('')
+    }
+  }
+
+  const rebuildTodayReport = async () => {
+    if (!window.confirm(t('agentStatus.rebuildTodayReportConfirm'))) return
+    setRebuildBusy(true)
+    setRebuildMessage('')
+    setRebuildError('')
+    try {
+      await rebuildTodayPublicNormalReportSnapshotRequest()
+      setRebuildMessage(t('agentStatus.rebuildTodayReportSuccess'))
+      await load()
+    } catch (nextError) {
+      setRebuildError(nextError instanceof Error ? nextError.message : t('agentStatus.rebuildTodayReportFailed'))
+    } finally {
+      setRebuildBusy(false)
     }
   }
 
@@ -139,6 +160,11 @@ function AttendanceAgentStatus() {
         <span>{t('agentStatus.finalVerificationStep')}: {t(`agentStatus.verificationStates.${verificationDetails.runStatus}`)}</span>
         {verificationDetails.unresolvedWorkers ? <span>{t('agentStatus.unresolvedWorkers', { count: verificationDetails.unresolvedWorkers })}</span> : null}
       </div>
+      {Boolean(admin?.id) && verificationDetails.isComplete ? <div className="mt-3 border-t border-slate-100 pt-3">
+        <button type="button" className="btn-secondary" disabled={rebuildBusy} onClick={rebuildTodayReport}>{rebuildBusy ? t('agentStatus.rebuildingTodayReport') : t('agentStatus.rebuildTodayReport')}</button>
+        {rebuildMessage ? <p className="mt-2 text-emerald-700">{rebuildMessage}</p> : null}
+        {rebuildError ? <p className="mt-2 text-amber-700">{t('agentStatus.rebuildTodayReportFailed')}: {rebuildError}</p> : null}
+      </div> : null}
     </div> : null}
     {devices.length ? <div className="w-full border-t border-slate-100 pt-3 text-xs text-(--muted)">{devices.map((device) => <div key={device.device_id} className="flex flex-wrap justify-between gap-2 py-1"><span>{device.device_id}: {device.hikvision_reachable ? t('agentStatus.connected') : t('agentStatus.disconnected')}</span><span>{t('agentStatus.lastDeviceRead')}: <span dir="ltr">{time(device.last_successful_read_at)}</span></span>{device.last_error ? <span className="text-amber-700">{device.last_error}</span> : null}</div>)}</div> : null}
     {controlStatus ? <div className="w-full border-t border-slate-100 pt-3 text-xs text-(--muted)">

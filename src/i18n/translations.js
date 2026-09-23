@@ -442,3 +442,25 @@ Object.assign(translations.fr, { agentStatus: {
   control: { title: 'Contrôle de l’agent', description: 'Ces commandes gèrent uniquement WorkersHikvisionAttendanceAgent et n’arrêtent aucun autre processus Python.', start: 'Démarrer l’agent', stop: 'Arrêter l’agent', restart: 'Redémarrer l’agent', working: 'Exécution...', stopConfirm: 'Arrêter l’agent de présence ? Aucune donnée de présence ne sera modifiée.', success: 'Action {action} terminée. Nombre de processus : {count}', failed: 'Impossible d’exécuter l’action de contrôle', actions: { start: 'de démarrage', stop: 'd’arrêt', restart: 'de redémarrage' } },
   reasons: { device_read_failed: 'La lecture de l’appareil n’est pas terminée{deviceId}{error}', no_safe_confirmed_mapping: 'Un travailleur n’a pas de correspondance biométrique sûre et confirmée.', attendance_apply_failed: 'La preuve biométrique n’a pas pu être appliquée au registre de présence.', unknown_biometric_participation: 'Le statut de participation biométrique du travailleur n’est pas défini.', verification_state_changed: 'L’état de présence ou la liste des travailleurs a changé pendant la vérification ; relancez une tentative.', malformed_child_row: 'Les données de preuve de vérification sont incomplètes ou non valides.', verification_error: 'Erreur de vérification : {error}', unresolved_workers: '{count} travailleur(s) restent sans vérification finale complète.', verification_incomplete: 'L’agent a terminé la tentative comme incomplète sans raison plus précise.', verification_not_run: 'La vérification matinale finale n’a pas encore été exécutée aujourd’hui.', verification_not_due: 'La vérification matinale finale n’est pas encore prévue.', verification_running: 'La vérification matinale finale est en cours.', verification_failed: 'La vérification matinale finale a échoué.', verification_pending: 'La vérification matinale finale n’a pas encore commencé.', unknown: 'Raison de vérification inconnue.' },
 } })
+
+Object.assign(translations.ar.agentStatus, {
+  rebuildTodayReport: 'إعادة إنشاء تقرير اليوم',
+  rebuildingTodayReport: 'جارٍ إعادة إنشاء تقرير اليوم...',
+  rebuildTodayReportConfirm: 'سيتم استبدال النسخة المنشورة الحالية لتقرير اليوم بالبيانات الحالية. هل تريد المتابعة؟',
+  rebuildTodayReportSuccess: 'تمت إعادة إنشاء تقرير اليوم بنجاح.',
+  rebuildTodayReportFailed: 'تعذر إعادة إنشاء تقرير اليوم.',
+})
+Object.assign(translations.en.agentStatus, {
+  rebuildTodayReport: "Rebuild Today's Report",
+  rebuildingTodayReport: "Rebuilding Today's Report...",
+  rebuildTodayReportConfirm: 'The current published snapshot for today will be replaced with current data. Do you want to continue?',
+  rebuildTodayReportSuccess: "Today's report was rebuilt successfully.",
+  rebuildTodayReportFailed: "Unable to rebuild today's report.",
+})
+Object.assign(translations.fr.agentStatus, {
+  rebuildTodayReport: 'Reconstruire le rapport du jour',
+  rebuildingTodayReport: 'Reconstruction du rapport du jour...',
+  rebuildTodayReportConfirm: 'La version publiée actuelle du rapport du jour sera remplacée par les données actuelles. Voulez-vous continuer ?',
+  rebuildTodayReportSuccess: 'Le rapport du jour a été reconstruit avec succès.',
+  rebuildTodayReportFailed: 'Impossible de reconstruire le rapport du jour.',
+})

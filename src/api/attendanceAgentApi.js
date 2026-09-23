@@ -43,3 +43,13 @@ export const getMorningVerificationStatusRequest = async (workDate = kinshasaClo
     lastSuccessfulAttempt: attempts.find((attempt) => attempt.status === 'complete') || null,
   }
 }
+
+// This RPC is deliberately admin-only.  It republishes today's already-finalized
+// canonical report payload; it does not run attendance processing or verification.
+export const rebuildTodayPublicNormalReportSnapshotRequest = async () => {
+  const { data, error } = await getSupabaseClient()
+    .rpc('admin_rebuild_today_normal_report_snapshot')
+
+  if (error) throw error
+  return Array.isArray(data) ? (data[0] || null) : data
+}
