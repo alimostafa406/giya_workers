@@ -98,7 +98,14 @@ def previous_workday(today: date_type) -> date_type:
 
 
 def completion_plans(plans: list[dict], existing_attendance: dict) -> list[dict]:
-    """Recover only an established biometric arrival missing its real checkout."""
+    """Recover an established biometric day when a later real checkout is known.
+
+    A supervisor can deliberately punch at the normal end of shift and return
+    to work.  The terminal's later punch is then the canonical checkout, not
+    merely supporting evidence.  This selector is deliberately narrow: it
+    only replays explicit biometric, unprotected rows with an established
+    check-in and a plan whose real qualifying checkout advances the stored one.
+    """
     eligible = []
     for plan in plans:
         existing = existing_attendance.get(plan['worker_id'])
@@ -107,11 +114,32 @@ def completion_plans(plans: list[dict], existing_attendance: dict) -> list[dict]
             and existing.get('attendance_source') == 'biometric'
             and existing.get('manual_override') is False
             and existing.get('check_in')
-            and existing.get('check_out') is None
             and plan.get('check_out')
+            and checkout_advances_existing(plan, existing)
         ):
             eligible.append(plan)
     return eligible
+
+
+def checkout_advances_existing(plan: dict, existing: dict) -> bool:
+    """Compare checkout clocks without treating a 00:xx tail as an earlier day.
+
+    `review_approved_check_out_at` is the durable date-aware marker for a
+    prior-workday next-day checkout. A next-day candidate outranks a same-day
+    stored checkout, but never rewrites a later existing tail merely because
+    its wall-clock representation is numerically smaller.
+    """
+    existing_checkout = existing.get('check_out')
+    candidate_checkout = plan.get('check_out')
+    if not candidate_checkout:
+        return False
+    if not existing_checkout:
+        return True
+    candidate_is_tail = plan.get('check_out_next_day') is True
+    existing_is_tail = bool(existing.get('review_approved_check_out_at'))
+    if candidate_is_tail != existing_is_tail:
+        return candidate_is_tail
+    return candidate_checkout > existing_checkout
 
 
 def positive_evidence_plans(plans: list[dict]) -> list[dict]:

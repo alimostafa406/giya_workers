@@ -706,6 +706,43 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
         self.assertEqual(repeated_payload, first_payload)
         self.assertFalse(payload_changed(first_payload, repeated_payload))
 
+    def test_latest_same_day_qualifying_punch_is_the_canonical_checkout(self):
+        events = [
+            attendance_event('07:30:00', serial=1),
+            attendance_event('17:00:00', serial=2),
+            attendance_event('18:14:00', serial=3),
+            attendance_event('19:30:00', serial=4),
+            attendance_event('23:06:00', serial=5),
+        ]
+        plan = plan_attendance(events, resolution_with(None), TARGET_DATE)[0][0]
+        self.assertEqual(plan['check_in'], '07:30:00')
+        self.assertEqual(plan['check_out'], '23:06:00')
+
+    def test_latest_next_day_tail_is_the_canonical_checkout(self):
+        events = [
+            attendance_event('07:30:00', serial=1),
+            attendance_event('17:00:00', serial=2),
+            attendance_event('00:31:00', serial=3, event_date='2026-08-12'),
+        ]
+        plan = plan_attendance(events, resolution_with(None), TARGET_DATE)[0][0]
+        self.assertEqual(plan['check_out'], '00:31:00')
+        self.assertTrue(plan['check_out_next_day'])
+
+    def test_completed_biometric_row_upgrades_to_a_later_real_checkout_without_downgrade(self):
+        existing = {
+            'attendance_date': TARGET_DATE.isoformat(), 'status': 'present',
+            'check_in': '07:30:00', 'check_out': '17:00:00',
+            'attendance_source': 'biometric', 'manual_override': False,
+        }
+        plan = plan_attendance(
+            [attendance_event('23:06:00', serial=3)], resolution_with(existing), TARGET_DATE,
+        )[0][0]
+        payload = biometric_payload(plan, existing)
+        self.assertEqual(payload['status'], 'present')
+        self.assertEqual(payload['check_in'], '07:30:00')
+        self.assertEqual(payload['check_out'], '23:06:00')
+        self.assertTrue(payload_changed(existing, payload))
+
     def test_absence_plan_cannot_downgrade_existing_late_biometric_row(self):
         existing = {
             'status': 'late',

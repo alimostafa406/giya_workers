@@ -436,7 +436,7 @@ class PreviousWorkdayCompletionTests(unittest.TestCase):
         checkin_plan = {'worker_id': 'worker-with-device-proof', 'proposed_status': 'half_day', 'check_in': '09:05:00'}
         self.assertEqual(completion_plans([checkin_plan], {}), [])
 
-    def test_recovery_selects_only_unprotected_biometric_row_missing_checkout(self):
+    def test_recovery_selects_only_unprotected_biometric_rows_with_a_later_checkout(self):
         plan = {'worker_id': 'worker-1', 'proposed_status': 'present', 'check_in': '07:50:00', 'check_out': '17:05:00'}
         eligible = {
             'status': 'half_day', 'check_in': '07:50:00', 'check_out': None,
@@ -448,11 +448,49 @@ class PreviousWorkdayCompletionTests(unittest.TestCase):
             {**eligible, 'attendance_source': 'manual'},
             {**eligible, 'manual_override': True},
             {**eligible, 'check_in': None},
-            {**eligible, 'check_out': '17:00:00'},
+            {**eligible, 'check_out': '17:05:00'},
+            {**eligible, 'check_out': '18:00:00'},
         )
         for row in excluded:
             with self.subTest(row=row):
                 self.assertEqual(completion_plans([plan], {'worker-1': row}), [])
+
+    def test_recovery_reopens_completed_biometric_day_for_later_same_day_checkout(self):
+        existing = {
+            'status': 'present', 'check_in': '07:30:00', 'check_out': '17:00:00',
+            'attendance_source': 'biometric', 'manual_override': False,
+        }
+        plan = {
+            'worker_id': 'worker-1', 'proposed_status': 'present',
+            'check_in': '07:30:00', 'check_out': '23:06:00',
+            'check_out_next_day': False,
+        }
+        self.assertEqual(completion_plans([plan], {'worker-1': existing}), [plan])
+
+    def test_recovery_reopens_completed_biometric_day_for_next_day_tail_checkout(self):
+        existing = {
+            'status': 'present', 'check_in': '07:30:00', 'check_out': '17:00:00',
+            'attendance_source': 'biometric', 'manual_override': False,
+        }
+        plan = {
+            'worker_id': 'worker-1', 'proposed_status': 'present',
+            'check_in': '07:30:00', 'check_out': '00:31:00',
+            'check_out_next_day': True,
+        }
+        self.assertEqual(completion_plans([plan], {'worker-1': existing}), [plan])
+
+    def test_recovery_does_not_replace_a_later_existing_next_day_tail(self):
+        existing = {
+            'status': 'present', 'check_in': '07:30:00', 'check_out': '01:00:00',
+            'attendance_source': 'biometric', 'manual_override': False,
+            'review_approved_check_out_at': '2026-08-14T01:00:00+01:00',
+        }
+        plan = {
+            'worker_id': 'worker-1', 'proposed_status': 'present',
+            'check_in': '07:30:00', 'check_out': '00:31:00',
+            'check_out_next_day': True,
+        }
+        self.assertEqual(completion_plans([plan], {'worker-1': existing}), [])
 
     def test_late_tail_reconciliation_only_applies_positive_next_day_checkout_plans(self):
         valid = {
