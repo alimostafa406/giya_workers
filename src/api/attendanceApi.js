@@ -169,6 +169,14 @@ const readWorkerClassifications = async (client) => {
   return toArray(data)
 }
 
+const readPayrollProfiles = async (client) => {
+  const { data, error } = await client
+    .from('worker_payroll_profile')
+    .select('worker_id,payment_type')
+  if (error) throw error
+  return toArray(data)
+}
+
 const readConfirmedBiometricMappings = async (client) => {
   const { data, error } = await client
     .from('biometric_worker_mapping')
@@ -182,11 +190,12 @@ const readConfirmedBiometricMappings = async (client) => {
 
 export const getAttendanceRequest = async (params = {}) => {
   const client = getSupabaseClient()
-  const [attendance, workers, teams, classifications, confirmedMappings] = await Promise.all([
+  const [attendance, workers, teams, classifications, payrollProfiles, confirmedMappings] = await Promise.all([
     readAttendance(client, params),
     readWorkers(client),
     readTeams(client),
     readWorkerClassifications(client),
+    readPayrollProfiles(client),
     readConfirmedBiometricMappings(client),
   ])
 
@@ -196,9 +205,13 @@ export const getAttendanceRequest = async (params = {}) => {
   const confirmedMappingByWorkerId = new Map(
     confirmedMappings.filter((mapping) => mapping?.worker_id && mapping?.device_employee_no).map((mapping) => [String(mapping.worker_id), mapping]),
   )
+  const payrollProfileByWorkerId = new Map(
+    payrollProfiles.filter((item) => item?.worker_id).map((item) => [String(item.worker_id), item]),
+  )
   const workersById = new Map(workers.map((worker) => [String(worker.id), {
     ...worker,
     staff_classification: classificationsByWorkerId.get(String(worker.id)) || 'normal',
+    payment_type: payrollProfileByWorkerId.get(String(worker.id))?.payment_type || null,
   }]))
   const teamsById = new Map(teams.map((team) => [String(team.id), team]))
 

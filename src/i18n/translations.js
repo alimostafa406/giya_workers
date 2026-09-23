@@ -464,3 +464,16 @@ Object.assign(translations.fr.agentStatus, {
   rebuildTodayReportSuccess: 'Le rapport du jour a été reconstruit avec succès.',
   rebuildTodayReportFailed: 'Impossible de reconstruire le rapport du jour.',
 })
+
+Object.assign(translations.ar.workers, {
+  noTeam: 'بدون فريق',
+  noTeamAllowed: 'الفريق اختياري للموظف الخاص أو الشهري.',
+})
+Object.assign(translations.en.workers, {
+  noTeam: 'No team',
+  noTeamAllowed: 'A team is optional for special or monthly staff.',
+})
+Object.assign(translations.fr.workers, {
+  noTeam: 'Sans équipe',
+  noTeamAllowed: 'Une équipe est facultative pour le personnel spécial ou mensuel.',
+})

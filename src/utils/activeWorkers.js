@@ -1,3 +1,5 @@
+import { workerRequiresOperationalTeam } from './workerTeamEligibility.js'
+
 export const isActiveWorker = (worker) => worker?.is_active === true
 
 export const isActiveWorkerOnDate = (worker, date = '') => (
@@ -16,14 +18,20 @@ export const isOperationalAttendanceWorker = (worker, team = null) => {
   const suppliedTeamName = typeof team === 'string' ? team : team?.name
   const workerTeamName = typeof worker?.team === 'string' ? worker.team : worker?.team?.name
   const teamName = suppliedTeamName ?? workerTeamName ?? worker?.team_name
-  return isActiveWorker(worker) && isOperationalAttendanceTeam(teamName)
+  return isActiveWorker(worker)
+    && workerRequiresOperationalTeam(worker)
+    && Boolean(teamName)
+    && isOperationalAttendanceTeam(teamName)
 }
 
 export const isOperationalAttendanceWorkerOnDate = (worker, date = '', team = null) => {
   const suppliedTeamName = typeof team === 'string' ? team : team?.name
   const workerTeamName = typeof worker?.team === 'string' ? worker.team : worker?.team?.name
   const teamName = suppliedTeamName ?? workerTeamName ?? worker?.team_name
-  return isActiveWorkerOnDate(worker, date) && isOperationalAttendanceTeam(teamName)
+  return isActiveWorkerOnDate(worker, date)
+    && workerRequiresOperationalTeam(worker)
+    && Boolean(teamName)
+    && isOperationalAttendanceTeam(teamName)
 }
 
 export const activeWorkersOnly = (workers = []) => (

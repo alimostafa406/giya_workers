@@ -152,6 +152,9 @@ function Workers() {
         phone: worker.phone,
         team_id: worker.team_id,
         is_active: !getWorkerIsActive(worker),
+        staff_classification: worker.staff_classification,
+        payment_type: worker.payment_type,
+        monthly_salary: worker.monthly_salary,
       })
       await loadData()
     } catch (err) {

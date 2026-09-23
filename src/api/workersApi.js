@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
+import { validateWorkerTeamAssignment } from '../utils/workerTeamEligibility'
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
 
@@ -88,6 +89,18 @@ export const saveWorkerPayrollProfileRequest = async (workerId, values) => {
 	return { data }
 }
 
+export const saveWorkerStaffClassificationRequest = async (workerId, classification) => {
+	if (!classification) return null
+	const client = getSupabaseClient()
+	const { data, error } = await client
+		.from('worker_staff_classification')
+		.upsert({ worker_id: workerId, classification }, { onConflict: 'worker_id' })
+		.select('worker_id,classification')
+		.single()
+	if (error) throw error
+	return { data }
+}
+
 export const getWorkersRequest = async () => {
 	const client = getSupabaseClient()
 	const [workers, teams, payrollProfiles, classifications] = await Promise.all([
@@ -123,6 +136,7 @@ export const getWorkersRequest = async () => {
 }
 
 export const createWorkerRequest = async (payload) => {
+	validateWorkerTeamAssignment(payload)
 	const client = getSupabaseClient()
 	const insertPayload = buildWorkerPayload(payload)
 
@@ -140,11 +154,13 @@ export const createWorkerRequest = async (payload) => {
 		payment_type: payload.payment_type || 'weekly',
 		monthly_salary: payload.monthly_salary,
 	})
+	await saveWorkerStaffClassificationRequest(data.id, payload.staff_classification || 'normal')
 
 	return { data }
 }
 
 export const updateWorkerRequest = async (id, payload) => {
+	validateWorkerTeamAssignment(payload)
 	const client = getSupabaseClient()
 	const updatePayload = buildWorkerPayload(payload)
 
@@ -162,6 +178,9 @@ export const updateWorkerRequest = async (id, payload) => {
 	if (payload.payment_type) {
 		await saveWorkerPayrollProfileRequest(id, payload)
 	}
+	if (payload.staff_classification) {
+		await saveWorkerStaffClassificationRequest(id, payload.staff_classification)
+	}
 
 	return { data }
 }
@@ -176,5 +195,8 @@ export const reactivateWorkerRequest = async (worker) => {
 		phone: worker.phone,
 		team_id: worker.team_id,
 		is_active: true,
+		staff_classification: worker.staff_classification,
+		payment_type: worker.payment_type,
+		monthly_salary: worker.monthly_salary,
 	})
 }
