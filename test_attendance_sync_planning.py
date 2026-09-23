@@ -47,6 +47,19 @@ def attendance_event(clock, *, minor=75, serial=1, event_date='2026-08-11'):
 
 
 class ExistingAttendanceProtectionTests(unittest.TestCase):
+    def test_operational_start_date_excludes_prior_workday_without_losing_later_eligibility(self):
+        resolution = resolution_with(None)
+        resolution['workers'][WORKER_ID]['operational_start_date'] = '2026-08-12'
+
+        before_plans, before_counters = plan_attendance([attendance_event('08:00:00')], resolution, TARGET_DATE)
+        self.assertEqual(before_plans, [])
+        self.assertEqual(before_counters['ignored_inactive_worker'], 1)
+
+        active_date = date(2026, 8, 12)
+        active_plans, _ = plan_attendance([attendance_event('08:00:00', event_date='2026-08-12')], resolution, active_date)
+        self.assertEqual(len(active_plans), 1)
+        self.assertEqual(active_plans[0]['worker_id'], WORKER_ID)
+
     def test_existing_biometric_checkin_pairs_with_checkout_after_discontinuous_read(self):
         existing = {
             'attendance_date': TARGET_DATE.isoformat(),

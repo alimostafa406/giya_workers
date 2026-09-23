@@ -141,7 +141,7 @@ const readAttendance = async (client, params = {}) => {
 const readWorkers = async (client) => {
   const { data, error } = await client
     .from('workers')
-    .select('id,team_id,full_name,employee_code,phone,is_active,created_at,updated_at')
+    .select('id,team_id,full_name,employee_code,phone,is_active,operational_start_date,created_at,updated_at')
 
   if (error) {
     throw error

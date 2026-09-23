@@ -1,8 +1,8 @@
-import { isOperationalAttendanceWorker } from './activeWorkers.js'
+import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
 
-const normalActiveWorker = (row) => (
-  isOperationalAttendanceWorker(row?.worker, row?.team || row?.team_name)
+const normalActiveWorker = (row, date = '') => (
+  isOperationalAttendanceWorkerOnDate(row?.worker, date, row?.team || row?.team_name)
   && (row?.worker?.staff_classification || 'normal') === 'normal'
 )
 
@@ -39,8 +39,8 @@ const reportRow = (row, biometricIds = new Map()) => ({
   note: String(row.note || '').trim() || '—',
 })
 
-const boundedActiveNormalRows = (attendance = []) => (Array.isArray(attendance) ? attendance : [])
-  .filter(normalActiveWorker)
+const boundedActiveNormalRows = (attendance = [], date = '') => (Array.isArray(attendance) ? attendance : [])
+  .filter((row) => normalActiveWorker(row, date))
 
 const workerKey = (value) => String(value || '')
 
@@ -115,7 +115,7 @@ const rosterAttendanceRows = ({ workers = [], attendance = [], date } = {}) => {
 
   return rosterWorkers
     .filter((worker) => (
-      isOperationalAttendanceWorker(worker)
+      isOperationalAttendanceWorkerOnDate(worker, date)
       && (worker.staff_classification || 'normal') === 'normal'
     ))
     .map((worker) => {
@@ -164,7 +164,7 @@ export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], 
 
 export const buildDailyOvertimeReport = ({ attendance = [], mappings = [], date } = {}) => {
   const biometricIds = biometricIdsByWorker(mappings)
-  return boundedActiveNormalRows(attendance)
+  return boundedActiveNormalRows(attendance, date)
     .map((row) => ({ ...reportRow(row, biometricIds), overtimeMinutes: weeklyPayrollOvertimeForDetail({ date, status: row.status, row }).eveningOvertimeMinutes }))
     .filter((row) => row.overtimeMinutes > 0)
     .sort((left, right) => left.team.localeCompare(right.team) || left.worker.localeCompare(right.worker))

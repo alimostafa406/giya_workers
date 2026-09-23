@@ -83,7 +83,7 @@ const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
 })
 
 export const persistPayrollDraftRequest = async ({ paymentType, periodStart = null, periodEnd = null, dueDate, currency, ruleSetId, lines }) => {
-  const eligibleLines = payrollDraftEligibleLines(paymentType, lines)
+  const eligibleLines = payrollDraftEligibleLines(paymentType, lines, periodEnd)
   assertPayrollLineCurrencies(eligibleLines)
   const client = getSupabaseClient()
   let protectedRunQuery = client.from('payroll_run').select('id,status').eq('payment_type', paymentType).eq('scheduled_payment_date', dueDate).eq('currency_code', currency).neq('status', 'draft')

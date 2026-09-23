@@ -1,17 +1,18 @@
 import { isActiveWorker } from './activeWorkers.js'
 
-export const isWeeklyPayrollEligibleWorker = (worker) => (
+export const isWeeklyPayrollEligibleWorker = (worker, periodEnd = '') => (
   isActiveWorker(worker)
+  && (!worker?.operational_start_date || !periodEnd || String(worker.operational_start_date) <= String(periodEnd))
   && worker?.payment_type === 'weekly'
   && (worker?.staff_classification || 'normal') === 'normal'
 )
 
-export const weeklyPayrollEligibleLines = (lines = []) => (
-  (Array.isArray(lines) ? lines : []).filter((line) => isWeeklyPayrollEligibleWorker(line?.worker))
+export const weeklyPayrollEligibleLines = (lines = [], periodEnd = '') => (
+  (Array.isArray(lines) ? lines : []).filter((line) => isWeeklyPayrollEligibleWorker(line?.worker, periodEnd))
 )
 
-export const payrollDraftEligibleLines = (paymentType, lines = []) => (
-  paymentType === 'weekly' ? weeklyPayrollEligibleLines(lines) : (Array.isArray(lines) ? lines : [])
+export const payrollDraftEligibleLines = (paymentType, lines = [], periodEnd = '') => (
+  paymentType === 'weekly' ? weeklyPayrollEligibleLines(lines, periodEnd) : (Array.isArray(lines) ? lines : [])
 )
 
 export const weeklyPayrollTotalsByCurrency = (lines = []) => (

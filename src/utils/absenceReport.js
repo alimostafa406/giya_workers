@@ -1,4 +1,4 @@
-import { isOperationalAttendanceWorker } from './activeWorkers.js'
+import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { reportWorkerMatchesSearch } from './reportWorkerSearch.js'
 
 const BUSINESS_TIME_ZONE = 'Africa/Kinshasa'
@@ -55,7 +55,7 @@ export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'toda
     if (worker?.id && !workersById.has(String(worker.id))) workersById.set(String(worker.id), worker)
   })
   const rosterWorkers = [...workersById.values()].filter((worker) => (
-    isOperationalAttendanceWorker(worker)
+    dates.some((date) => isOperationalAttendanceWorkerOnDate(worker, date))
     && (worker.staff_classification || 'normal') === 'normal'
     && (!teamId || String(worker.team_id || '') === String(teamId))
     && reportWorkerMatchesSearch(worker, search)
@@ -66,9 +66,10 @@ export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'toda
   const groups = new Map()
 
   rosterWorkers.forEach((worker) => {
-    const states = dates.map((date) => {
+    const states = dates.flatMap((date) => {
+      if (!isOperationalAttendanceWorkerOnDate(worker, date)) return []
       const hasCheckIn = recordedCheckIns.has(`${String(worker.id)}::${date}`)
-      return { date, state: stateFor(hasCheckIn, date, businessDate) }
+      return [{ date, state: stateFor(hasCheckIn, date, businessDate) }]
     })
     const missingMorningDays = states.filter((item) => item.state === 'morning_missing').length
     if (!missingMorningDays) return

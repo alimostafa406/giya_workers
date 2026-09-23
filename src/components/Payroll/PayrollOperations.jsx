@@ -29,7 +29,7 @@ const weeklyLinesFor = (data, monday) => {
   const sundayDate = sundayBefore(monday)
   const run = (data?.runs || []).find((item) => item.payment_type === 'weekly' && item.weekly_period_start === monday && item.weekly_period_end === saturday)
   return (data?.workers || [])
-    .filter(isWeeklyPayrollEligibleWorker)
+    .filter((worker) => isWeeklyPayrollEligibleWorker(worker, saturday))
     .map((worker) => {
       const sundayPayment = (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(worker.id) && payment.work_date === sundayDate) || null
       return { ...applyWeeklyOvertimePay(calculatePayrollLine({
@@ -93,6 +93,9 @@ export default function PayrollOperations() {
       })),
     }
   }), [data, weeklyRun])
+  // A finalized/reviewed run is an immutable historical snapshot.  The dated
+  // operational roster applies when calculating or refreshing a draft, never
+  // when merely displaying a saved historical payroll line.
   const lines = weeklyRun && weeklyRun.status !== 'draft' ? weeklyPayrollEligibleLines(storedLines) : calculatedLines
   const totals = totalLines(lines)
   const payrollWarnings = payrollConfigurationWarnings(lines, 'weekly')

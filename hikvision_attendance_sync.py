@@ -170,7 +170,7 @@ def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_d
             continue
         mapping = biometric_mapping_for_event(resolution, event)
         worker = workers.get(str(mapping.get('worker_id') or '')) if mapping else None
-        worker_id = str(worker['id']) if worker and worker.get('is_active') is not False else None
+        worker_id = str(worker['id']) if worker_is_operational_on_date(worker, target_date) else None
         try:
             event_timestamp = parse_monitoring_event_time(str(event.get('time') or ''))
         except ValueError:
@@ -929,7 +929,7 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
         'worker_id,device_id,device_employee_no,is_active,mapping_review_state',
         is_active='eq.true',
     )
-    workers = client.read('workers', 'id,full_name,employee_code,is_active,team_id,created_at,updated_at')
+    workers = client.read('workers', 'id,full_name,employee_code,is_active,operational_start_date,team_id,created_at,updated_at')
     teams = client.read('teams', 'id,name')
     classifications = client.read('worker_staff_classification', 'worker_id,classification')
     biometric_participation_rows = client.read(
@@ -1059,6 +1059,24 @@ def biometric_mapping_is_ignored(resolution: dict, mapping: dict) -> bool:
     return _ignored_review_applies(resolution, device_id, employee_no)
 
 
+def worker_is_operational_on_date(worker: dict | None, target_date: date_type) -> bool:
+    """Whether an active worker belongs to the operational roster on a date.
+
+    ``operational_start_date`` is deliberately optional so all existing workers
+    retain their historical behaviour.  It is a roster boundary, not an edit
+    to their stored attendance history.
+    """
+    if not worker or worker.get('is_active') is not True:
+        return False
+    start_date = worker.get('operational_start_date')
+    if not start_date:
+        return True
+    try:
+        return date_type.fromisoformat(str(start_date)) <= target_date
+    except ValueError:
+        return False
+
+
 def worker_uses_legacy_chauffeur_window(worker: dict, resolution: dict) -> bool:
     """Keep the canonical Chauffeur team on its existing calendar-day window."""
     team = resolution.get('teams', {}).get(str(worker.get('team_id') or ''), {})
@@ -1089,9 +1107,9 @@ def impacted_previous_workdays(events: list[dict], resolution: dict, observed_da
             continue
         mapping = biometric_mapping_for_event(resolution, event)
         worker = resolution.get('workers', {}).get(str(mapping.get('worker_id') or '')) if mapping else None
-        if not worker or worker.get('is_active') is False or worker_uses_legacy_chauffeur_window(worker, resolution):
-            continue
         workday = observed_date - timedelta(days=1)
+        if not worker_is_operational_on_date(worker, workday) or worker_uses_legacy_chauffeur_window(worker, resolution):
+            continue
         if workday_schedule(workday) is not None:
             impacted[workday].add(str(worker['id']))
     return dict(impacted)
@@ -1178,7 +1196,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             counters['needs_review' if biometric_identity_needs_review(resolution, event) else 'unmapped'] += 1
             continue
         worker = resolution['workers'].get(str(mapping.get('worker_id') or ''))
-        if not worker or worker.get('is_active') is False:
+        if not worker_is_operational_on_date(worker, target_date):
             counters['ignored_inactive_worker'] += 1
             continue
         is_chauffeur = worker_uses_legacy_chauffeur_window(worker, resolution)
@@ -1205,7 +1223,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             continue
         worker_id = str(mapping.get('worker_id') or '')
         worker = resolution['workers'].get(worker_id)
-        if worker and worker.get('is_active') is not False:
+        if worker_is_operational_on_date(worker, target_date):
             eligible_workers[worker_id] = worker
 
     plans = []

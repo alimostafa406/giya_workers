@@ -18,7 +18,7 @@ import {
   summarizeWeeklyAttendanceDays,
 } from '../utils/weeklyAttendanceReport'
 import { reportWorkerMatchesSearch } from '../utils/reportWorkerSearch'
-import { isOperationalAttendanceTeam, isOperationalAttendanceWorker } from '../utils/activeWorkers'
+import { isOperationalAttendanceTeam, isOperationalAttendanceWorkerOnDate } from '../utils/activeWorkers'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -206,7 +206,7 @@ function WeeklyAttendanceReport() {
       const teamId = String(worker.team_id || '')
       const team = teamsById.get(teamId)
 
-      if (!isOperationalAttendanceWorker(worker, team)) {
+      if (!weeklyDates.some((date) => isOperationalAttendanceWorkerOnDate(worker, date, team))) {
         return false
       }
 
