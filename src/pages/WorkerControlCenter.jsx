@@ -5,12 +5,15 @@ import { getAttendanceRequest } from '../api/attendanceApi'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from '../api/biometricMappingApi'
 import { buildWorkerControlDetail } from '../utils/workerControlDetail'
 import { buildWorkerControlPages, workerControlCategories } from '../utils/workerControlPages'
+import { workerControlPeriods } from '../utils/workerControlPeriods'
 import WorkerControlDetailPanel from '../components/WorkerControlDetailPanel'
 
 const base = '/worker-control-center'
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' })
-const monthStart = (date) => `${date.slice(0, 7)}-01`
-const monday = (date) => { const day = new Date(`${date}T12:00:00Z`); day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7)); return day.toISOString().slice(0, 10) }
+const attendanceRange = (date, category) => ({
+  ...(category === null || category === 'consecutive-absence' ? {} : { date_from: workerControlPeriods(date).monthStart }),
+  date_to: date, paginate: true,
+})
 const dateText = (date) => date ? String(date).slice(0, 10).split('-').reverse().join('/') : '—'
 const timeText = (value) => {
   if (!value) return '—'
@@ -33,7 +36,7 @@ function SubjectTable({ rows, columns, empty = 'لا توجد بيانات له�
 
 export default function WorkerControlCenter({ category = null }) {
   const { teamId } = useParams()
-  const [date] = useState(today())
+  const [date, setDate] = useState(today())
   const [state, setState] = useState({ workers: [], attendance: [], events: [], activated: [], mappings: [] })
   const [selectedWorkerId, setSelectedWorkerId] = useState('')
   const [focusActions, setFocusActions] = useState(false)
@@ -47,10 +50,17 @@ export default function WorkerControlCenter({ category = null }) {
   const [visibleAbsenceDays, setVisibleAbsenceDays] = useState(null)
 
   useEffect(() => {
+    const timer = setInterval(() => setDate(today()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
     let current = true
+    setLoading(true)
+    setLoadError('')
     Promise.all([
       getWorkersRequest(),
-      getAttendanceRequest({ date_from: monthStart(date), date_to: date, paginate: true }),
+      getAttendanceRequest(attendanceRange(date, category)),
       getInactiveWorkerBiometricActivityRequest({ attendanceDate: date }),
       getWorkersActivatedTodayRequest(),
       getBiometricMappingsRequest().catch(() => ({ data: [] })),
@@ -58,12 +68,13 @@ export default function WorkerControlCenter({ category = null }) {
       if (current) setState({ workers: workers.data || [], attendance: attendance.data || [], events: events.data || [], activated: activated.data || [], mappings: mappings.data || [] })
     }).catch((error) => { if (current) setLoadError(error?.message || 'تعذر تحميل بيانات المتابعة.') }).finally(() => { if (current) setLoading(false) })
     return () => { current = false }
-  }, [date])
+  }, [date, category])
 
-  const pages = useMemo(() => buildWorkerControlPages({ ...state, today: date, weekStart: monday(date), monthStart: monthStart(date) }), [state, date])
+  const period = workerControlPeriods(date)
+  const pages = useMemo(() => buildWorkerControlPages({ ...state, today: date, weekStart: period.weekStart, monthStart: period.monthStart }), [state, date])
   const selectedWorker = state.workers.find((worker) => String(worker.id) === selectedWorkerId)
     || pages.rows['activated-today'].find((row) => String(row.worker.id) === selectedWorkerId)?.worker
-  const selectedDetail = useMemo(() => selectedWorker && (pages.details.get(String(selectedWorker.id)) || buildWorkerControlDetail({ ...state, worker: selectedWorker, today: date, weekStart: monday(date), monthStart: monthStart(date) })), [selectedWorker, pages, state, date])
+  const selectedDetail = useMemo(() => selectedWorker && (pages.details.get(String(selectedWorker.id)) || buildWorkerControlDetail({ ...state, worker: selectedWorker, today: date, weekStart: period.weekStart, monthStart: period.monthStart })), [selectedWorker, pages, state, date])
   const openDetails = (worker, actions = false) => { setSelectedWorkerId(String(worker?.id || '')); setFocusActions(actions); setActionError('') }
   const details = { label: 'التفاصيل', render: (row) => <button type="button" className="btn-secondary px-3 py-1" onClick={() => openDetails(row.worker)}>التفاصيل</button> }
   const reactivate = async (worker) => {
@@ -81,7 +92,7 @@ export default function WorkerControlCenter({ category = null }) {
     }
   }
   const refreshAttendance = async () => {
-    const response = await getAttendanceRequest({ date_from: monthStart(date), date_to: date, paginate: true })
+    const response = await getAttendanceRequest(attendanceRange(date, category))
     setState((current) => ({ ...current, attendance: response.data || [] }))
   }
 
@@ -101,7 +112,7 @@ export default function WorkerControlCenter({ category = null }) {
   let columns = []
   if (category === 'absent-today') columns = [workerName, workerCode, teamName, { label: 'الدخول', render: (row) => timeText(row.detail.today.checkIn) }, { label: 'الخروج', render: (row) => timeText(row.detail.today.checkOut) }, { label: 'غياب الشهر', render: (row) => row.detail.monthCounts.absent }, { label: 'آخر حضور', render: (row) => dateText(row.detail.lastAttendance) }, details]
   if (category === 'consecutive-absence') columns = [workerName, teamName, { label: 'أيام الغياب المتتالي', render: (row) => <b className="text-lg text-(--primary)">{row.currentStreak} يوم</b> }, { label: 'فترة الغياب', render: (row) => <span className="inline-flex items-center gap-3"><span dir="ltr">{dateText(row.currentDates.at(-1)).slice(0, 5)} → {dateText(row.currentDates[0]).slice(0, 5)}</span><button type="button" className="text-sm font-semibold text-(--primary) hover:underline" onClick={() => setVisibleAbsenceDays(row)}>عرض الأيام</button></span> }, { label: 'غياب الشهر', render: (row) => row.monthAbsent || 0 }, { label: 'آخر حضور', render: (row) => dateText(row.lastAttendance?.attendance_date) }, details]
-  if (category === 'weekly') columns = [workerName, workerCode, teamName, { label: 'غياب الأسبوع', render: (row) => row.weekAbsent || 0 }, { label: 'أيام متتالية', render: (row) => row.longest || 0 }, { label: 'غياب الشهر', render: (row) => row.monthAbsent || 0 }, details]
+  if (category === 'weekly') columns = [workerName, workerCode, teamName, { label: 'غياب الأسبوع', render: (row) => row.weekAbsent || 0 }, { label: 'أيام متتالية هذا الأسبوع', render: (row) => row.weekLongest || 0 }, details]
   if (category === 'monthly') columns = [workerName, teamName, { label: 'حضور الشهر', render: (row) => row.detail.monthCounts.present }, { label: 'غياب الشهر', render: (row) => row.detail.monthCounts.absent }, { label: 'نصف يوم', render: (row) => row.detail.monthCounts.halfDay }, { label: 'أطول غياب متتالٍ', render: (row) => row.detail.longestAbsence }, { label: 'الغياب المتتالي الحالي', render: (row) => row.detail.currentAbsence }, { label: 'آخر حضور', render: (row) => dateText(row.detail.lastAttendance) }, details]
   if (category === 'half-day') columns = [workerName, workerCode, teamName, { label: 'نصف يوم هذا الأسبوع', render: (row) => row.weekHalf }, { label: 'نصف يوم هذا الشهر', render: (row) => row.monthHalf }, { label: 'حالة اليوم', render: (row) => dayStatus(row.todayRow) }, { label: 'الدخول', render: (row) => timeText(row.todayRow?.check_in) }, { label: 'الخروج', render: (row) => timeText(row.todayRow?.check_out) }, details]
   if (category === 'inactive-punched') columns = [workerName, teamName, { label: 'رقم البصمة', render: (row) => row.lastPunch?.device_employee_no || '—' }, { label: 'الجهاز', render: (row) => row.lastPunch?.device_id || '—' }, { label: 'أول بصمة', render: (row) => timeText(row.firstPunch?.event_timestamp) }, { label: 'آخر بصمة', render: (row) => timeText(row.lastPunch?.event_timestamp) }, { label: 'عدد البصمات', render: (row) => row.punchCount }, details, { label: 'تفعيل', render: (row) => <button type="button" className="btn-primary px-3 py-1" disabled={reactivating} onClick={() => reactivate(row.worker)}>تفعيل العامل</button> }]
@@ -114,7 +125,7 @@ export default function WorkerControlCenter({ category = null }) {
   return <section className="w-full pb-12" dir="rtl">
     {category ? <>
       <Link className="mb-7 inline-flex text-base font-bold text-(--primary) hover:underline" to={base}>← العودة إلى مركز مراقبة العمال</Link>
-      <div className="mb-7"><h2 className="text-3xl font-extrabold">{subject?.title || 'مركز مراقبة العمال'}</h2><p className="mt-2 text-base text-(--muted)">{subject?.description}</p>{category === 'team-detail' ? <Link className="mt-3 inline-flex font-semibold text-(--primary) hover:underline" to={`${base}/teams`}>العودة إلى مراقبة الفرق</Link> : null}</div>
+      <div className="mb-7"><h2 className="text-3xl font-extrabold">{subject?.title || 'مركز مراقبة العمال'}</h2><p className="mt-2 text-base text-(--muted)">{subject?.description}</p>{category === 'weekly' ? <p className="mt-3 text-lg font-bold">هذا الأسبوع: <span dir="ltr" className="inline-block">{dateText(period.weekStart)} → {dateText(period.weekEnd)}</span></p> : null}{category === 'monthly' ? <p className="mt-3 text-lg font-bold">هذا الشهر: <span dir="ltr" className="inline-block">{dateText(period.monthStart)} → {dateText(period.monthEnd)}</span></p> : null}{category === 'team-detail' ? <Link className="mt-3 inline-flex font-semibold text-(--primary) hover:underline" to={`${base}/teams`}>العودة إلى مراقبة الفرق</Link> : null}</div>
       {category === 'monthly' ? <div className="mb-6 flex flex-wrap gap-3"><input type="search" className="input-base max-w-xs" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="بحث بالاسم أو كود الموظف" aria-label="بحث عن عامل" /><select className="input-base max-w-xs" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)} aria-label="تصفية حسب الفريق"><option value="">كل الفرق</option>{pages.rows.teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="input-base max-w-xs" value={minimumAbsences} onChange={(event) => setMinimumAbsences(Number(event.target.value))} aria-label="الحد الأدنى للغياب"><option value={1}>غياب يوم أو أكثر</option><option value={3}>غياب 3 أيام أو أكثر</option><option value={5}>غياب 5 أيام أو أكثر</option></select></div> : null}
       {loading ? <p className="py-8 text-(--muted)">جارٍ تحميل بيانات المتابعة...</p> : loadError ? <p className="alert alert--error">{loadError}</p> : <><p className="mb-4 text-base font-bold">{displayedRows.length} {category === 'teams' ? 'فرق' : 'عامل'}</p><SubjectTable rows={displayedRows} columns={columns} /></>}
     </> : <>

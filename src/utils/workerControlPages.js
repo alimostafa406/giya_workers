@@ -2,6 +2,7 @@ import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { buildWorkerControlAlerts } from './workerControlCenter.js'
 import { buildWorkerControlSectionMetrics } from './workerControlSectionMetrics.js'
 import { buildWorkerControlDetail } from './workerControlDetail.js'
+import { currentConsecutiveAbsenceDates } from './workerControlPeriods.js'
 
 const base = '/worker-control-center'
 
@@ -21,7 +22,8 @@ const byWorker = (rows) => [...new Map(rows.filter((row) => row?.worker?.id).map
 const eventTime = (event) => String(event?.event_timestamp || '')
 
 export const buildWorkerControlPages = ({ workers = [], attendance = [], events = [], activated = [], mappings = [], today, weekStart, monthStart } = {}) => {
-  const source = { workers, attendance, events, activated, mappings, today, weekStart, monthStart }
+  const monthAttendance = attendance.filter((row) => (row.attendance_date || row.date || '') >= monthStart && (row.attendance_date || row.date || '') <= today)
+  const source = { workers, attendance: monthAttendance, events, activated, mappings, today, weekStart, monthStart }
   const alerts = buildWorkerControlAlerts(source)
   const { halfDayRows, teamRows } = buildWorkerControlSectionMetrics({ ...source, alerts })
   const details = new Map()
@@ -48,22 +50,39 @@ export const buildWorkerControlPages = ({ workers = [], attendance = [], events 
     activation: record,
   })))
   const monthly = [...details.values()].filter((detail) => detail.monthCounts.absent >= 1).map((detail) => ({ worker: detail.worker, detail }))
-  const consecutive = byWorker(alerts.filter((alert) => alert.type === 'consecutive_absence')).map((alert) => {
-    const days = [...(details.get(String(alert.worker.id))?.month || [])].reverse()
-    const currentDates = []
-    for (const day of days) {
-      if (day.status !== 'absent' && day.status !== 'no_record') break
-      currentDates.push(day.date)
-    }
-    return { ...alert, currentStreak: currentDates.length, currentDates }
+  const attendanceByWorker = new Map()
+  attendance.forEach((row) => {
+    const id = String(row.worker_id)
+    if (!attendanceByWorker.has(id)) attendanceByWorker.set(id, new Map())
+    attendanceByWorker.get(id).set(row.attendance_date || row.date, row)
+  })
+  const consecutive = operationalWorkers.map((worker) => {
+    const workerRows = attendanceByWorker.get(String(worker.id)) || new Map()
+    const currentDates = currentConsecutiveAbsenceDates({ worker, rowsByDate: workerRows, today, monthStart })
+    const lastAttendance = [...workerRows.values()].filter((row) => row.status !== 'absent')
+      .sort((a, b) => String(b.attendance_date || b.date).localeCompare(String(a.attendance_date || a.date)))[0] || null
+    const detail = details.get(String(worker.id))
+    return { worker, currentStreak: currentDates.length, currentDates,
+      monthAbsent: detail.month.filter((day) => day.status === 'absent' || day.status === 'no_record').length,
+      lastAttendance }
   }).filter((row) => row.currentStreak >= 2)
+  const weekly = byWorker(alerts.filter((alert) => alert.type === 'weekly_absence')).map((alert) => {
+    const days = details.get(String(alert.worker.id))?.week.filter((day) => day.eligible && !day.future) || []
+    let run = 0
+    let weekLongest = 0
+    days.forEach((day) => {
+      run = day.status === 'absent' || day.status === 'no_record' ? run + 1 : 0
+      weekLongest = Math.max(weekLongest, run)
+    })
+    return { ...alert, weekLongest }
+  })
   return {
     alerts,
     details,
     rows: {
       'absent-today': [...details.values()].filter((detail) => detail.today.status === 'absent').map((detail) => ({ worker: detail.worker, detail })),
       'consecutive-absence': consecutive,
-      weekly: byWorker(alerts.filter((alert) => alert.type === 'weekly_absence')),
+      weekly,
       monthly,
       'half-day': halfDayRows,
       'inactive-punched': inactivePunched,

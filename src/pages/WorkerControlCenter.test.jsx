@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import WorkerControlCenter from './WorkerControlCenter'
+import { getAttendanceRequest } from '../api/attendanceApi'
+import { workerControlPeriods } from '../utils/workerControlPeriods'
 
 globalThis.React = React
 const day = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' })
@@ -37,6 +39,7 @@ const routes = <Routes>
   <Route path="/worker-control-center" element={<WorkerControlCenter />} />
   <Route path="/worker-control-center/absent-today" element={<WorkerControlCenter category="absent-today" />} />
   <Route path="/worker-control-center/consecutive-absence" element={<WorkerControlCenter category="consecutive-absence" />} />
+  <Route path="/worker-control-center/weekly" element={<WorkerControlCenter category="weekly" />} />
   <Route path="/worker-control-center/monthly" element={<WorkerControlCenter category="monthly" />} />
   <Route path="/worker-control-center/inactive-punched" element={<WorkerControlCenter category="inactive-punched" />} />
   <Route path="/worker-control-center/activated-today" element={<WorkerControlCenter category="activated-today" />} />
@@ -91,14 +94,35 @@ describe('Worker Control Center information architecture', () => {
       'العامل', 'الفريق', 'أيام الغياب المتتالي', 'فترة الغياب', 'غياب الشهر', 'آخر حضور', 'التفاصيل',
     ])
     const shortDate = (value) => value.slice(5).split('-').reverse().join('/')
-    expect(screen.getByText(`${shortDate(`${day.slice(0, 7)}-01`)} → ${shortDate(day)}`)).toBeTruthy()
+    expect(screen.getByText(`${shortDate(prior)} → ${shortDate(day)}`)).toBeTruthy()
     expect(screen.queryByRole('dialog', { name: 'أيام الغياب المتتالي' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'عرض الأيام' }))
     const dialog = screen.getByRole('dialog', { name: 'أيام الغياب المتتالي' })
-    expect(dialog.querySelectorAll('li').length).toBeGreaterThanOrEqual(2)
-    expect(dialog.querySelectorAll('li')[0].textContent).toBe(`01/${day.slice(5, 7)}/${day.slice(0, 4)}`)
+    expect(dialog.querySelectorAll('li')).toHaveLength(2)
+    expect(dialog.querySelectorAll('li')[0].textContent).toBe(prior.split('-').reverse().join('/'))
     fireEvent.click(screen.getByRole('button', { name: 'إغلاق' }))
     expect(screen.queryByRole('dialog', { name: 'أيام الغياب المتتالي' })).toBeNull()
+  })
+
+  it('shows explicit weekly and monthly ranges and loads history for cross-period streaks', async () => {
+    const period = workerControlPeriods(day)
+    const fullDate = (value) => value.split('-').reverse().join('/')
+    getAttendanceRequest.mockClear()
+    const weekly = open('/worker-control-center/weekly')
+    expect(await screen.findByText(/هذا الأسبوع:/)).toHaveProperty('textContent', `هذا الأسبوع: ${fullDate(period.weekStart)} → ${fullDate(period.weekEnd)}`)
+    expect(getAttendanceRequest).toHaveBeenCalledWith({ date_from: period.monthStart, date_to: day, paginate: true })
+    weekly.unmount()
+
+    getAttendanceRequest.mockClear()
+    const monthly = open('/worker-control-center/monthly')
+    expect(await screen.findByText(/هذا الشهر:/)).toHaveProperty('textContent', `هذا الشهر: ${fullDate(period.monthStart)} → ${fullDate(day)}`)
+    expect(getAttendanceRequest).toHaveBeenCalledWith({ date_from: period.monthStart, date_to: day, paginate: true })
+    monthly.unmount()
+
+    getAttendanceRequest.mockClear()
+    open('/worker-control-center/consecutive-absence')
+    await screen.findByText('Absent Worker')
+    expect(getAttendanceRequest).toHaveBeenCalledWith({ date_to: day, paginate: true })
   })
 
   it('monthly page has only monthly workers and its search/absence filters', async () => {
