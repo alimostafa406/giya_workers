@@ -39,11 +39,12 @@ test('operational start and Sunday exclusion bound half-day counts', () => {
   assert.equal(halfDayRows.length, 0)
 })
 
-test('new sections reuse the page bulk requests and leave sections 1–8 present', async () => {
+test('focused pages reuse bulk requests without keeping stacked tables on the home route', async () => {
   const page = await readFile(new URL('./src/pages/WorkerControlCenter.jsx', import.meta.url), 'utf8')
-  assert.match(page, /id="half-day-monitoring"/)
-  assert.match(page, /id="team-monitoring"/)
-  for (const id of ['today-overview', 'absent-today', 'consecutive-absence', 'weekly-absence', 'monthly-monitoring', 'returned-after-absence', 'inactive-punch', 'activated-today']) assert.match(page, new RegExp(id))
+  assert.match(page, /data-worker-control-hub/)
+  assert.match(page, /category === 'monthly'/)
+  assert.doesNotMatch(page, /scrollIntoView\(\{ behavior: 'smooth' \}\)/)
+  assert.doesNotMatch(page, /ReportSection/)
   // One bulk load and one bulk refresh after the explicit recovery action;
   // opening a worker detail does not issue any attendance request.
   assert.equal((page.match(/getAttendanceRequest\(/g) || []).length, 2)

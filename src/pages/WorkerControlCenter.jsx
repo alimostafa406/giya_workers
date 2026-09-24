@@ -1,49 +1,70 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import { getWorkersRequest, getWorkersActivatedTodayRequest, reactivateWorkerRequest } from '../api/workersApi'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from '../api/biometricMappingApi'
-import { buildWorkerControlAlerts } from '../utils/workerControlCenter'
-import { buildWorkerControlSectionMetrics } from '../utils/workerControlSectionMetrics'
 import { buildWorkerControlDetail } from '../utils/workerControlDetail'
+import { buildWorkerControlPages, workerControlCategories } from '../utils/workerControlPages'
 import WorkerControlDetailPanel from '../components/WorkerControlDetailPanel'
 
+const base = '/worker-control-center'
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' })
-const monthStart = (d) => `${d.slice(0, 7)}-01`
-const monday = (d) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10) }
-const text = { overview: 'نظرة عامة اليوم', absent: 'الغائبون اليوم', consecutive: 'الغياب المتتالي' }
+const monthStart = (date) => `${date.slice(0, 7)}-01`
+const monday = (date) => { const day = new Date(`${date}T12:00:00Z`); day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7)); return day.toISOString().slice(0, 10) }
+const dateText = (date) => date ? String(date).slice(0, 10).split('-').reverse().join('/') : '—'
+const timeText = (value) => {
+  if (!value) return '—'
+  if (!String(value).includes('T')) return String(value).slice(0, 5)
+  const instant = new Date(value)
+  return Number.isNaN(instant.getTime()) ? String(value) : new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Kinshasa', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(instant)
+}
+const statusText = { present: 'حاضر', half_day: 'نصف يوم', absent: 'غائب', no_record: 'لا يوجد سجل', late: 'متأخر' }
+const workerName = { label: 'العامل', render: (row) => <b>{row.worker?.full_name || '—'}</b> }
+const workerCode = { label: 'كود الموظف', render: (row) => row.worker?.employee_code || '—' }
+const teamName = { label: 'الفريق', render: (row) => row.worker?.team?.name || row.worker?.team_name || '—' }
+const dayStatus = (row) => statusText[row?.status] || row?.status || '—'
 
-function ReportSection({ id, title, rows, columns }) {
-  return <section id={id} className="mb-14 scroll-mt-6">
-    <div className="mb-4 flex items-center justify-between border-b-2 border-(--border) pb-3"><h3 className="text-2xl font-extrabold">{title}</h3><span className="status-badge status-badge--neutral">{rows.length}</span></div>
-    <div className="overflow-x-auto rounded-xl border border-(--border) bg-white"><table className="min-w-full text-base"><thead className="bg-(--surface-subtle)"><tr>{columns.map(c => <th className="whitespace-nowrap px-5 py-4 text-start font-extrabold" key={c.label}>{c.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr className="border-t border-(--border)" key={`${row.type}-${row.worker?.id}-${index}`}>{columns.map(c => <td className="whitespace-nowrap px-5 py-4" key={c.label}>{c.render(row)}</td>)}</tr>)}</tbody></table>{!rows.length ? <p className="p-7 text-(--muted)">لا توجد حالات حالياً</p> : null}</div>
-  </section>
+function SubjectTable({ rows, columns, empty = 'لا توجد بيانات لهذه الفئة حالياً' }) {
+  return <div className="overflow-x-auto rounded-xl border border-(--border) bg-white">
+    <table className="min-w-full text-base"><thead className="bg-(--surface-subtle)"><tr>{columns.map((column) => <th key={column.label} className="whitespace-nowrap px-5 py-4 text-start font-extrabold">{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={row.worker?.id || row.id || index} className="border-t border-(--border)">{columns.map((column) => <td key={column.label} className="whitespace-nowrap px-5 py-4">{column.render(row)}</td>)}</tr>)}</tbody></table>
+    {!rows.length ? <p className="p-7 text-(--muted)">{empty}</p> : null}
+  </div>
 }
 
-export default function WorkerControlCenter() {
+export default function WorkerControlCenter({ category = null }) {
+  const { teamId } = useParams()
   const [date] = useState(today())
   const [state, setState] = useState({ workers: [], attendance: [], events: [], activated: [], mappings: [] })
-  const [selected, setSelected] = useState(null)
-  const [selectedTeamId, setSelectedTeamId] = useState('')
+  const [selectedWorkerId, setSelectedWorkerId] = useState('')
+  const [focusActions, setFocusActions] = useState(false)
   const [reactivating, setReactivating] = useState(false)
   const [actionError, setActionError] = useState('')
-  useEffect(() => { Promise.all([getWorkersRequest(), getAttendanceRequest({ date_from: monthStart(date), date_to: date, paginate: true }), getInactiveWorkerBiometricActivityRequest({ attendanceDate: date }), getWorkersActivatedTodayRequest(), getBiometricMappingsRequest().catch(() => ({ data: [] }))]).then(([w, a, e, x, m]) => setState({ workers: w.data || [], attendance: a.data || [], events: e.data || [], activated: x.data || [], mappings: m.data || [] })) }, [date])
-  const alerts = useMemo(() => buildWorkerControlAlerts({ ...state, today: date, weekStart: monday(date), monthStart: monthStart(date) }), [state, date])
-  const { halfDayRows, teamRows } = useMemo(() => buildWorkerControlSectionMetrics({ ...state, alerts, today: date, weekStart: monday(date), monthStart: monthStart(date) }), [state, alerts, date])
-  const oneEach = (rows) => rows.filter((row, index, all) => all.findIndex(item => item.worker?.id === row.worker?.id) === index)
-  const absent = oneEach(alerts.filter(a => a.todayRow?.status === 'absent'))
-  const consecutive = [...alerts.filter(a => a.type === 'consecutive_absence')].sort((a, b) => (b.longest || 0) - (a.longest || 0))
-  const groups = [{ id: 'absent-today', label: 'الغائبون اليوم', rows: absent }, { id: 'consecutive-absence', label: 'الغياب المتتالي', rows: consecutive }, { id: 'weekly-absence', label: 'الغياب الأسبوعي', rows: alerts.filter(a => a.type === 'weekly_absence') }, { id: 'monthly-monitoring', label: 'المراقبة الشهرية', rows: alerts.filter(a => a.type === 'monthly_absence') }, { id: 'half-day-monitoring', label: 'نصف اليوم', rows: halfDayRows }, { id: 'inactive-punch', label: 'غير مفعّلين قاموا بالبصمة', rows: alerts.filter(a => a.type === 'inactive_punch') }, { id: 'activated-today', label: 'تم تفعيلهم اليوم', rows: alerts.filter(a => a.type === 'activated_today') }, { id: 'returned-after-absence', label: 'عادوا بعد غياب', rows: alerts.filter(a => a.type === 'returned_after_absence') }]
-  const worker = { label: 'العامل', render: r => <><b>{r.worker?.full_name || '—'}</b></> }
-  const team = { label: 'الفريق', render: r => r.worker?.team_name || '—' }
-  const details = { label: 'التفاصيل', render: r => <button className="btn-secondary px-3 py-1" onClick={() => setSelected(r)}>التفاصيل</button> }
-  const weekly = [...alerts.filter(a => a.type === 'weekly_absence')].sort((a, b) => (b.weekAbsent || 0) - (a.weekAbsent || 0) || (b.longest || 0) - (a.longest || 0))
-  const monthly = alerts.filter(a => a.type === 'monthly_absence')
-  const returned = alerts.filter(a => a.type === 'returned_after_absence')
-  const inactivePunches = alerts.filter(a => a.type === 'inactive_punch')
-  const activatedToday = alerts.filter(a => a.type === 'activated_today')
-  const selectedTeam = teamRows.find(row => row.id === selectedTeamId)
-  const selectedWorker = state.workers.find(worker => String(worker.id) === String(selected?.worker?.id)) || selected?.worker
-  const selectedDetail = useMemo(() => buildWorkerControlDetail({ worker: selectedWorker, ...state, today: date, weekStart: monday(date), monthStart: monthStart(date) }), [selectedWorker, state, date])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [search, setSearch] = useState('')
+  const [teamFilter, setTeamFilter] = useState('')
+  const [minimumAbsences, setMinimumAbsences] = useState(1)
+
+  useEffect(() => {
+    let current = true
+    Promise.all([
+      getWorkersRequest(),
+      getAttendanceRequest({ date_from: monthStart(date), date_to: date, paginate: true }),
+      getInactiveWorkerBiometricActivityRequest({ attendanceDate: date }),
+      getWorkersActivatedTodayRequest(),
+      getBiometricMappingsRequest().catch(() => ({ data: [] })),
+    ]).then(([workers, attendance, events, activated, mappings]) => {
+      if (current) setState({ workers: workers.data || [], attendance: attendance.data || [], events: events.data || [], activated: activated.data || [], mappings: mappings.data || [] })
+    }).catch((error) => { if (current) setLoadError(error?.message || 'تعذر تحميل بيانات المتابعة.') }).finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [date])
+
+  const pages = useMemo(() => buildWorkerControlPages({ ...state, today: date, weekStart: monday(date), monthStart: monthStart(date) }), [state, date])
+  const selectedWorker = state.workers.find((worker) => String(worker.id) === selectedWorkerId)
+    || pages.rows['activated-today'].find((row) => String(row.worker.id) === selectedWorkerId)?.worker
+  const selectedDetail = useMemo(() => selectedWorker && (pages.details.get(String(selectedWorker.id)) || buildWorkerControlDetail({ ...state, worker: selectedWorker, today: date, weekStart: monday(date), monthStart: monthStart(date) })), [selectedWorker, pages, state, date])
+  const openDetails = (worker, actions = false) => { setSelectedWorkerId(String(worker?.id || '')); setFocusActions(actions); setActionError('') }
+  const details = { label: 'التفاصيل', render: (row) => <button type="button" className="btn-secondary px-3 py-1" onClick={() => openDetails(row.worker)}>التفاصيل</button> }
   const reactivate = async (worker) => {
     if (!window.confirm('تفعيل هذا العامل؟')) return
     setReactivating(true)
@@ -51,7 +72,7 @@ export default function WorkerControlCenter() {
     try {
       await reactivateWorkerRequest(worker)
       const [workers, activated] = await Promise.all([getWorkersRequest(), getWorkersActivatedTodayRequest()])
-      setState(current => ({ ...current, workers: workers.data || [], activated: activated.data || [] }))
+      setState((current) => ({ ...current, workers: workers.data || [], activated: activated.data || [] }))
     } catch (error) {
       setActionError(error?.message || 'تعذر تفعيل العامل.')
     } finally {
@@ -60,22 +81,45 @@ export default function WorkerControlCenter() {
   }
   const refreshAttendance = async () => {
     const response = await getAttendanceRequest({ date_from: monthStart(date), date_to: date, paginate: true })
-    setState(current => ({ ...current, attendance: response.data || [] }))
+    setState((current) => ({ ...current, attendance: response.data || [] }))
   }
 
+  const config = workerControlCategories.find((item) => item.key === category)
+  const team = pages.rows.teams.find((item) => String(item.id) === String(teamId))
+  const monthlyRows = [...pages.rows.monthly].filter((row) => {
+    const query = search.trim().toLocaleLowerCase()
+    return row.detail.monthCounts.absent >= minimumAbsences
+      && (!teamFilter || String(row.worker.team_id) === teamFilter)
+      && (!query || `${row.worker.full_name || ''} ${row.worker.employee_code || ''}`.toLocaleLowerCase().includes(query))
+  }).sort((a, b) => b.detail.monthCounts.absent - a.detail.monthCounts.absent || String(a.worker.full_name || '').localeCompare(String(b.worker.full_name || '')))
+  const rows = category === 'monthly' ? monthlyRows : pages.rows[category] || []
+  const subject = category === 'team-detail' ? { title: team?.name || 'الفريق', description: 'العمال التشغيليون في هذا الفريق وحالة حضورهم اليوم.' } : config
+
+  let columns = []
+  if (category === 'absent-today') columns = [workerName, workerCode, teamName, { label: 'الدخول', render: (row) => timeText(row.detail.today.checkIn) }, { label: 'الخروج', render: (row) => timeText(row.detail.today.checkOut) }, { label: 'غياب الشهر', render: (row) => row.detail.monthCounts.absent }, { label: 'آخر حضور', render: (row) => dateText(row.detail.lastAttendance) }, details]
+  if (category === 'consecutive-absence') columns = [workerName, teamName, { label: 'أيام متتالية', render: (row) => row.currentStreak }, { label: 'تواريخ الغياب / دون سجل', render: (row) => row.currentDates.map(dateText).reverse().join(' · ') || '—' }, { label: 'غياب الشهر', render: (row) => row.monthAbsent || 0 }, { label: 'آخر حضور', render: (row) => dateText(row.lastAttendance?.attendance_date) }, details]
+  if (category === 'weekly') columns = [workerName, workerCode, teamName, { label: 'غياب الأسبوع', render: (row) => row.weekAbsent || 0 }, { label: 'أيام متتالية', render: (row) => row.longest || 0 }, { label: 'غياب الشهر', render: (row) => row.monthAbsent || 0 }, details]
+  if (category === 'monthly') columns = [workerName, teamName, { label: 'حضور الشهر', render: (row) => row.detail.monthCounts.present }, { label: 'غياب الشهر', render: (row) => row.detail.monthCounts.absent }, { label: 'نصف يوم', render: (row) => row.detail.monthCounts.halfDay }, { label: 'أطول غياب متتالٍ', render: (row) => row.detail.longestAbsence }, { label: 'الغياب المتتالي الحالي', render: (row) => row.detail.currentAbsence }, { label: 'آخر حضور', render: (row) => dateText(row.detail.lastAttendance) }, details]
+  if (category === 'half-day') columns = [workerName, workerCode, teamName, { label: 'نصف يوم هذا الأسبوع', render: (row) => row.weekHalf }, { label: 'نصف يوم هذا الشهر', render: (row) => row.monthHalf }, { label: 'حالة اليوم', render: (row) => dayStatus(row.todayRow) }, { label: 'الدخول', render: (row) => timeText(row.todayRow?.check_in) }, { label: 'الخروج', render: (row) => timeText(row.todayRow?.check_out) }, details]
+  if (category === 'inactive-punched') columns = [workerName, teamName, { label: 'رقم البصمة', render: (row) => row.lastPunch?.device_employee_no || '—' }, { label: 'الجهاز', render: (row) => row.lastPunch?.device_id || '—' }, { label: 'أول بصمة', render: (row) => timeText(row.firstPunch?.event_timestamp) }, { label: 'آخر بصمة', render: (row) => timeText(row.lastPunch?.event_timestamp) }, { label: 'عدد البصمات', render: (row) => row.punchCount }, details, { label: 'تفعيل', render: (row) => <button type="button" className="btn-primary px-3 py-1" disabled={reactivating} onClick={() => reactivate(row.worker)}>تفعيل العامل</button> }]
+  if (category === 'activated-today') columns = [workerName, teamName, { label: 'وقت التفعيل', render: (row) => timeText(row.activation?.activated_at) }, { label: 'بداية التشغيل', render: (row) => row.worker?.operational_start_date || '—' }, { label: 'رقم البصمة', render: (row) => row.activation?.biometric_ids?.join(' · ') || '—' }, details, { label: 'استرجاع حضور الأسبوع', render: (row) => <button type="button" className="btn-secondary px-3 py-1" onClick={() => openDetails(row.worker, true)}>استرجاع حضور الأسبوع</button> }]
+  if (category === 'returned') columns = [workerName, workerCode, teamName, { label: 'الغياب السابق', render: (row) => row.longest || 0 }, { label: 'حالة العودة', render: (row) => dayStatus(row.todayRow) }, { label: 'غياب الشهر', render: (row) => row.monthAbsent || 0 }, details]
+  if (category === 'teams') columns = [{ label: 'الفريق', render: (row) => <b>{row.name || '—'}</b> }, { label: 'العمال النشطون', render: (row) => row.active }, { label: 'حاضر اليوم', render: (row) => row.present }, { label: 'نصف يوم', render: (row) => row.halfDay }, { label: 'غائب', render: (row) => row.absent }, { label: 'غير مسجل', render: (row) => row.notRecorded }, { label: 'غياب الأسبوع', render: (row) => row.weekAbsent }, { label: 'غياب الشهر', render: (row) => row.monthAbsent }, { label: 'التفاصيل', render: (row) => <Link className="btn-secondary px-3 py-1" to={`${base}/teams/${encodeURIComponent(row.id)}`}>التفاصيل</Link> }]
+  if (category === 'team-detail') columns = [workerName, workerCode, { label: 'حالة اليوم', render: (row) => dayStatus(pages.details.get(String(row.worker.id))?.today) }, { label: 'غياب الشهر', render: (row) => pages.details.get(String(row.worker.id))?.monthCounts.absent ?? 0 }, details]
+  const displayedRows = category === 'team-detail' ? (team?.workers || []).map((worker) => ({ worker })) : rows
+
   return <section className="w-full pb-12" dir="rtl">
-    <div className="mb-9"><h2 className="text-3xl font-extrabold">مركز مراقبة العمال</h2><p className="mt-2 text-base text-(--muted)">متابعة تشغيلية مبنية على بيانات الحضور الحالية.</p></div>
-    <section id="today-overview" className="mb-14"><h3 className="mb-5 text-2xl font-extrabold">{text.overview}</h3><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{groups.map(g => <button key={g.id} className="surface-card min-h-34 p-5 text-start" onClick={() => document.getElementById(g.id)?.scrollIntoView({ behavior: 'smooth' })}><p className="text-base font-bold text-(--muted)">{g.label}</p><b className="mt-3 block text-4xl">{g.rows.length}</b></button>)}</div></section>
-    <ReportSection id="absent-today" title={text.absent} rows={absent} columns={[worker, { label: 'كود الموظف', render: r => r.worker?.employee_code || '—' }, team, { label: 'الغياب المتتالي', render: r => r.longest || 0 }, { label: 'غياب الأسبوع', render: r => r.weekAbsent || 0 }, { label: 'غياب الشهر', render: r => r.monthAbsent || 0 }, { label: 'آخر حضور', render: r => r.lastAttendance?.attendance_date || '—' }, details]} />
-    <ReportSection id="consecutive-absence" title={text.consecutive} rows={consecutive} columns={[worker, team, { label: 'الأيام المتتالية', render: r => r.longest || 0 }, { label: 'الحالة', render: r => `غائب ${r.longest || 0} أيام متتالية` }, { label: 'غياب الأسبوع', render: r => r.weekAbsent || 0 }, { label: 'غياب الشهر', render: r => r.monthAbsent || 0 }, details]} />
-    <ReportSection id="weekly-absence" title="مراقبة الغياب الأسبوعي" rows={weekly} columns={[worker, { label: 'كود الموظف', render: r => r.worker?.employee_code || '—' }, team, { label: 'غياب الأسبوع', render: r => r.weekAbsent || 0 }, { label: 'الغياب المتتالي', render: r => r.longest || 0 }, { label: 'غياب الشهر', render: r => r.monthAbsent || 0 }, { label: 'الحالة', render: r => `غاب ${r.weekAbsent || 0} أيام هذا الأسبوع` }, details]} />
-    <ReportSection id="monthly-monitoring" title="المراقبة الشهرية" rows={monthly} columns={[worker, { label: 'كود الموظف', render: r => r.worker?.employee_code || '—' }, team, { label: 'غياب الشهر', render: r => r.monthAbsent || 0 }, { label: 'نصف يوم', render: r => r.half || 0 }, { label: 'الغياب المتتالي', render: r => r.longest || 0 }, { label: 'آخر حضور', render: r => r.lastAttendance?.attendance_date || '—' }, { label: 'المتابعة', render: r => `غاب ${r.monthAbsent || 0} أيام هذا الشهر` }, details]} />
-    <ReportSection id="returned-after-absence" title="عادوا بعد غياب" rows={returned} columns={[worker, { label: 'كود الموظف', render: r => r.worker?.employee_code || '—' }, team, { label: 'الغياب السابق', render: r => r.longest || 0 }, { label: 'حالة العودة', render: r => r.todayRow?.status || 'present' }, { label: 'غياب الشهر', render: r => r.monthAbsent || 0 }, details]} />
-    <ReportSection id="inactive-punch" title="عمال غير مفعّلين قاموا بالبصمة" rows={inactivePunches} columns={[worker, { label: 'كود الموظف', render: r => r.worker?.employee_code || '—' }, team, { label: 'رقم البصمة', render: r => r.lastPunch?.device_employee_no || '—' }, { label: 'الجهاز', render: r => r.lastPunch?.device_id || '—' }, { label: 'آخر بصمة', render: r => r.lastPunch?.event_timestamp || '—' }, details]} />
-    <ReportSection id="activated-today" title="تم تفعيلهم اليوم" rows={activatedToday} columns={[worker, { label: 'كود الموظف', render: r => r.worker?.employee_code || '—' }, team, { label: 'وقت التفعيل', render: r => r.worker?.activated_at || '—' }, { label: 'بداية التشغيل', render: r => r.worker?.operational_start_date || '—' }, details]} />
-    <ReportSection id="half-day-monitoring" title="مراقبة نصف اليوم" rows={halfDayRows} columns={[worker, { label: 'كود الموظف', render: r => r.worker?.employee_code || '—' }, team, { label: 'نصف يوم هذا الأسبوع', render: r => r.weekHalf }, { label: 'نصف يوم هذا الشهر', render: r => r.monthHalf }, { label: 'حالة اليوم', render: r => r.todayRow?.status || '—' }, { label: 'دخول اليوم', render: r => r.todayRow?.check_in || '—' }, { label: 'خروج اليوم', render: r => r.todayRow?.check_out || '—' }, { label: 'آخر بصمة', render: r => r.lastPunch?.event_timestamp || '—' }, details]} />
-    <ReportSection id="team-monitoring" title="مراقبة الفرق" rows={teamRows} columns={[{ label: 'الفريق', render: r => <b>{r.name || '—'}</b> }, { label: 'العمال النشطون', render: r => r.active }, { label: 'حاضر اليوم', render: r => r.present }, { label: 'نصف يوم اليوم', render: r => r.halfDay }, { label: 'غائب اليوم', render: r => r.absent }, { label: 'غير مسجل اليوم', render: r => r.notRecorded }, { label: 'غياب الأسبوع', render: r => r.weekAbsent }, { label: 'غياب الشهر', render: r => r.monthAbsent }, { label: 'غياب متتالٍ 2+', render: r => r.consecutive }, { label: 'عمال تحت المتابعة', render: r => r.monitored }, { label: 'التفاصيل', render: r => <button className="btn-secondary px-3 py-1" onClick={() => setSelectedTeamId(current => current === r.id ? '' : r.id)}>التفاصيل</button> }]} />
-    {selectedTeam ? <section id="team-worker-details" className="mb-14 scroll-mt-6"><h3 className="mb-4 text-2xl font-extrabold">{selectedTeam.name}</h3><div className="overflow-x-auto rounded-xl border border-(--border) bg-white"><table className="min-w-full text-base"><thead><tr><th className="px-5 py-4 text-start">العامل</th><th className="px-5 py-4 text-start">كود الموظف</th><th className="px-5 py-4 text-start">حالة اليوم</th><th className="px-5 py-4 text-start">التفاصيل</th></tr></thead><tbody>{selectedTeam.workers.map(member => <tr key={member.id} className="border-t border-(--border)"><td className="px-5 py-4">{member.full_name}</td><td className="px-5 py-4">{member.employee_code || '—'}</td><td className="px-5 py-4">{state.attendance.find(row => row.worker_id === member.id && row.attendance_date === date)?.status || '—'}</td><td className="px-5 py-4"><button className="btn-secondary" onClick={() => setSelected({ worker: member })}>التفاصيل</button></td></tr>)}</tbody></table></div></section> : null}
-    <WorkerControlDetailPanel detail={selectedDetail} onClose={() => { setSelected(null); setActionError('') }} onReactivate={reactivate} reactivating={reactivating} onRecovered={refreshAttendance} actionError={actionError} />
+    {category ? <>
+      <Link className="mb-7 inline-flex text-base font-bold text-(--primary) hover:underline" to={base}>← العودة إلى مركز مراقبة العمال</Link>
+      <div className="mb-7"><h2 className="text-3xl font-extrabold">{subject?.title || 'مركز مراقبة العمال'}</h2><p className="mt-2 text-base text-(--muted)">{subject?.description}</p>{category === 'team-detail' ? <Link className="mt-3 inline-flex font-semibold text-(--primary) hover:underline" to={`${base}/teams`}>العودة إلى مراقبة الفرق</Link> : null}</div>
+      {category === 'monthly' ? <div className="mb-6 flex flex-wrap gap-3"><input type="search" className="input-base max-w-xs" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="بحث بالاسم أو كود الموظف" aria-label="بحث عن عامل" /><select className="input-base max-w-xs" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)} aria-label="تصفية حسب الفريق"><option value="">كل الفرق</option>{pages.rows.teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="input-base max-w-xs" value={minimumAbsences} onChange={(event) => setMinimumAbsences(Number(event.target.value))} aria-label="الحد الأدنى للغياب"><option value={1}>غياب يوم أو أكثر</option><option value={3}>غياب 3 أيام أو أكثر</option><option value={5}>غياب 5 أيام أو أكثر</option></select></div> : null}
+      {loading ? <p className="py-8 text-(--muted)">جارٍ تحميل بيانات المتابعة...</p> : loadError ? <p className="alert alert--error">{loadError}</p> : <><p className="mb-4 text-base font-bold">{displayedRows.length} {category === 'teams' ? 'فرق' : 'عامل'}</p><SubjectTable rows={displayedRows} columns={columns} /></>}
+    </> : <>
+      <div className="mb-7"><h2 className="text-3xl font-extrabold">مركز مراقبة العمال</h2><p className="mt-2 text-base text-(--muted)">ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.</p></div>
+      {loadError ? <p className="alert alert--error mb-5">{loadError}</p> : null}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-worker-control-hub>{workerControlCategories.map((item) => <Link key={item.key} to={item.path} className="surface-card flex min-h-36 flex-col justify-between p-5 transition hover:border-(--primary) hover:shadow-md"><div><h3 className="text-lg font-extrabold">{item.title}</h3><p className="mt-2 text-sm text-(--muted)">{item.description}</p></div><div className="mt-5 flex items-end justify-between"><b className="text-3xl">{loading ? '—' : pages.rows[item.key]?.length || 0}</b><span className="font-bold text-(--primary)">فتح ←</span></div></Link>)}</div>
+    </>}
+    {actionError && !selectedDetail ? <p className="alert alert--error mt-5">{actionError}</p> : null}
+    <WorkerControlDetailPanel detail={selectedDetail} focusActions={focusActions} onClose={() => { setSelectedWorkerId(''); setFocusActions(false); setActionError('') }} onReactivate={reactivate} reactivating={reactivating} onRecovered={refreshAttendance} actionError={actionError} />
   </section>
 }

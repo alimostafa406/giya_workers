@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import WorkerWeekAttendanceRecovery from './WorkerWeekAttendanceRecovery'
 import { formatEveningOvertimeMinutes } from '../utils/weeklyPayrollOvertime'
@@ -28,8 +29,10 @@ function DayTable({ days }) {
   return <div className="overflow-x-auto rounded-xl border border-(--border)"><table className="min-w-full text-base"><thead className="bg-(--surface-subtle)"><tr>{['التاريخ', 'الحالة', 'الدخول', 'الخروج', 'الإضافي المسائي'].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 text-start">{label}</th>)}</tr></thead><tbody>{days.map((day) => <tr key={day.date} className="border-t border-(--border)"><td className="whitespace-nowrap px-4 py-3" dir="ltr">{dateText(day.date)}</td><td className="whitespace-nowrap px-4 py-3">{statusText[day.status] || day.status}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{timeText(day.checkIn)}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{timeText(day.checkOut)}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{formatEveningOvertimeMinutes(day.overtimeMinutes)}</td></tr>)}</tbody></table></div>
 }
 
-export default function WorkerControlDetailPanel({ detail, onClose, onReactivate, reactivating = false, onRecovered, actionError = '' }) {
+export default function WorkerControlDetailPanel({ detail, focusActions = false, onClose, onReactivate, reactivating = false, onRecovered, actionError = '' }) {
   const admin = useAuthStore((state) => state.admin)
+  const actionsRef = useRef(null)
+  useEffect(() => { if (detail && focusActions && typeof actionsRef.current?.scrollIntoView === 'function') actionsRef.current.scrollIntoView({ block: 'start' }) }, [detail, focusActions])
   if (!detail) return null
   const { worker, today, week, month, weekCounts, monthCounts } = detail
   const biometricIds = [...new Set(detail.mappings.filter((mapping) => mapping.is_active === true && mapping.mapping_review_state === 'confirmed').map((mapping) => mapping.device_employee_no).filter(Boolean))]
@@ -67,7 +70,7 @@ export default function WorkerControlDetailPanel({ detail, onClose, onReactivate
 
         <Section title="النشاط والحالة"><div className="grid gap-3 sm:grid-cols-2"><Fact label="بداية المشاركة التشغيلية" value={worker.operational_start_date || empty} /><Fact label="وقت التفعيل المسجل اليوم" value={timeText(detail.activation?.activated_at)} /></div></Section>
 
-        {admin ? <Section title="الإجراءات"><div className="flex flex-wrap gap-3"><Link className="btn-secondary" to="/workers" state={{ editWorkerId: worker.id }} onClick={onClose}>تعديل العامل</Link><Link className="btn-secondary" to="/workers" state={{ editWorkerId: worker.id }} onClick={onClose}>إدارة / تعديل البصمة</Link>{worker.is_active ? <WorkerWeekAttendanceRecovery worker={worker} onRecovered={onRecovered} /> : <button type="button" className="btn-primary" disabled={reactivating} onClick={() => onReactivate(worker)}>{reactivating ? 'جارٍ التفعيل...' : 'تفعيل العامل'}</button>}</div>{actionError ? <p className="mt-3 text-red-700">{actionError}</p> : null}</Section> : null}
+        {admin ? <div ref={actionsRef}><Section title="الإجراءات"><div className="flex flex-wrap gap-3"><Link className="btn-secondary" to="/workers" state={{ editWorkerId: worker.id }} onClick={onClose}>تعديل العامل</Link><Link className="btn-secondary" to="/workers" state={{ editWorkerId: worker.id }} onClick={onClose}>إدارة / تعديل البصمة</Link>{worker.is_active ? <WorkerWeekAttendanceRecovery worker={worker} onRecovered={onRecovered} /> : <button type="button" className="btn-primary" disabled={reactivating} onClick={() => onReactivate(worker)}>{reactivating ? 'جارٍ التفعيل...' : 'تفعيل العامل'}</button>}</div>{actionError ? <p className="mt-3 text-red-700">{actionError}</p> : null}</Section></div> : null}
       </div>
     </div>
   </div>

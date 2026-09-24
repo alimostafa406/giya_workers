@@ -124,6 +124,16 @@ function AppRouter() {
             <Route path="/workers" element={<Workers />} />
             <Route path="/inactive-workers" element={<InactiveWorkers />} />
             <Route path="/worker-control-center" element={<WorkerControlCenter />} />
+            <Route path="/worker-control-center/absent-today" element={<WorkerControlCenter category="absent-today" />} />
+            <Route path="/worker-control-center/consecutive-absence" element={<WorkerControlCenter category="consecutive-absence" />} />
+            <Route path="/worker-control-center/weekly" element={<WorkerControlCenter category="weekly" />} />
+            <Route path="/worker-control-center/monthly" element={<WorkerControlCenter category="monthly" />} />
+            <Route path="/worker-control-center/half-day" element={<WorkerControlCenter category="half-day" />} />
+            <Route path="/worker-control-center/inactive-punched" element={<WorkerControlCenter category="inactive-punched" />} />
+            <Route path="/worker-control-center/activated-today" element={<WorkerControlCenter category="activated-today" />} />
+            <Route path="/worker-control-center/returned" element={<WorkerControlCenter category="returned" />} />
+            <Route path="/worker-control-center/teams" element={<WorkerControlCenter category="teams" />} />
+            <Route path="/worker-control-center/teams/:teamId" element={<WorkerControlCenter category="team-detail" />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/attendance/absence-report" element={<AbsenceReport />} />
             <Route path="/special-staff-attendance" element={<SpecialStaffAttendance />} />
