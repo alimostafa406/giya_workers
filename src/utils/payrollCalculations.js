@@ -1,3 +1,5 @@
+import { isChauffeurNormalOvertimeExcluded } from './weeklyPayrollOvertime.js'
+
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const atNoon = (value) => new Date(`${value}T12:00:00`)
 const money = (value) => Math.round((Number(value) || 0) * 100) / 100
@@ -133,7 +135,9 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
     const baseEffect = paymentType === 'weekly' ? dailyRate * factor : 0
     const holidayEffect = paymentType === 'weekly' && isHoliday ? baseEffect * (Number(rules?.weekly_holiday_multiplier ?? 2) - 1) : 0
     attendanceWage += baseEffect; holidayAmount += holidayEffect
-    const candidate = calculateCandidateOvertimeHours(term?.overtime_start_time, row?.check_out, rules)
+    const candidate = isChauffeurNormalOvertimeExcluded(worker)
+      ? 0
+      : calculateCandidateOvertimeHours(term?.overtime_start_time, row?.check_out, rules)
     overtimeHours += candidate
     return { date, row, status, isFuture, isHoliday, baseEffect: money(baseEffect), holidayEffect: money(holidayEffect), candidateOvertimeHours: candidate, transportEffect: eligibleTransport ? transportRate : 0 }
   })

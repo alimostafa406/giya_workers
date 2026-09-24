@@ -1,5 +1,22 @@
 const KINSHASA_TIME_ZONE = 'Africa/Kinshasa'
 
+const overtimeTeamName = (value = {}) => {
+  const row = value?.row || {}
+  const worker = value?.worker || row?.worker || {}
+  return [
+    value?.team?.name,
+    value?.team_name,
+    worker?.team?.name,
+    worker?.team_name,
+    row?.team?.name,
+    row?.team_name,
+  ].find((name) => typeof name === 'string' && name.trim())?.trim() || ''
+}
+
+// Chauffeur attendance is deliberately handled by its own temporary
+// attendance rule. It must never enter the normal-worker overtime model.
+export const isChauffeurNormalOvertimeExcluded = (value = {}) => overtimeTeamName(value) === 'Chauffeur'
+
 const clockMinutes = (value) => {
   if (!value) return null
   const text = String(value).trim()
@@ -86,7 +103,7 @@ export const weeklyPayrollDisplayStatus = (detail) => {
 }
 
 export const weeklyPayrollOvertimeForDetail = (detail) => {
-  if (!detail?.date || !isWeekday(detail.date)) {
+  if (!detail?.date || !isWeekday(detail.date) || isChauffeurNormalOvertimeExcluded(detail)) {
     return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   }
   const checkOut = normalizedCheckoutMinutes(detail)
@@ -98,7 +115,9 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
 }
 
 export const weeklyPayrollOvertimeForLine = (line) => (
-  (line?.details || []).reduce((totals, detail) => {
+  isChauffeurNormalOvertimeExcluded(line)
+    ? { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
+    : (line?.details || []).reduce((totals, detail) => {
     const overtime = weeklyPayrollOvertimeForDetail(detail)
     return {
       morningOvertimeMinutes: totals.morningOvertimeMinutes + overtime.morningOvertimeMinutes,
