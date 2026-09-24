@@ -29,7 +29,7 @@ const labels = {
     empty: 'لا يوجد عمال غير نشطين.',
     unavailable: 'تعذر تحميل مراقبة نشاط البصمة اليوم، لكن قائمة العمال غير النشطين ما زالت متاحة.',
     lastAttendance: 'آخر حضور', lastCheckIn: 'آخر دخول', lastCheckOut: 'آخر خروج', details: 'السجل', history: 'سجل الحضور', date: 'التاريخ', status: 'الحالة', checkIn: 'الدخول', checkOut: 'الخروج', noHistory: 'لا يوجد سجل حضور متاح.', statusUpdated: 'تحديث الحالة',
-    reactivate: 'تفعيل العامل', reactivateConfirm: 'هل تريد إعادة تفعيل هذا العامل؟', recoverWeek: 'استعادة حضور الأسبوع',
+    reactivate: 'تفعيل العامل', reactivateConfirm: 'هل تريد إعادة تفعيل هذا العامل؟', recoverWeek: 'استعادة حضور الأسبوع', operationalStart: 'بداية المشاركة التشغيلية', payroll: 'الراتب',
   },
   en: {
     title: 'Inactive Workers',
@@ -51,7 +51,7 @@ const labels = {
     unavailable: 'Today’s biometric monitoring could not be loaded, but the inactive-worker roster remains available.',
     lastAttendance: 'Last attendance', lastCheckIn: 'Last check-in', lastCheckOut: 'Last check-out', details: 'History', history: 'Attendance history', date: 'Date', status: 'Status', checkIn: 'Check-in', checkOut: 'Check-out', noHistory: 'No attendance history available.', statusUpdated: 'Status updated',
     reactivate: 'Reactivate', reactivateConfirm: 'Reactivate this worker?',
-    recoverWeek: 'Recover Week Attendance',
+    recoverWeek: 'Recover Week Attendance', operationalStart: 'Operational start', payroll: 'Payroll',
   },
   fr: {
     title: 'Travailleurs inactifs',
@@ -73,7 +73,7 @@ const labels = {
     unavailable: 'Le suivi biométrique du jour est indisponible, mais la liste des travailleurs inactifs reste accessible.',
     lastAttendance: 'Dernière présence', lastCheckIn: 'Dernière entrée', lastCheckOut: 'Dernière sortie', details: 'Historique', history: 'Historique de présence', date: 'Date', status: 'Statut', checkIn: 'Entrée', checkOut: 'Sortie', noHistory: 'Aucun historique de présence disponible.', statusUpdated: 'Statut mis à jour',
     reactivate: 'Réactiver', reactivateConfirm: 'Réactiver ce travailleur ?',
-    recoverWeek: 'Récupérer la présence de la semaine',
+    recoverWeek: 'Récupérer la présence de la semaine', operationalStart: 'Début opérationnel', payroll: 'Paie',
   },
 }
 
@@ -118,7 +118,16 @@ export default function InactiveWorkers() {
         setMappings(Array.isArray(mappingsResult.data) ? mappingsResult.data : [])
         setEvents(Array.isArray(eventsResult.data) ? eventsResult.data : [])
         setAttendance(Array.isArray(attendanceResult.data) ? attendanceResult.data : [])
-        setActivatedToday(Array.isArray(activatedResult.data) ? activatedResult.data : [])
+        const mappingsByWorker = new Map()
+        ;(Array.isArray(mappingsResult.data) ? mappingsResult.data : []).forEach((mapping) => {
+          const key = String(mapping.worker_id || '')
+          mappingsByWorker.set(key, [...(mappingsByWorker.get(key) || []), mapping])
+        })
+        const workersById = new Map(loadedWorkers.map((worker) => [String(worker.id), worker]))
+        setActivatedToday((Array.isArray(activatedResult.data) ? activatedResult.data : []).map((row) => ({
+          ...workersById.get(String(row.worker_id)), ...row, id: row.worker_id, is_active: true,
+          biometricMappings: mappingsByWorker.get(String(row.worker_id)) || [],
+        })))
         setMonitoringUnavailable(Boolean(eventsResult.unavailable))
       } catch (loadError) {
         setError(getErrorMessage(loadError))
@@ -180,6 +189,10 @@ export default function InactiveWorkers() {
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <div><p className="text-xs text-(--muted)">{text.team}</p><p className="font-semibold">{selectedWorker?.team?.name || selectedWorker?.team_name || '—'}</p></div>
         <div><p className="text-xs text-(--muted)">{text.statusUpdated}</p><p className="font-semibold" dir="ltr">{localDateTime(selectedWorker?.updated_at, language)}</p></div>
+        <div><p className="text-xs text-(--muted)">{text.code}</p><p className="font-semibold" dir="ltr">{selectedWorker?.employee_code || '—'}</p></div>
+        <div><p className="text-xs text-(--muted)">{text.identities}</p><p className="font-semibold" dir="ltr">{(selectedWorker?.biometricMappings || []).map((mapping) => `${mapping.device_id || 'legacy'}:${mapping.device_employee_no}`).join(' · ') || '—'}</p></div>
+        <div><p className="text-xs text-(--muted)">{text.operationalStart}</p><p className="font-semibold" dir="ltr">{selectedWorker?.operational_start_date || '—'}</p></div>
+        <div><p className="text-xs text-(--muted)">{text.payroll}</p><p className="font-semibold">{selectedWorker?.payment_type || '—'}</p></div>
       </div>
       {selectedWorker?.is_active ? <WorkerWeekAttendanceRecovery worker={selectedWorker} onRecovered={() => {}} /> : null}
       <Table columns={[
