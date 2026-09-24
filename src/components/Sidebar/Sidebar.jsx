@@ -28,6 +28,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/attendance', label: t('navigation.attendance'), icon: 'attendance' },
     { to: '/workers', label: t('navigation.workers'), icon: 'workers' },
     { to: '/inactive-workers', label: t('navigation.inactiveWorkers'), icon: 'inactiveWorkers' },
+    { to: '/worker-control-center', label: 'مركز مراقبة العمال', icon: 'alert' },
     { to: '/teams', label: t('navigation.teams'), icon: 'teams' },
     { to: '/special-staff-attendance', label: t('navigation.specialStaff'), icon: 'specialStaff' },
     { to: '/reports/weekly-attendance', label: t('navigation.reports'), icon: 'report' },
