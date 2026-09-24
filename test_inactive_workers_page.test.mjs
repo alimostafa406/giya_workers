@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { buildInactiveWorkerRows } from './src/utils/inactiveWorkers.js'
+import { buildInactiveWorkerRows, filterInactiveWorkerRows } from './src/utils/inactiveWorkers.js'
 
 const workers = [
   { id: 'active', full_name: 'Active', is_active: true },
@@ -32,6 +32,13 @@ test('inactive activity is attached only through persisted worker ownership', ()
   assert.equal(rows.some((row) => row.biometricEventsToday.some((event) => event.event_id === 'urgent')), false)
 })
 
+test('inactive worker filters use existing bulk rows and preserve latest punch', () => {
+  const rows = buildInactiveWorkerRows({ workers, mappings, unresolvedEvents })
+  assert.equal(filterInactiveWorkerRows(rows, { punch: 'yes' }).length, 2)
+  assert.equal(filterInactiveWorkerRows(rows, { punch: 'no' }).map((row) => row.id)[0], 'inactive-no-event')
+  assert.equal(rows.find((row) => row.id === 'jones').latestBiometricEvent.event_id, 'e2')
+})
+
 test('standalone route and sidebar exist while mapping page no longer renders inactive audit events', async () => {
   const router = await readFile(new URL('./src/routes/AppRouter.jsx', import.meta.url), 'utf8')
   const sidebar = await readFile(new URL('./src/components/Sidebar/Sidebar.jsx', import.meta.url), 'utf8')
@@ -44,6 +51,10 @@ test('standalone route and sidebar exist while mapping page no longer renders in
   assert.match(page, /getWorkersRequest\(\)/)
   assert.match(page, /getBiometricMappingsRequest\(\)/)
   assert.match(page, /getInactiveWorkerBiometricActivityRequest\(\)/)
+  assert.match(page, /getWorkersActivatedTodayRequest\(\)/)
+  assert.match(page, /WorkerWeekAttendanceRecovery/)
+  assert.match(page, /Promise\.all\(\[/)
+  assert.match(page, /filterInactiveWorkerRows/)
 })
 
 test('activity RPC is read-only and preserves exact-device-first confirmed mapping rules', async () => {

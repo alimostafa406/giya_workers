@@ -200,3 +200,10 @@ export const reactivateWorkerRequest = async (worker) => {
 		monthly_salary: worker.monthly_salary,
 	})
 }
+
+export const getWorkersActivatedTodayRequest = async () => {
+	const { data, error } = await getSupabaseClient().rpc('get_workers_activated_today')
+	if (error?.code === '42883' || error?.code === 'PGRST202') return { data: [], unavailable: true }
+	if (error) throw error
+	return { data: toArray(data), unavailable: false }
+}

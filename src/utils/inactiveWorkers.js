@@ -44,3 +44,16 @@ export const buildInactiveWorkerRows = ({ workers = [], mappings = [], unresolve
     })
     .sort((left, right) => String(left.full_name || '').localeCompare(String(right.full_name || '')))
 }
+
+export const filterInactiveWorkerRows = (rows = [], { query = '', teamId = '', punch = '' } = {}) => {
+  const normalized = String(query).trim().toLowerCase()
+  return rows.filter((row) => {
+    const matchesQuery = !normalized || [row.full_name, row.employee_code, row.team?.name, row.team_name,
+      ...row.biometricMappings.flatMap((mapping) => [mapping.device_employee_no, mapping.device_id, mapping.device_name]),
+    ].some((value) => String(value || '').toLowerCase().includes(normalized))
+    const matchesTeam = !teamId || String(row.team_id || '') === String(teamId)
+    const hasPunch = row.biometricEventsToday.length > 0
+    const matchesPunch = !punch || (punch === 'yes' ? hasPunch : !hasPunch)
+    return matchesQuery && matchesTeam && matchesPunch
+  })
+}

@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from '../api/biometricMappingApi'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
-import { getWorkersRequest, reactivateWorkerRequest } from '../api/workersApi'
+import { getWorkersActivatedTodayRequest, getWorkersRequest, reactivateWorkerRequest } from '../api/workersApi'
+import WorkerWeekAttendanceRecovery from '../components/WorkerWeekAttendanceRecovery'
 import Table from '../components/Table/Table'
 import Modal from '../components/Modal/Modal'
 import { useTranslation } from '../i18n/LanguageContext'
-import { buildInactiveWorkerRows } from '../utils/inactiveWorkers'
+import { buildInactiveWorkerRows, filterInactiveWorkerRows } from '../utils/inactiveWorkers'
 
 const labels = {
   ar: {
@@ -28,7 +29,7 @@ const labels = {
     empty: 'لا يوجد عمال غير نشطين.',
     unavailable: 'تعذر تحميل مراقبة نشاط البصمة اليوم، لكن قائمة العمال غير النشطين ما زالت متاحة.',
     lastAttendance: 'آخر حضور', lastCheckIn: 'آخر دخول', lastCheckOut: 'آخر خروج', details: 'السجل', history: 'سجل الحضور', date: 'التاريخ', status: 'الحالة', checkIn: 'الدخول', checkOut: 'الخروج', noHistory: 'لا يوجد سجل حضور متاح.', statusUpdated: 'تحديث الحالة',
-    reactivate: 'تفعيل العامل', reactivateConfirm: 'هل تريد إعادة تفعيل هذا العامل؟',
+    reactivate: 'تفعيل العامل', reactivateConfirm: 'هل تريد إعادة تفعيل هذا العامل؟', recoverWeek: 'استعادة حضور الأسبوع',
   },
   en: {
     title: 'Inactive Workers',
@@ -50,6 +51,7 @@ const labels = {
     unavailable: 'Today’s biometric monitoring could not be loaded, but the inactive-worker roster remains available.',
     lastAttendance: 'Last attendance', lastCheckIn: 'Last check-in', lastCheckOut: 'Last check-out', details: 'History', history: 'Attendance history', date: 'Date', status: 'Status', checkIn: 'Check-in', checkOut: 'Check-out', noHistory: 'No attendance history available.', statusUpdated: 'Status updated',
     reactivate: 'Reactivate', reactivateConfirm: 'Reactivate this worker?',
+    recoverWeek: 'Recover Week Attendance',
   },
   fr: {
     title: 'Travailleurs inactifs',
@@ -71,6 +73,7 @@ const labels = {
     unavailable: 'Le suivi biométrique du jour est indisponible, mais la liste des travailleurs inactifs reste accessible.',
     lastAttendance: 'Dernière présence', lastCheckIn: 'Dernière entrée', lastCheckOut: 'Dernière sortie', details: 'Historique', history: 'Historique de présence', date: 'Date', status: 'Statut', checkIn: 'Entrée', checkOut: 'Sortie', noHistory: 'Aucun historique de présence disponible.', statusUpdated: 'Statut mis à jour',
     reactivate: 'Réactiver', reactivateConfirm: 'Réactiver ce travailleur ?',
+    recoverWeek: 'Récupérer la présence de la semaine',
   },
 }
 
@@ -87,9 +90,12 @@ export default function InactiveWorkers() {
   const [mappings, setMappings] = useState([])
   const [events, setEvents] = useState([])
   const [attendance, setAttendance] = useState([])
+  const [activatedToday, setActivatedToday] = useState([])
   const [selectedWorker, setSelectedWorker] = useState(null)
   const [monitoringUnavailable, setMonitoringUnavailable] = useState(false)
   const [search, setSearch] = useState('')
+  const [teamId, setTeamId] = useState('')
+  const [punchFilter, setPunchFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [reactivatingId, setReactivatingId] = useState('')
@@ -102,15 +108,17 @@ export default function InactiveWorkers() {
         const workersResult = await getWorkersRequest()
         const loadedWorkers = Array.isArray(workersResult.data) ? workersResult.data : []
         const inactiveWorkerIds = loadedWorkers.filter((worker) => worker?.is_active === false).map((worker) => worker.id)
-        const [mappingsResult, eventsResult, attendanceResult] = await Promise.all([
+        const [mappingsResult, eventsResult, attendanceResult, activatedResult] = await Promise.all([
           getBiometricMappingsRequest(),
           getInactiveWorkerBiometricActivityRequest().catch(() => ({ data: [], unavailable: true })),
           inactiveWorkerIds.length ? getAttendanceRequest({ worker_ids: inactiveWorkerIds, paginate: true }) : Promise.resolve({ data: [] }),
+          getWorkersActivatedTodayRequest().catch(() => ({ data: [], unavailable: true })),
         ])
         setWorkers(loadedWorkers)
         setMappings(Array.isArray(mappingsResult.data) ? mappingsResult.data : [])
         setEvents(Array.isArray(eventsResult.data) ? eventsResult.data : [])
         setAttendance(Array.isArray(attendanceResult.data) ? attendanceResult.data : [])
+        setActivatedToday(Array.isArray(activatedResult.data) ? activatedResult.data : [])
         setMonitoringUnavailable(Boolean(eventsResult.unavailable))
       } catch (loadError) {
         setError(getErrorMessage(loadError))
@@ -122,17 +130,7 @@ export default function InactiveWorkers() {
   }, [])
 
   const rows = useMemo(() => buildInactiveWorkerRows({ workers, mappings, unresolvedEvents: events, attendance }), [attendance, events, mappings, workers])
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return rows
-    return rows.filter((worker) => [
-      worker.full_name,
-      worker.employee_code,
-      worker.team?.name,
-      worker.team_name,
-      ...worker.biometricMappings.flatMap((mapping) => [mapping.device_id, mapping.device_employee_no, mapping.device_name]),
-    ].some((value) => String(value || '').toLowerCase().includes(query)))
-  }, [rows, search])
+  const filteredRows = useMemo(() => filterInactiveWorkerRows(rows, { query: search, teamId, punch: punchFilter }), [rows, search, teamId, punchFilter])
   const activeTodayCount = rows.filter((worker) => worker.biometricEventsToday.length > 0).length
 
   const reactivate = async (worker) => {
@@ -154,19 +152,15 @@ export default function InactiveWorkers() {
     { key: 'worker', header: text.name, render: (row) => <div><b>{row.full_name}</b><span className="status-badge status-badge--neutral ms-2">{text.inactive}</span></div> },
     { key: 'code', header: text.code, render: (row) => <span dir="ltr">{row.employee_code || '—'}</span> },
     { key: 'team', header: text.team, render: (row) => row.team?.name || row.team_name || '—' },
-    { key: 'last_attendance', header: text.lastAttendance, render: (row) => <span dir="ltr">{row.latestAttendance?.attendance_date || '—'}</span> },
-    { key: 'last_check_in', header: text.lastCheckIn, render: (row) => <span dir="ltr">{row.latestAttendance?.check_in || '—'}</span> },
-    { key: 'last_check_out', header: text.lastCheckOut, render: (row) => <span dir="ltr">{row.latestAttendance?.check_out || '—'}</span> },
     {
       key: 'identities', header: text.identities, render: (row) => row.biometricMappings.length
         ? <div className="space-y-1">{row.biometricMappings.map((mapping) => <div key={mapping.id} dir="ltr" className="text-xs"><b>{mapping.device_id || 'legacy'}:{mapping.device_employee_no}</b> · {mapping.mapping_review_state || '—'} · {mapping.is_active === false ? 'inactive mapping' : 'active mapping'}</div>)}</div>
         : <span className="text-sm text-(--muted)">{text.noMapping}</span>,
     },
-    { key: 'details', header: text.details, render: (row) => <div className="flex gap-2"><button type="button" className="btn-secondary" onClick={() => setSelectedWorker(row)}>{text.details}</button><button type="button" className="btn-primary" disabled={reactivatingId === row.id} onClick={() => reactivate(row)}>{text.reactivate}</button></div> },
-    { key: 'last_activity', header: text.lastActivity, render: (row) => <span dir="ltr">{localDateTime(row.latestBiometricEvent?.event_timestamp, language)}</span> },
+    { key: 'details', header: text.details, render: (row) => <div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={() => setSelectedWorker(row)}>{text.details}</button><button type="button" className="btn-primary" disabled={reactivatingId === row.id} onClick={() => reactivate(row)}>{text.reactivate}</button></div> },
     {
       key: 'today', header: text.today, render: (row) => row.biometricEventsToday.length
-        ? <div><span className="status-badge status-badge--warning">{text.detected}</span><p className="mt-1 text-xs" dir="ltr">{row.biometricEventsToday.map((event) => `${event.device_id || '—'} #${event.device_employee_no} · ${localDateTime(event.event_timestamp, language)}`).join(' | ')}</p></div>
+        ? <div><span className="status-badge status-badge--warning">{text.detected}</span><p className="mt-1 text-xs" dir="ltr">{localDateTime(row.latestBiometricEvent?.event_timestamp, language)}</p></div>
         : <span className="text-sm text-(--muted)">{text.noneToday}</span>,
     },
   ]
@@ -179,13 +173,15 @@ export default function InactiveWorkers() {
     </div>
     {error ? <p className="alert alert--error mb-4">{error}</p> : null}
     {monitoringUnavailable ? <p className="alert alert--warning mb-4">{text.unavailable}</p> : null}
-    <input type="search" className="input-base mb-4" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={text.search} />
+    {activatedToday.length ? <div className="surface-card mb-5 p-4"><h3 className="font-extrabold">{language === 'ar' ? 'تم تفعيلهم اليوم' : language === 'fr' ? 'Activés aujourd’hui' : 'Activated Today'}</h3><div className="mt-3 overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>{text.name}</th><th>{text.code}</th><th>{text.team}</th><th>{text.identities}</th><th>{text.statusUpdated}</th><th>{text.details}</th></tr></thead><tbody>{activatedToday.map((worker) => <tr key={worker.worker_id}><td>{worker.full_name}</td><td dir="ltr">{worker.employee_code || '—'}</td><td>{worker.team_name || '—'}</td><td dir="ltr">{worker.biometric_ids?.join(' · ') || '—'}</td><td dir="ltr">{localDateTime(worker.activated_at, language)}</td><td><div className="flex gap-2"><button type="button" className="btn-secondary" onClick={() => setSelectedWorker({ ...worker, id: worker.worker_id, is_active: true })}>{text.details}</button><button type="button" className="btn-primary" onClick={() => setSelectedWorker({ ...worker, id: worker.worker_id, is_active: true })}>{text.recoverWeek}</button></div></td></tr>)}</tbody></table></div></div> : null}
+    <div className="mb-4 grid gap-2 md:grid-cols-3"><input type="search" className="input-base" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={text.search} /><select className="input-base" value={teamId} onChange={(event) => setTeamId(event.target.value)}><option value="">{text.team}</option>{[...new Map(rows.map((row) => [row.team_id, row.team?.name || row.team_name])).entries()].filter(([id]) => id).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><select className="input-base" value={punchFilter} onChange={(event) => setPunchFilter(event.target.value)}><option value="">{text.today}</option><option value="yes">{text.detected}</option><option value="no">{text.noneToday}</option></select></div>
     <div className="surface-card overflow-hidden"><Table columns={columns} data={filteredRows} loading={loading} emptyMessage={text.empty} /></div>
     <Modal isOpen={Boolean(selectedWorker)} title={`${text.history}: ${selectedWorker?.full_name || ''}`} onClose={() => setSelectedWorker(null)}>
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <div><p className="text-xs text-(--muted)">{text.team}</p><p className="font-semibold">{selectedWorker?.team?.name || selectedWorker?.team_name || '—'}</p></div>
         <div><p className="text-xs text-(--muted)">{text.statusUpdated}</p><p className="font-semibold" dir="ltr">{localDateTime(selectedWorker?.updated_at, language)}</p></div>
       </div>
+      {selectedWorker?.is_active ? <WorkerWeekAttendanceRecovery worker={selectedWorker} onRecovered={() => {}} /> : null}
       <Table columns={[
         { key: 'date', header: text.date, render: (row) => <span dir="ltr">{row.attendance_date || row.date || '—'}</span> },
         { key: 'status', header: text.status, render: (row) => row.status || '—' },
