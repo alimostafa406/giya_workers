@@ -1,11 +1,9 @@
-// A team is an operational assignment.  Special/foreign and monthly staff can
-// legitimately be unassigned, while normal weekly workers cannot.
-export const isSpecialOrMonthlyWorker = (worker = {}) => (
-  worker?.staff_classification === 'special_staff'
-  || worker?.payment_type === 'monthly'
-)
+// A team is an operational assignment. Only explicitly classified special / foreign
+// staff may be unassigned. Payment type is payroll data and never controls
+// attendance eligibility.
+export const isSpecialStaffWorker = (worker = {}) => worker?.staff_classification === 'special_staff'
 
-export const workerRequiresOperationalTeam = (worker = {}) => !isSpecialOrMonthlyWorker(worker)
+export const workerRequiresOperationalTeam = (worker = {}) => !isSpecialStaffWorker(worker)
 
 export const hasAssignedTeam = (worker = {}) => Boolean(String(worker?.team_id || '').trim())
 

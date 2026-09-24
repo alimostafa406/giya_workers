@@ -268,8 +268,8 @@ export const createWorkerAndConfirmBiometricMappingRequest = async ({ deviceUser
   if (!deviceId || !employeeNo || !name || !code) {
     throw new Error('Device identity, worker name, and employee code are required.')
   }
-  const isTeamlessSpecialOrMonthly = staffClassification === 'special_staff' || paymentType === 'monthly'
-  if (!teamId && !isTeamlessSpecialOrMonthly) {
+  const isTeamlessSpecialStaff = staffClassification === 'special_staff'
+  if (!teamId && !isTeamlessSpecialStaff) {
     throw new Error('A team is required for a normal operational worker.')
   }
   if (!teamId) {

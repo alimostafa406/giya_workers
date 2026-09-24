@@ -2,12 +2,13 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
-  isSpecialOrMonthlyWorker,
+  isSpecialStaffWorker,
   validateWorkerTeamAssignment,
   workerRequiresOperationalTeam,
 } from './src/utils/workerTeamEligibility.js'
 import { buildAbsenceReport } from './src/utils/absenceReport.js'
 import { isWeeklyPayrollEligibleWorker } from './src/utils/weeklyPayrollEligibility.js'
+import { isOperationalAttendanceWorkerOnDate } from './src/utils/activeWorkers.js'
 
 const normalWorker = {
   id: 'normal', full_name: 'Normal Worker', team_id: null, team_name: null,
@@ -24,11 +25,17 @@ test('normal operational workers cannot be saved without a team', () => {
   assert.throws(() => validateWorkerTeamAssignment(normalWorker), /team is required/i)
 })
 
-test('foreign/special or monthly workers can be saved without a team', () => {
-  assert.equal(isSpecialOrMonthlyWorker(specialMonthlyWorker), true)
+test('only foreign/special workers can be saved without a team', () => {
+  assert.equal(isSpecialStaffWorker(specialMonthlyWorker), true)
   assert.equal(workerRequiresOperationalTeam(specialMonthlyWorker), false)
   assert.doesNotThrow(() => validateWorkerTeamAssignment(specialMonthlyWorker))
-  assert.doesNotThrow(() => validateWorkerTeamAssignment({ ...normalWorker, payment_type: 'monthly' }))
+  assert.throws(() => validateWorkerTeamAssignment({ ...normalWorker, payment_type: 'monthly' }), /team is required/i)
+})
+
+test('normal workers with a team remain operational regardless of payment type', () => {
+  const monthlyNormalWorker = { ...assignedNormalWorker, id: 'normal-monthly', payment_type: 'monthly' }
+  assert.equal(isOperationalAttendanceWorkerOnDate(assignedNormalWorker, '2026-09-24'), true)
+  assert.equal(isOperationalAttendanceWorkerOnDate(monthlyNormalWorker, '2026-09-24'), true)
 })
 
 test('teamless foreign monthly staff stay out of normal operational reports and weekly payroll', () => {
@@ -39,6 +46,12 @@ test('teamless foreign monthly staff stay out of normal operational reports and 
   assert.equal(report.missingMorningWorkers, 1)
   assert.deepEqual(report.groups.flatMap((group) => group.workers.map((worker) => worker.id)), ['normal-assigned'])
   assert.equal(isWeeklyPayrollEligibleWorker(specialMonthlyWorker), false)
+})
+
+test('normal workers without teams are not operational, while Administration and future starts remain excluded', () => {
+  assert.equal(isOperationalAttendanceWorkerOnDate(normalWorker, '2026-09-24'), false)
+  assert.equal(isOperationalAttendanceWorkerOnDate({ ...assignedNormalWorker, team_name: 'Adminstration' }, '2026-09-24'), false)
+  assert.equal(isOperationalAttendanceWorkerOnDate({ ...assignedNormalWorker, operational_start_date: '2026-09-25' }, '2026-09-24'), false)
 })
 
 test('monthly payroll flow continues to identify active teamless monthly staff', () => {
@@ -56,7 +69,7 @@ test('worker form renders the translated no-team option and preserves normal tea
   assert.match(form, /required=\{teamRequired\}/)
   assert.match(biometricForm, /workers\.noTeam/)
   assert.match(biometricForm, /required=\{teamRequired\}/)
-  assert.match(biometricApi, /if \(!teamId && !isTeamlessSpecialOrMonthly\)/)
+  assert.match(biometricApi, /if \(!teamId && !isTeamlessSpecialStaff\)/)
   assert.match(biometricApi, /if \(!teamId\) \{/)
   assert.match(api, /validateWorkerTeamAssignment\(payload\)/)
 })

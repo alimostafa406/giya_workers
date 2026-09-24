@@ -467,13 +467,13 @@ Object.assign(translations.fr.agentStatus, {
 
 Object.assign(translations.ar.workers, {
   noTeam: 'بدون فريق',
-  noTeamAllowed: 'الفريق اختياري للموظف الخاص أو الشهري.',
+  noTeamAllowed: 'الفريق اختياري للموظف الخاص.',
 })
 Object.assign(translations.en.workers, {
   noTeam: 'No team',
-  noTeamAllowed: 'A team is optional for special or monthly staff.',
+  noTeamAllowed: 'A team is optional for special staff.',
 })
 Object.assign(translations.fr.workers, {
   noTeam: 'Sans équipe',
-  noTeamAllowed: 'Une équipe est facultative pour le personnel spécial ou mensuel.',
+  noTeamAllowed: 'Une équipe est facultative pour le personnel spécial.',
 })
