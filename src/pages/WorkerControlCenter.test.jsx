@@ -84,6 +84,23 @@ describe('Worker Control Center information architecture', () => {
     expect(screen.getByText('هذا الشهر')).toBeTruthy()
   })
 
+  it('shows a compact current absence period and reveals individual dates on demand', async () => {
+    open('/worker-control-center/consecutive-absence')
+    expect(await screen.findByText('Absent Worker')).toBeTruthy()
+    expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+      'العامل', 'الفريق', 'أيام الغياب المتتالي', 'فترة الغياب', 'غياب الشهر', 'آخر حضور', 'التفاصيل',
+    ])
+    const shortDate = (value) => value.slice(5).split('-').reverse().join('/')
+    expect(screen.getByText(`${shortDate(`${day.slice(0, 7)}-01`)} → ${shortDate(day)}`)).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: 'أيام الغياب المتتالي' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'عرض الأيام' }))
+    const dialog = screen.getByRole('dialog', { name: 'أيام الغياب المتتالي' })
+    expect(dialog.querySelectorAll('li').length).toBeGreaterThanOrEqual(2)
+    expect(dialog.querySelectorAll('li')[0].textContent).toBe(`01/${day.slice(5, 7)}/${day.slice(0, 4)}`)
+    fireEvent.click(screen.getByRole('button', { name: 'إغلاق' }))
+    expect(screen.queryByRole('dialog', { name: 'أيام الغياب المتتالي' })).toBeNull()
+  })
+
   it('monthly page has only monthly workers and its search/absence filters', async () => {
     open('/worker-control-center/monthly')
     expect(await screen.findByText('Absent Worker')).toBeTruthy()

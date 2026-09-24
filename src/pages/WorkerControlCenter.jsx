@@ -44,6 +44,7 @@ export default function WorkerControlCenter({ category = null }) {
   const [search, setSearch] = useState('')
   const [teamFilter, setTeamFilter] = useState('')
   const [minimumAbsences, setMinimumAbsences] = useState(1)
+  const [visibleAbsenceDays, setVisibleAbsenceDays] = useState(null)
 
   useEffect(() => {
     let current = true
@@ -92,12 +93,14 @@ export default function WorkerControlCenter({ category = null }) {
       && (!teamFilter || String(row.worker.team_id) === teamFilter)
       && (!query || `${row.worker.full_name || ''} ${row.worker.employee_code || ''}`.toLocaleLowerCase().includes(query))
   }).sort((a, b) => b.detail.monthCounts.absent - a.detail.monthCounts.absent || String(a.worker.full_name || '').localeCompare(String(b.worker.full_name || '')))
-  const rows = category === 'monthly' ? monthlyRows : pages.rows[category] || []
+  const rows = category === 'monthly' ? monthlyRows : category === 'consecutive-absence'
+    ? [...pages.rows['consecutive-absence']].sort((a, b) => b.currentStreak - a.currentStreak)
+    : pages.rows[category] || []
   const subject = category === 'team-detail' ? { title: team?.name || 'الفريق', description: 'العمال التشغيليون في هذا الفريق وحالة حضورهم اليوم.' } : config
 
   let columns = []
   if (category === 'absent-today') columns = [workerName, workerCode, teamName, { label: 'الدخول', render: (row) => timeText(row.detail.today.checkIn) }, { label: 'الخروج', render: (row) => timeText(row.detail.today.checkOut) }, { label: 'غياب الشهر', render: (row) => row.detail.monthCounts.absent }, { label: 'آخر حضور', render: (row) => dateText(row.detail.lastAttendance) }, details]
-  if (category === 'consecutive-absence') columns = [workerName, teamName, { label: 'أيام متتالية', render: (row) => row.currentStreak }, { label: 'تواريخ الغياب / دون سجل', render: (row) => row.currentDates.map(dateText).reverse().join(' · ') || '—' }, { label: 'غياب الشهر', render: (row) => row.monthAbsent || 0 }, { label: 'آخر حضور', render: (row) => dateText(row.lastAttendance?.attendance_date) }, details]
+  if (category === 'consecutive-absence') columns = [workerName, teamName, { label: 'أيام الغياب المتتالي', render: (row) => <b className="text-lg text-(--primary)">{row.currentStreak} يوم</b> }, { label: 'فترة الغياب', render: (row) => <span className="inline-flex items-center gap-3"><span dir="ltr">{dateText(row.currentDates.at(-1)).slice(0, 5)} → {dateText(row.currentDates[0]).slice(0, 5)}</span><button type="button" className="text-sm font-semibold text-(--primary) hover:underline" onClick={() => setVisibleAbsenceDays(row)}>عرض الأيام</button></span> }, { label: 'غياب الشهر', render: (row) => row.monthAbsent || 0 }, { label: 'آخر حضور', render: (row) => dateText(row.lastAttendance?.attendance_date) }, details]
   if (category === 'weekly') columns = [workerName, workerCode, teamName, { label: 'غياب الأسبوع', render: (row) => row.weekAbsent || 0 }, { label: 'أيام متتالية', render: (row) => row.longest || 0 }, { label: 'غياب الشهر', render: (row) => row.monthAbsent || 0 }, details]
   if (category === 'monthly') columns = [workerName, teamName, { label: 'حضور الشهر', render: (row) => row.detail.monthCounts.present }, { label: 'غياب الشهر', render: (row) => row.detail.monthCounts.absent }, { label: 'نصف يوم', render: (row) => row.detail.monthCounts.halfDay }, { label: 'أطول غياب متتالٍ', render: (row) => row.detail.longestAbsence }, { label: 'الغياب المتتالي الحالي', render: (row) => row.detail.currentAbsence }, { label: 'آخر حضور', render: (row) => dateText(row.detail.lastAttendance) }, details]
   if (category === 'half-day') columns = [workerName, workerCode, teamName, { label: 'نصف يوم هذا الأسبوع', render: (row) => row.weekHalf }, { label: 'نصف يوم هذا الشهر', render: (row) => row.monthHalf }, { label: 'حالة اليوم', render: (row) => dayStatus(row.todayRow) }, { label: 'الدخول', render: (row) => timeText(row.todayRow?.check_in) }, { label: 'الخروج', render: (row) => timeText(row.todayRow?.check_out) }, details]
@@ -120,6 +123,7 @@ export default function WorkerControlCenter({ category = null }) {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-worker-control-hub>{workerControlCategories.map((item) => <Link key={item.key} to={item.path} className="surface-card flex min-h-36 flex-col justify-between p-5 transition hover:border-(--primary) hover:shadow-md"><div><h3 className="text-lg font-extrabold">{item.title}</h3><p className="mt-2 text-sm text-(--muted)">{item.description}</p></div><div className="mt-5 flex items-end justify-between"><b className="text-3xl">{loading ? '—' : pages.rows[item.key]?.length || 0}</b><span className="font-bold text-(--primary)">فتح ←</span></div></Link>)}</div>
     </>}
     {actionError && !selectedDetail ? <p className="alert alert--error mt-5">{actionError}</p> : null}
+    {visibleAbsenceDays && category === 'consecutive-absence' ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setVisibleAbsenceDays(null)}><div role="dialog" aria-modal="true" aria-label="أيام الغياب المتتالي" className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold">أيام الغياب المتتالي</h3><p className="mt-1 text-(--muted)">{visibleAbsenceDays.worker?.full_name}</p></div><button type="button" className="btn-secondary px-3 py-1" onClick={() => setVisibleAbsenceDays(null)}>إغلاق</button></div><ul className="mt-4 max-h-72 overflow-y-auto space-y-2">{[...visibleAbsenceDays.currentDates].reverse().map((day) => <li key={day} className="border-b border-(--border) py-1" dir="ltr">{dateText(day)}</li>)}</ul></div></div> : null}
     <WorkerControlDetailPanel detail={selectedDetail} focusActions={focusActions} onClose={() => { setSelectedWorkerId(''); setFocusActions(false); setActionError('') }} onReactivate={reactivate} reactivating={reactivating} onRecovered={refreshAttendance} actionError={actionError} />
   </section>
 }
