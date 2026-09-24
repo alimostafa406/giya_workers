@@ -44,6 +44,8 @@ test('new sections reuse the page bulk requests and leave sections 1–8 present
   assert.match(page, /id="half-day-monitoring"/)
   assert.match(page, /id="team-monitoring"/)
   for (const id of ['today-overview', 'absent-today', 'consecutive-absence', 'weekly-absence', 'monthly-monitoring', 'returned-after-absence', 'inactive-punch', 'activated-today']) assert.match(page, new RegExp(id))
-  assert.equal((page.match(/getAttendanceRequest\(/g) || []).length, 1)
+  // One bulk load and one bulk refresh after the explicit recovery action;
+  // opening a worker detail does not issue any attendance request.
+  assert.equal((page.match(/getAttendanceRequest\(/g) || []).length, 2)
   assert.equal((page.match(/getInactiveWorkerBiometricActivityRequest\(/g) || []).length, 1)
 })

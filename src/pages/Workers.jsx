@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { getBiometricMappingsRequest, saveBiometricMappingRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
 import { getHikvisionDeviceUsers } from '../data/hikvisionRawData'
 import { getErrorMessage } from '../api/axios'
@@ -37,6 +38,8 @@ const getWorkerIsActive = (worker) => {
 
 function Workers() {
   const { t, language } = useTranslation()
+  const location = useLocation()
+  const navigate = useNavigate()
   const admin = useAuthStore((state) => state.admin)
   const [workers, setWorkers] = useState([])
   const [teams, setTeams] = useState([])
@@ -76,6 +79,16 @@ function Workers() {
   useEffect(() => {
     loadData()
   }, [])
+
+  useEffect(() => {
+    const workerId = location.state?.editWorkerId
+    if (!workerId || !workers.length) return
+    const worker = workers.find((item) => String(item.id) === String(workerId))
+    if (!worker) return
+    setSelectedWorker(worker)
+    setIsModalOpen(true)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, location.state, navigate, workers])
 
   const biometricByWorkerId = useMemo(() => {
     const mappingsByWorker = new Map()
