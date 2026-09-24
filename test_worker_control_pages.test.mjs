@@ -55,4 +55,5 @@ test('router declares each focused page and a team detail route', async () => {
   const router = await readFile(new URL('./src/routes/AppRouter.jsx', import.meta.url), 'utf8')
   for (const { path } of workerControlCategories) assert.ok(router.includes(`path="${path}"`), path)
   assert.ok(router.includes('path="/worker-control-center/teams/:teamId"'))
+  assert.ok(router.includes('path="/worker-control-center/worker/:workerId"'))
 })

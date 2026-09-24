@@ -134,6 +134,7 @@ function AppRouter() {
             <Route path="/worker-control-center/returned" element={<WorkerControlCenter category="returned" />} />
             <Route path="/worker-control-center/teams" element={<WorkerControlCenter category="teams" />} />
             <Route path="/worker-control-center/teams/:teamId" element={<WorkerControlCenter category="team-detail" />} />
+            <Route path="/worker-control-center/worker/:workerId" element={<WorkerControlCenter category="worker-detail" />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/attendance/absence-report" element={<AbsenceReport />} />
             <Route path="/special-staff-attendance" element={<SpecialStaffAttendance />} />

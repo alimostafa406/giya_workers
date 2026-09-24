@@ -60,6 +60,7 @@ test('mapping details are derived from one bulk result without a worker-specific
   assert.deepEqual(result.mappings.map((mapping) => mapping.device_employee_no), ['73'])
   const page = await readFile(new URL('./src/pages/WorkerControlCenter.jsx', import.meta.url), 'utf8')
   assert.equal((page.match(/getBiometricMappingsRequest\(/g) || []).length, 1)
-  assert.match(page, /WorkerControlDetailPanel/)
+  assert.match(page, /WorkerControlWorkerPage/)
+  assert.doesNotMatch(page, /WorkerControlDetailPanel/)
   assert.doesNotMatch(page, /r\.severity/)
 })

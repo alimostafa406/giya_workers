@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import WorkerControlCenter from './WorkerControlCenter'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
+import { reactivateWorkerRequest } from '../api/workersApi'
 
 globalThis.React = React
+const auth = vi.hoisted(() => ({ admin: null }))
 const day = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' })
 const previous = new Date(`${day}T12:00:00Z`)
 previous.setUTCDate(previous.getUTCDate() - 1)
@@ -33,7 +35,8 @@ vi.mock('../api/biometricMappingApi', () => ({
   getBiometricMappingsRequest: vi.fn(async () => ({ data: [] })),
   getInactiveWorkerBiometricActivityRequest: vi.fn(async () => ({ data: [{ worker_id: 'inactive', device_id: 'office-main', device_employee_no: '73', event_timestamp: `${day}T07:00:00Z` }] })),
 }))
-vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ admin: null }) }))
+vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ admin: auth.admin }) }))
+vi.mock('../components/WorkerWeekAttendanceRecovery', () => ({ default: () => <button type="button">استرجاع حضور الأسبوع</button> }))
 
 const routes = <Routes>
   <Route path="/worker-control-center" element={<WorkerControlCenter />} />
@@ -45,9 +48,10 @@ const routes = <Routes>
   <Route path="/worker-control-center/activated-today" element={<WorkerControlCenter category="activated-today" />} />
   <Route path="/worker-control-center/teams" element={<WorkerControlCenter category="teams" />} />
   <Route path="/worker-control-center/teams/:teamId" element={<WorkerControlCenter category="team-detail" />} />
+  <Route path="/worker-control-center/worker/:workerId" element={<WorkerControlCenter category="worker-detail" />} />
 </Routes>
 const open = (path = '/worker-control-center') => render(<MemoryRouter initialEntries={[path]}>{routes}</MemoryRouter>)
-afterEach(cleanup)
+afterEach(() => { cleanup(); auth.admin = null; vi.restoreAllMocks() })
 
 describe('Worker Control Center information architecture', () => {
   it('home renders nine compact route cards and no worker table', async () => {
@@ -78,13 +82,48 @@ describe('Worker Control Center information architecture', () => {
     expect(screen.queryByRole('table')).toBeNull()
   })
 
-  it('subpage worker Details opens the existing expanded monitoring panel', async () => {
+  it('table Details navigates to a full worker page and back returns to the category', async () => {
     open('/worker-control-center/absent-today')
     expect(await screen.findByText('Absent Worker')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'التفاصيل' }))
-    expect(screen.getByRole('dialog', { name: /متابعة العامل: Absent Worker/ })).toBeTruthy()
-    expect(screen.getByText('هذا الأسبوع')).toBeTruthy()
-    expect(screen.getByText('هذا الشهر')).toBeTruthy()
+    const details = screen.getByRole('link', { name: 'التفاصيل' })
+    expect(details.getAttribute('href')).toBe('/worker-control-center/worker/absent')
+    fireEvent.click(details)
+    expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: /متابعة العامل/ })).toBeNull()
+    expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'ملخص سريع', 'هذا الأسبوع', 'هذا الشهر', 'سجل الغياب', 'سجل نصف اليوم', 'معلومات البصمة',
+    ])
+    const absencePeriod = screen.getByText('عرض الأيام').closest('details')
+    expect(absencePeriod.open).toBe(false)
+    fireEvent.click(absencePeriod.querySelector('summary'))
+    expect(absencePeriod.open).toBe(true)
+    const back = screen.getByRole('link', { name: '← العودة' })
+    expect(back.getAttribute('href')).toBe('/worker-control-center/absent-today')
+    fireEvent.click(back)
+    expect(await screen.findByRole('heading', { name: 'الغائبون اليوم', level: 2 })).toBeTruthy()
+  })
+
+  it('direct worker route falls back to the hub and admin actions remain available', async () => {
+    auth.admin = { id: 'admin' }
+    open('/worker-control-center/worker/absent')
+    expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
+    expect(screen.getByRole('link', { name: '← العودة' }).getAttribute('href')).toBe('/worker-control-center')
+    expect(screen.getByRole('link', { name: 'تعديل العامل' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'إدارة / تعديل البصمة' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'استرجاع حضور الأسبوع' })).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the existing inactive-worker activation action on the worker page', async () => {
+    auth.admin = { id: 'admin' }
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    reactivateWorkerRequest.mockClear()
+    open('/worker-control-center/worker/inactive')
+    expect(await screen.findByRole('heading', { name: 'Inactive Worker', level: 2 })).toBeTruthy()
+    expect(screen.getByText('الحالة: غير نشط')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'تفعيل العامل' }))
+    await waitFor(() => expect(reactivateWorkerRequest).toHaveBeenCalledTimes(1))
+    expect(confirm).toHaveBeenCalled()
   })
 
   it('shows a compact current absence period and reveals individual dates on demand', async () => {
