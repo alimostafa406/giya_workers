@@ -926,7 +926,7 @@ class SupabaseReadClient:
 def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for_apply: bool = False) -> dict:
     active_mappings = client.read(
         'biometric_worker_mapping',
-        'worker_id,device_id,device_employee_no,is_active,mapping_review_state',
+        'worker_id,device_id,device_employee_no,is_active,mapping_review_state,created_at,updated_at',
         is_active='eq.true',
     )
     workers = client.read('workers', 'id,full_name,employee_code,is_active,operational_start_date,team_id,created_at,updated_at')

@@ -450,6 +450,35 @@ Object.assign(translations.ar.agentStatus, {
   rebuildTodayReportSuccess: 'تمت إعادة إنشاء تقرير اليوم بنجاح.',
   rebuildTodayReportFailed: 'تعذر إعادة إنشاء تقرير اليوم.',
 })
+
+Object.assign(translations.ar.workers, {
+  recoverWeekAttendance: 'استرجاع حضور الأسبوع',
+  recoverWeekHint: 'يعيد معالجة بصمات العامل المحفوظة من الاثنين إلى السبت فقط.',
+  recoverWeekStart: 'بداية الأسبوع (الاثنين)',
+  recoverWeekMondayRequired: 'اختر يوم الاثنين.',
+  recoverWeekConfirm: 'سيتم استرجاع حضور هذا العامل من {start} إلى {end} باستخدام البصمات المحفوظة فقط. هل تريد المتابعة؟',
+  recoverWeekFailed: 'تعذر استرجاع حضور الأسبوع.',
+  recoverySummary: 'تم الاسترجاع: {recovered} · دون تغيير: {unchanged} · تم التخطي: {skipped}',
+  recoveryBefore: 'قبل', recoveryEvidence: 'دليل البصمة', recoveryAfter: 'بعد',
+})
+Object.assign(translations.en.workers, {
+  recoverWeekAttendance: 'Recover Week Attendance',
+  recoverWeekHint: 'Replays this worker’s persisted biometric evidence from Monday through Saturday only.',
+  recoverWeekStart: 'Week start (Monday)', recoverWeekMondayRequired: 'Choose a Monday.',
+  recoverWeekConfirm: 'Recover this worker’s attendance from {start} through {end} using persisted biometric evidence only?',
+  recoverWeekFailed: 'Unable to recover week attendance.',
+  recoverySummary: 'Recovered: {recovered} · Unchanged: {unchanged} · Skipped: {skipped}',
+  recoveryBefore: 'Before', recoveryEvidence: 'Biometric evidence', recoveryAfter: 'After',
+})
+Object.assign(translations.fr.workers, {
+  recoverWeekAttendance: 'Récupérer la présence de la semaine',
+  recoverWeekHint: 'Rejoue uniquement les preuves biométriques enregistrées du lundi au samedi.',
+  recoverWeekStart: 'Début de semaine (lundi)', recoverWeekMondayRequired: 'Choisissez un lundi.',
+  recoverWeekConfirm: 'Récupérer la présence de ce travailleur du {start} au {end} en utilisant uniquement les preuves biométriques enregistrées ?',
+  recoverWeekFailed: 'Impossible de récupérer la présence de la semaine.',
+  recoverySummary: 'Récupérés : {recovered} · Inchangés : {unchanged} · Ignorés : {skipped}',
+  recoveryBefore: 'Avant', recoveryEvidence: 'Preuve biométrique', recoveryAfter: 'Après',
+})
 Object.assign(translations.en.agentStatus, {
   rebuildTodayReport: "Rebuild Today's Report",
   rebuildingTodayReport: "Rebuilding Today's Report...",

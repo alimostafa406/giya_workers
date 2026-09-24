@@ -9,9 +9,11 @@ import {
   updateWorkerRequest,
 } from '../api/workersApi'
 import WorkerForm from '../components/Forms/WorkerForm'
+import WorkerWeekAttendanceRecovery from '../components/WorkerWeekAttendanceRecovery'
 import Modal from '../components/Modal/Modal'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
+import { useAuthStore } from '../store/authStore'
 import {
   biometricCoverageBadgeClass,
   biometricCoverageForWorker,
@@ -35,6 +37,7 @@ const getWorkerIsActive = (worker) => {
 
 function Workers() {
   const { t, language } = useTranslation()
+  const admin = useAuthStore((state) => state.admin)
   const [workers, setWorkers] = useState([])
   const [teams, setTeams] = useState([])
   const [biometricMappings, setBiometricMappings] = useState([])
@@ -275,6 +278,7 @@ function Workers() {
           isSaving={isSaving}
         />
         {selectedWorker ? <WorkerBiometricMappings worker={selectedWorker} mappings={biometricByWorkerId.get(String(selectedWorker.id)) || []} allMappings={biometricMappings} workers={workers} deviceUsers={getHikvisionDeviceUsers()} isSaving={isSaving} onChange={handleMappingChange} /> : null}
+        {selectedWorker && admin ? <WorkerWeekAttendanceRecovery worker={selectedWorker} disabled={isSaving} onRecovered={loadData} /> : null}
       </Modal>
     </section>
   )

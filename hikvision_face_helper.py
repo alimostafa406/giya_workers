@@ -30,6 +30,7 @@ from hikvision_user_sync import sync_users_dataset
 from hikvision_local_config import load_local_hikvision_config, require_local_settings
 from hikvision_devices import configured_devices
 from hikvision_weekly_attendance_review import WeeklyAttendanceReviewer, WeeklyAttendanceReviewError
+from hikvision_worker_week_recovery import WorkerWeekAttendanceRecovery, WorkerWeekRecoveryError
 
 try:
     load_local_hikvision_config()
@@ -107,6 +108,7 @@ class UserSyncJob:
 
 USER_SYNC_JOB = UserSyncJob(sync_users_dataset)
 WEEKLY_ATTENDANCE_REVIEWER = WeeklyAttendanceReviewer()
+WORKER_WEEK_ATTENDANCE_RECOVERY = WorkerWeekAttendanceRecovery()
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 def helper_session():
@@ -190,6 +192,37 @@ def parse_request_json(handler):
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("invalid_json") from error
     return payload if isinstance(payload, dict) else {}
+
+
+def require_active_admin(handler):
+    """Authorize the loopback write action with the browser's Supabase JWT."""
+    authorization = str(handler.headers.get('Authorization') or '')
+    if not authorization.startswith('Bearer '):
+        raise PermissionError('admin_authorization_required')
+    token = authorization.removeprefix('Bearer ').strip()
+    if not token:
+        raise PermissionError('admin_authorization_required')
+    require_local_settings('SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY')
+    base_url = os.environ['SUPABASE_URL'].rstrip('/')
+    response = requests.get(
+        f'{base_url}/auth/v1/user',
+        headers={
+            'apikey': os.environ['SUPABASE_SERVICE_ROLE_KEY'],
+            'Authorization': f'Bearer {token}',
+        },
+        timeout=15,
+    )
+    if not response.ok:
+        raise PermissionError('admin_authorization_required')
+    user_id = str((response.json() or {}).get('id') or '')
+    if not user_id:
+        raise PermissionError('admin_authorization_required')
+    admins = SupabaseReadClient(RequestDiagnostics(False)).read(
+        'admins', 'id,is_active', id=f'eq.{user_id}', is_active='eq.true', limit='1',
+    )
+    if not admins:
+        raise PermissionError('admin_authorization_required')
+    return user_id
 
 
 def run_attendance_operation(payload, apply=False):
@@ -346,11 +379,30 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_local_cors_headers()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
 
     def do_POST(self):
+        if self.path == "/attendance/recover-worker-week":
+            try:
+                require_active_admin(self)
+                payload = parse_request_json(self)
+                if payload.get('confirm') is not True:
+                    raise WorkerWeekRecoveryError('Explicit recovery confirmation is required.')
+                result = WORKER_WEEK_ATTENDANCE_RECOVERY.recover(
+                    str(payload.get('worker_id') or ''), str(payload.get('week_start_date') or ''),
+                )
+                self.send_json(200, result)
+            except PermissionError:
+                self.send_json(403, diagnostic('admin_authorization_required', 'Administrator authorization is required.'))
+            except (ValueError, WorkerWeekRecoveryError) as error:
+                self.send_json(400, diagnostic('invalid_worker_week_recovery', str(error)))
+            except requests.RequestException:
+                self.send_json(502, diagnostic('worker_week_recovery_failed', 'Worker week recovery could not reach the local data service.'))
+            except Exception:
+                self.send_json(500, diagnostic('worker_week_recovery_failed', 'Worker week recovery failed locally. Check helper logs.'))
+            return
         if self.path == "/attendance/review-week":
             try:
                 payload = parse_request_json(self)
