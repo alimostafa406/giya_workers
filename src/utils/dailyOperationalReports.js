@@ -30,6 +30,7 @@ export const isAttendanceException = (row = {}) => {
 
 const reportRow = (row, biometricIds = new Map()) => ({
   id: row.id,
+  isVirtual: row.is_virtual === true,
   worker: row.worker_name || row.worker?.full_name || '—',
   biometricId: biometricIds.get(workerKey(row.worker_id || row.worker?.id)) || '—',
   team: row.team_name || row.team?.name || '—',

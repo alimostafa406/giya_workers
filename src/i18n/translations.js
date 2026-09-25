@@ -409,6 +409,9 @@ Object.assign(translations.fr.reports, {
 })
 
 Object.assign(translations.ar.navigation, { dailyExceptions: 'تقرير استثناءات الحضور اليومية', dailyOvertime: 'تقرير الوقت الإضافي اليومي' })
+Object.assign(translations.ar.navigation, { dailyCenter: 'التقارير اليومية' })
+Object.assign(translations.en.navigation, { dailyCenter: 'Daily Reports' })
+Object.assign(translations.fr.navigation, { dailyCenter: 'Rapports quotidiens' })
 Object.assign(translations.en.navigation, { dailyExceptions: 'Daily Attendance Exceptions', dailyOvertime: 'Daily Overtime Report' })
 Object.assign(translations.ar.workers, { biometricMappingTitle: 'ربط البصمة', biometricMappingHint: 'إدارة هويات الجهاز المرتبطة بهذا العامل فقط.', linkAnotherBiometric: 'ربط هوية بصمة أخرى', biometricConflict: 'هذه الهوية مرتبطة حاليًا بالعامل: {worker}', confirmMoveBiometric: 'تأكيد نقل هوية البصمة' })
 Object.assign(translations.en.workers, { biometricMappingTitle: 'Biometric Mapping', biometricMappingHint: 'Manage only the device identities linked to this worker.', linkAnotherBiometric: 'Link another biometric identity', biometricConflict: 'This identity is currently linked to: {worker}', confirmMoveBiometric: 'Confirm biometric reassignment' })

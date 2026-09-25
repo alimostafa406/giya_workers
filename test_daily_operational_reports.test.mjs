@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { buildDailyAttendanceExceptions, buildDailyOvertimeReport, yesterdayFromBusinessDate } from './src/utils/dailyOperationalReports.js'
 
-const worker = (id, active = true) => ({ id, full_name: `Worker ${id}`, employee_code: `C${id}`, is_active: active, staff_classification: 'normal' })
+const worker = (id, active = true) => ({ id, full_name: `Worker ${id}`, employee_code: `C${id}`, is_active: active, staff_classification: 'normal', team_name: 'Team A', team: { name: 'Team A' } })
 const row = (id, values = {}) => ({ id, worker: worker(id, values.active), worker_name: `Worker ${id}`, team_name: 'Team A', status: 'present', check_in: '08:00:00', check_out: '17:00:00', ...values })
 
 test('daily exceptions exclude completed present rows despite informational late metadata', () => {
@@ -16,7 +16,7 @@ test('daily exceptions exclude completed present rows despite informational late
     row('late-status', { status: 'late', check_in: '09:30:00', check_out: '17:00:00' }),
     row('incomplete-present', { status: 'present', check_in: '07:08:00', check_out: null }),
     row('canonical-full-day', { status: 'present', check_in: '17:13:11', check_out: null, attendance_day_fraction: 1 }),
-    row('administration', { status: 'absent', team: { name: 'Adminstration' } }),
+    row('administration', { status: 'absent', team: { name: 'Adminstration' }, worker: { ...worker('administration'), team_name: 'Adminstration', team: { name: 'Adminstration' } } }),
     row('inactive', { status: 'absent', active: false }),
   ] })
   assert.deepEqual(report.map((item) => [item.worker, item.status]), [
@@ -97,8 +97,8 @@ test('daily exceptions left-join the eligible roster and derive absent only for 
   })
 
   assert.deepEqual(report.map((item) => [item.worker, item.status]), [
-    ['Worker no-row', 'absent'],
     ['Worker half-day', 'half_day'],
+    ['Worker no-row', 'absent'],
   ])
   assert.deepEqual(attendance, originalAttendance)
 })

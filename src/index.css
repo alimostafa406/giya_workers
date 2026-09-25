@@ -249,6 +249,34 @@ textarea {
 .daily-report-worker { @apply font-extrabold; }
 .daily-report-empty { @apply py-10 text-center text-sm text-(--muted); }
 
+.daily-center-print-root { @apply space-y-8; }
+.daily-center-print-header { @apply hidden; }
+.daily-center-report { @apply rounded-2xl border border-(--border) bg-white p-5; }
+.daily-center-report h2 { @apply mb-4 text-lg font-extrabold; }
+.daily-center-table-wrap { @apply w-full overflow-x-auto; }
+.daily-center-table { @apply w-full min-w-[900px] border-collapse text-sm; }
+.daily-center-table th, .daily-center-table td { @apply border border-slate-300 px-2 py-2 text-start align-middle; }
+.daily-center-table th { @apply bg-slate-100 font-extrabold; }
+
+@media print {
+  .daily-center-screen-only { display: none !important; }
+  .daily-center-print-root, .daily-center-print-root * { visibility: visible !important; }
+  .daily-center-print-root { position: absolute; inset: 0; width: 100%; color: #111827; }
+  .daily-center-print-header { display: block; text-align: center; border-bottom: 2px solid #111827; padding-bottom: 4mm; margin-bottom: 6mm; }
+  .daily-center-print-header h1 { font-size: 16pt; font-weight: 800; }
+  .daily-center-print-header p { font-size: 9pt; }
+  .daily-center-report { border: 0; padding: 0; border-radius: 0; break-inside: auto; }
+  .daily-center-report h2 { font-size: 12pt; margin: 0 0 3mm; break-after: avoid; }
+  .daily-center-table-wrap { overflow: visible; }
+  .daily-center-table { min-width: 0; width: 100%; font-size: 9pt; }
+  .daily-center-table thead { display: table-header-group; }
+  .daily-center-table tr { break-inside: avoid; }
+  .daily-center-table th, .daily-center-table td { padding: 1.7mm; overflow-wrap: anywhere; }
+  .daily-center[data-print-mode="attendance"] .daily-center-overtime,
+  .daily-center[data-print-mode="overtime"] .daily-center-attendance { display: none !important; }
+  .daily-center[data-print-mode="all"] .daily-center-overtime { break-before: page; }
+}
+
 @media print {
   body {
     background: white !important;
