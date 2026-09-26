@@ -8,6 +8,8 @@ import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
 import { attendanceStatusKey, buildDailyAttendanceExceptions, buildDailyOvertimeReport, yesterdayFromBusinessDate } from '../utils/dailyOperationalReports'
 import { formatEveningOvertimeMinutes } from '../utils/weeklyPayrollOvertime'
+import OvertimeReportSettings from '../components/Reports/OvertimeReportSettings.jsx'
+import { useOvertimeReportSettings } from '../utils/useOvertimeReportSettings.js'
 
 const yesterday = () => yesterdayFromBusinessDate(kinshasaClock().date)
 const formatTime = (value) => value && value !== '—' ? <span dir="ltr">{String(value).slice(0, 5)}</span> : '—'
@@ -22,6 +24,7 @@ export default function DailyOperationalReports({ type }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const overtime = type === 'overtime'
+  const overtimeSettings = useOvertimeReportSettings(selectedDate)
   const title = t(overtime ? 'reports.dailyOvertimeTitle' : 'reports.dailyExceptionsTitle')
   const locale = language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : 'en-GB'
   const formattedDate = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date(`${selectedDate}T12:00:00`))
@@ -46,8 +49,8 @@ export default function DailyOperationalReports({ type }) {
   useEffect(() => { load() }, [load])
 
   const rows = useMemo(() => (overtime
-    ? buildDailyOvertimeReport({ attendance, mappings, date: selectedDate })
-    : buildDailyAttendanceExceptions({ workers, attendance, evidence, mappings, date: selectedDate })), [attendance, evidence, mappings, overtime, selectedDate, workers])
+    ? buildDailyOvertimeReport({ attendance, mappings, date: selectedDate, overtimeTeamIds: overtimeSettings.loading ? [] : overtimeSettings.settings.team_ids })
+    : buildDailyAttendanceExceptions({ workers, attendance, evidence, mappings, date: selectedDate })), [attendance, evidence, mappings, overtime, selectedDate, workers, overtimeSettings.loading, overtimeSettings.settings])
   const label = (status) => t(`attendance.${({ in_progress: 'inProgress', half_day: 'halfDay', not_recorded: 'notRecorded' }[status] || status)}`)
 
   return <section>
@@ -59,6 +62,7 @@ export default function DailyOperationalReports({ type }) {
         <button type="button" className="btn-primary" disabled={loading} onClick={() => window.print()}>{t('reports.print')}</button>
       </div>
     </div>
+    {overtime && <OvertimeReportSettings model={overtimeSettings} />}
     {error ? <p className="daily-report-screen-only alert alert--error mb-4">{error}</p> : null}
     <article className="daily-report-print-root" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       <header className="daily-report-header"><p>{t('app.name')}</p><h1>{title}</h1><p>{formattedDate}</p></header>

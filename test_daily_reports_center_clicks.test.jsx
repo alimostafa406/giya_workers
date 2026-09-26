@@ -16,6 +16,8 @@ vi.mock('./src/api/workersApi.js', () => ({ getWorkersRequest: vi.fn() }))
 vi.mock('./src/api/biometricMappingApi.js', () => ({ getBiometricMappingsRequest: vi.fn() }))
 vi.mock('./src/api/currentAttendanceEvidenceApi.js', () => ({ getAttendanceEvidenceRangeRequest: vi.fn() }))
 vi.mock('./src/api/attendanceAgentApi.js', () => ({ getMorningVerificationStatusRequest: vi.fn() }))
+vi.mock('./src/api/overtimeReportSettingsApi.js', () => ({ getOvertimeReportSettings: vi.fn(async () => ({ team_ids: [], teams: [] })), saveOvertimeReportSettings: vi.fn() }))
+vi.mock('./src/store/authStore.js', () => ({ useAuthStore: selector => selector({ admin: null }) }))
 vi.mock('./src/utils/attendanceOperationalGate.js', () => ({ kinshasaClock: () => ({ date: '2026-09-26' }) }))
 vi.mock('./src/i18n/LanguageContext.jsx', () => ({ useTranslation: () => ({ language: 'ar', t: (key) => key.split('.').reduce((value, part) => value?.[part], translations.ar) || key }) }))
 

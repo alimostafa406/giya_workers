@@ -512,3 +512,6 @@ Object.assign(translations.fr.workers, {
 Object.assign(translations.ar.attendance, { morningLateness: 'تأخير صباحي', hourShort: 'س', minuteShort: 'د' })
 Object.assign(translations.en.attendance, { morningLateness: 'Morning lateness', hourShort: 'h', minuteShort: 'm' })
 Object.assign(translations.fr.attendance, { morningLateness: 'Retard matinal', hourShort: 'h', minuteShort: 'min' })
+Object.assign(translations.ar.reports, { overtimeSettingsTitle: 'إعداد فرق الوقت الإضافي', overtimeMinimum: 'الحد الأدنى للظهور في تقرير الإضافي: ساعتان', overtimeSettingsSaved: 'تم حفظ فرق الوقت الإضافي.' })
+Object.assign(translations.en.reports, { overtimeSettingsTitle: 'Overtime report teams', overtimeMinimum: 'Minimum reportable overtime: 2 hours', overtimeSettingsSaved: 'Overtime report teams saved.' })
+Object.assign(translations.fr.reports, { overtimeSettingsTitle: 'Équipes des rapports des heures supplémentaires', overtimeMinimum: 'Minimum pour figurer au rapport : 2 heures', overtimeSettingsSaved: 'Équipes enregistrées.' })

@@ -22,10 +22,10 @@ export const adjacentOperationalDate = (date, direction) => {
 
 export const filterDailyMonitoringRows = (rows, filter = 'all') => filter === 'all' ? rows : rows.filter((row) => row.bucket === filter)
 
-export const dailyReportData = ({ date, businessDate = date, workers = [], attendance = [], mappings = [], evidence = [] }) => {
+export const dailyReportData = ({ date, businessDate = date, workers = [], attendance = [], mappings = [], evidence = [], overtimeTeamIds = [] }) => {
   const dayAttendance = attendance.filter((row) => (row.attendance_date || row.date) === date)
   const exceptions = buildDailyAttendanceExceptions({ date, workers, attendance: dayAttendance, mappings, evidence })
-  const overtime = buildDailyOvertimeReport({ date, attendance: dayAttendance, mappings })
+  const overtime = buildDailyOvertimeReport({ date, attendance: dayAttendance, mappings, overtimeTeamIds })
   const roster = mergeAttendanceRoster({ workers, attendance: dayAttendance, biometricEvidence: evidence, date, businessDate })
   const biometricIds = biometricIdsByWorker(mappings)
   const latestPunches = latestPunchesByWorker(evidence, date)

@@ -31,7 +31,7 @@ test('Daily Overtime Report excludes Chauffeur while retaining normal-worker ove
       { id: 'normal-row', worker: normal, worker_name: 'Normal Worker', team_name: 'Peinture Raghibe', status: 'present', check_in: '08:00:00', check_out: '18:39:00' },
     ],
   })
-  assert.deepEqual(report.map((item) => [item.worker, item.overtimeMinutes]), [['Normal Worker', 90]])
+  assert.deepEqual(report, []) // 90 minutes is canonical but below the report threshold.
 })
 
 test('Chauffeur payroll line has no normal overtime while Maison remains unchanged', () => {

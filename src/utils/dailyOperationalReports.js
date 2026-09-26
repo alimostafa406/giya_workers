@@ -1,5 +1,6 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
+import { isOvertimeReportEligible } from './overtimeReportEligibility.js'
 
 const normalActiveWorker = (row, date = '') => (
   isOperationalAttendanceWorkerOnDate(row?.worker, date, row?.team || row?.team_name)
@@ -163,11 +164,12 @@ export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], 
     .sort((left, right) => left.team.localeCompare(right.team) || left.worker.localeCompare(right.worker))
 }
 
-export const buildDailyOvertimeReport = ({ attendance = [], mappings = [], date } = {}) => {
+export const buildDailyOvertimeReport = ({ attendance = [], mappings = [], date, overtimeTeamIds = [] } = {}) => {
   const biometricIds = biometricIdsByWorker(mappings)
   return boundedActiveNormalRows(attendance, date)
-    .map((row) => ({ ...reportRow(row, biometricIds), overtimeMinutes: weeklyPayrollOvertimeForDetail({ date, status: row.status, row }).eveningOvertimeMinutes }))
-    .filter((row) => row.overtimeMinutes > 0)
+    .filter((row) => !date || (row.attendance_date || row.date) === date)
+    .map((row) => ({ ...reportRow(row, biometricIds), teamId: row.worker?.team_id || row.team_id || row.team?.id, overtimeMinutes: weeklyPayrollOvertimeForDetail({ date, status: row.status, row }).eveningOvertimeMinutes }))
+    .filter((row) => isOvertimeReportEligible({ teamId: row.teamId, teamName: row.team, overtimeMinutes: row.overtimeMinutes }, overtimeTeamIds))
     .sort((left, right) => left.team.localeCompare(right.team) || left.worker.localeCompare(right.worker))
 }
 

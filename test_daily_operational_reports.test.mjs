@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { buildDailyAttendanceExceptions, buildDailyOvertimeReport, yesterdayFromBusinessDate } from './src/utils/dailyOperationalReports.js'
 
-const worker = (id, active = true) => ({ id, full_name: `Worker ${id}`, employee_code: `C${id}`, is_active: active, staff_classification: 'normal', team_name: 'Team A', team: { name: 'Team A' } })
-const row = (id, values = {}) => ({ id, worker: worker(id, values.active), worker_name: `Worker ${id}`, team_name: 'Team A', status: 'present', check_in: '08:00:00', check_out: '17:00:00', ...values })
+const worker = (id, active = true) => ({ id, full_name: `Worker ${id}`, employee_code: `C${id}`, is_active: active, staff_classification: 'normal', team_id: 'team-a', team_name: 'Team A', team: { name: 'Team A' } })
+const row = (id, values = {}) => ({ id, attendance_date: '2026-09-14', worker: worker(id, values.active), worker_name: `Worker ${id}`, team_name: 'Team A', status: 'present', check_in: '08:00:00', check_out: '17:00:00', ...values })
 
 test('daily exceptions exclude completed present rows despite informational late metadata', () => {
   const report = buildDailyAttendanceExceptions({ attendance: [
@@ -116,7 +116,7 @@ test('daily reports display only active confirmed biometric mapping IDs, never w
     row('unmapped', { worker: unmapped, status: 'half_day', check_in: '08:00:00', check_out: null, attendance_date: '2026-09-21' }),
   ]
   const exceptions = buildDailyAttendanceExceptions({ workers: [benjamin, unmapped], attendance, mappings, date: '2026-09-21' })
-  const overtime = buildDailyOvertimeReport({ attendance: [row('benjamin', { worker: benjamin, check_out: '19:00:00' })], mappings, date: '2026-09-14' })
+  const overtime = buildDailyOvertimeReport({ attendance: [row('benjamin', { worker: benjamin, check_out: '19:00:00' })], mappings, date: '2026-09-14', overtimeTeamIds: ['team-a'] })
 
   assert.deepEqual(exceptions.map((item) => [item.worker, item.biometricId]), [
     ['Worker benjamin', '149'],
@@ -141,7 +141,7 @@ test('daily exceptions page loads the selected date with pagination and derives 
 })
 
 test('daily overtime report reuses canonical weekday overtime and excludes zero or inactive rows', () => {
-  const report = buildDailyOvertimeReport({ date: '2026-09-14', attendance: [row('overtime', { check_out: '19:00:00' }), row('none'), row('inactive', { check_out: '22:00:00', active: false })] })
+  const report = buildDailyOvertimeReport({ date: '2026-09-14', overtimeTeamIds: ['team-a'], attendance: [row('overtime', { check_out: '19:00:00' }), row('none'), row('inactive', { check_out: '22:00:00', active: false })] })
   assert.equal(report.length, 1)
   assert.equal(report[0].overtimeMinutes, 120)
 })
@@ -153,7 +153,9 @@ test('daily overtime preserves Saturday zero-overtime behavior', () => {
 test('daily overtime includes a verified next-day checkout from the selected weekday workday', () => {
   const report = buildDailyOvertimeReport({
     date: '2026-09-21',
+    overtimeTeamIds: ['team-a'],
     attendance: [row('overnight', {
+      attendance_date: '2026-09-21',
       check_out: '00:31:30',
       biometric_sync_metadata: { check_out_event_timestamp: '2026-09-22T00:31:30+01:00' },
     })],

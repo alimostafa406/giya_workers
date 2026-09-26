@@ -4,7 +4,7 @@ import test from 'node:test'
 import { adjacentOperationalDate, dailyReportData, operationalWeekDates } from './src/utils/dailyReportCenter.js'
 
 const day = '2026-09-21'
-const worker = (id, team = 'Maison') => ({ id, full_name: id, is_active: true, staff_classification: 'normal', team_name: team, team: { name: team } })
+const worker = (id, team = 'Maison') => ({ id, full_name: id, is_active: true, staff_classification: 'normal', team_id: team, team_name: team, team: { name: team } })
 const attendance = (id, status, checkOut = null, date = day) => ({ id: `${id}-${date}`, worker_id: id, worker: worker(id), attendance_date: date, status, check_in: '08:00:00', check_out: checkOut, attendance_day_fraction: status === 'present' ? 1 : 0.5, team_name: 'Maison' })
 
 test('current operational week runs Monday through Saturday and resets next Monday', () => {
@@ -29,8 +29,8 @@ test('each selected date uses existing exceptions and canonical overtime without
   assert.equal(monday.counts.absent, 1)
   assert.equal(monday.counts.halfDay, 1)
   assert.equal(monday.counts.notRecorded, 1)
-  assert.deepEqual(monday.overtime.map((row) => [row.worker, row.overtimeMinutes]), [['present', 90]])
-  const tuesday = dailyReportData({ date: '2026-09-22', workers, attendance: rows })
+  assert.deepEqual(monday.overtime, [])
+  const tuesday = dailyReportData({ date: '2026-09-22', workers, attendance: rows, overtimeTeamIds: ['Maison'] })
   assert.equal(tuesday.counts.overtimeMinutes, 120)
   assert.equal(tuesday.overtime.length, 1)
 })

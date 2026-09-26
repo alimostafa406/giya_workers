@@ -12,6 +12,8 @@ import { kinshasaClock } from '../utils/attendanceOperationalGate.js'
 import { attendanceStatusKey } from '../utils/dailyOperationalReports.js'
 import { adjacentOperationalDate, dailyReportData, operationalWeekDates } from '../utils/dailyReportCenter.js'
 import { formatEveningOvertimeMinutes } from '../utils/weeklyPayrollOvertime.js'
+import OvertimeReportSettings from '../components/Reports/OvertimeReportSettings.jsx'
+import { EMPTY_OVERTIME_TEAMS, useOvertimeReportSettings } from '../utils/useOvertimeReportSettings.js'
 
 const words = {
   ar: { title: 'التقارير اليومية', week: 'الأسبوع الحالي', open: 'عرض تقرير اليوم', exceptions: 'تقرير الحضور والاستثناءات', overtime: 'تقرير الوقت الإضافي', absent: 'غائب', halfDay: 'نصف يوم', notRecorded: 'دون سجل', exceptionCount: 'استثناءات الحضور', overtimeWorkers: 'عمال الإضافي', overtimeHours: 'ساعات الإضافي', worker: 'العامل', team: 'الفريق', status: 'الحالة', in: 'الدخول', out: 'الخروج', last: 'آخر بصمة', note: 'ملاحظة', biometric: 'رقم جهاز البصمة', printAttendance: 'طباعة تقرير الحضور', printOvertime: 'طباعة تقرير الوقت الإضافي', printAll: 'طباعة تقرير اليوم كاملًا', previous: 'اليوم السابق', next: 'اليوم التالي', back: 'العودة إلى الأسبوع', pending: 'تقرير اليوم قد لا يكون نهائيًا: التحقق الصباحي النهائي لم يكتمل.', upcoming: 'يوم قادم', noRows: 'لا توجد نتائج', refresh: 'تحديث', printed: 'وقت الطباعة', invalid: 'تاريخ غير صالح', saturday: 'السبت', sunday: 'الأحد' },
@@ -38,6 +40,8 @@ export default function DailyReportsCenter() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
+  const overtimeSettings = useOvertimeReportSettings(`${date || today}:${reload}`)
+  const overtimeTeamIds = overtimeSettings.loading ? EMPTY_OVERTIME_TEAMS : overtimeSettings.settings.team_ids
   const [verification, setVerification] = useState(null)
   const [printMode, setPrintMode] = useState('all')
   const [printTime, setPrintTime] = useState('')
@@ -60,7 +64,7 @@ export default function DailyReportsCenter() {
     return () => { live = false }
   }, [date, isDay, reload, valid, today, days])
 
-  const reports = useMemo(() => source ? (isDay ? (date <= today ? { [date]: dailyReportData({ date, businessDate: today, ...source }) } : {}) : Object.fromEntries(days.filter((day) => day <= today).map((day) => [day, dailyReportData({ date: day, businessDate: today, ...source })]))) : {}, [source, isDay, date, days, today])
+  const reports = useMemo(() => source ? (isDay ? (date <= today ? { [date]: dailyReportData({ date, businessDate: today, ...source, overtimeTeamIds }) } : {}) : Object.fromEntries(days.filter((day) => day <= today).map((day) => [day, dailyReportData({ date: day, businessDate: today, ...source, overtimeTeamIds })]))) : {}, [source, isDay, date, days, today, overtimeTeamIds])
   const report = reports[date]
   const print = (mode) => {
     setPrintMode(mode)
@@ -77,6 +81,7 @@ export default function DailyReportsCenter() {
   return <section className="daily-center" dir={language === 'ar' ? 'rtl' : 'ltr'} data-print-mode={printMode}>
     <style>{'@media print { @page { size: A4 landscape; margin: 12mm; } }'}</style>
     <header className="daily-center-screen-only mb-6 flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-2xl font-extrabold">{labels.title}</h1><p className="mt-1 text-(--muted)">{isDay ? `${weekday(date, language)} ${displayDate(date)}` : `${labels.week}: ${displayDate(days[0])} → ${displayDate(days[5])}`}</p></div><button type="button" className="btn-primary" onClick={() => setReload((value) => value + 1)} disabled={loading}>{labels.refresh}</button></header>
+    <OvertimeReportSettings model={overtimeSettings} />
     {error && <p className="alert alert--error mb-4">{error}</p>}
     {loading && <p className="py-8 text-center">{t('common.loading')}</p>}
     {!loading && !error && !isDay && <>{days.includes(today) && verification?.latestAttempt?.status !== 'complete' && <p className="alert alert--warning mb-5">{labels.pending}</p>}<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{days.map((day) => {
