@@ -9,7 +9,7 @@ import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatu
 import UnresolvedBiometricAttendancePanel from '../components/Attendance/UnresolvedBiometricAttendancePanel'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
-import { attendanceRosterCategory, mergeAttendanceRoster, operationalAttendanceStatus } from '../utils/attendanceRoster'
+import { mergeAttendanceRoster, operationalAttendanceStatus, summarizeDailyAttendanceRoster } from '../utils/attendanceRoster'
 import { splitUnresolvedBiometricAttendance } from '../utils/unresolvedBiometricAttendance'
 
 const asArray = (value) => {
@@ -76,21 +76,7 @@ function Dashboard() {
     businessDate: today,
   }), [attendance, biometricEvidence, today, workers])
 
-  const presentCount = useMemo(
-    () => todayRoster.filter((item) => operationalAttendanceStatus(item) === 'present').length,
-    [todayRoster],
-  )
-
-  const halfDayCount = useMemo(
-    () => todayRoster.filter((item) => operationalAttendanceStatus(item) === 'half_day').length,
-    [todayRoster],
-  )
-
-  const absentCount = useMemo(
-    () => todayRoster.filter((item) => attendanceRosterCategory(item) === 'absent').length,
-    [todayRoster],
-  )
-  const notRecordedCount = todayRoster.filter((item) => attendanceRosterCategory(item) === 'not_recorded').length
+  const dailyCounts = useMemo(() => summarizeDailyAttendanceRoster(todayRoster), [todayRoster])
 
   const urgentBiometric = useMemo(
     () => splitUnresolvedBiometricAttendance(unresolvedBiometric).urgent,
@@ -110,11 +96,11 @@ function Dashboard() {
   }, [todayRoster])
 
   const cards = [
-    { label: t('dashboard.presentToday'), value: presentCount },
-    { label: t('dashboard.halfDay'), value: halfDayCount },
-    { label: t('dashboard.absentToday'), value: absentCount },
-    { label: t('dashboard.notRecorded'), value: notRecordedCount },
-    { label: t('dashboard.totalWorkers'), value: todayRoster.length },
+    { label: t('dashboard.presentToday'), value: dailyCounts.present },
+    { label: t('dashboard.halfDay'), value: dailyCounts.half_day },
+    { label: t('dashboard.absentToday'), value: dailyCounts.absent },
+    { label: t('dashboard.notRecorded'), value: dailyCounts.not_recorded },
+    { label: t('dashboard.totalWorkers'), value: dailyCounts.total },
   ]
 
   const reviewLabelsByLanguage = {

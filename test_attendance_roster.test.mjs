@@ -93,14 +93,16 @@ test('legacy late rows use simple operational half-day/present semantics', () =>
   assert.equal(operationalAttendanceStatus({ ...rows[0], check_out: '17:00:00' }), 'present')
 })
 
-test('Dashboard counts confirmed absence through the shared roster category', () => {
+test('Dashboard derives every summary bucket and total through the same roster classifier', () => {
   const dashboard = readFileSync('./src/pages/Dashboard.jsx', 'utf8')
-  assert.match(dashboard, /attendanceRosterCategory\(item\) === 'absent'/)
-  assert.match(dashboard, /attendanceRosterCategory\(item\) === 'not_recorded'/)
+  assert.match(dashboard, /summarizeDailyAttendanceRoster\(todayRoster\)/)
+  assert.match(dashboard, /value: dailyCounts\.absent/)
+  assert.match(dashboard, /value: dailyCounts\.not_recorded/)
   assert.match(dashboard, /row\.roster_state === 'not_recorded'[\s\S]*t\('attendance\.notRecorded'\)/)
   assert.match(dashboard, /row\.roster_state === 'biometric_pending'[\s\S]*t\('attendance\.pending'\)/)
-  assert.match(dashboard, /operationalAttendanceStatus\(item\) === 'present'/)
-  assert.match(dashboard, /operationalAttendanceStatus\(item\) === 'half_day'/)
+  assert.match(dashboard, /value: dailyCounts\.present/)
+  assert.match(dashboard, /value: dailyCounts\.half_day/)
+  assert.match(dashboard, /value: dailyCounts\.total/)
   assert.doesNotMatch(dashboard, /lateCount/)
   assert.doesNotMatch(dashboard, /isAbsentStatus/)
 })

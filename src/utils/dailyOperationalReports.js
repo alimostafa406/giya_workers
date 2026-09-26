@@ -61,7 +61,7 @@ const clockSeconds = (value) => {
   return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3] || 0) : null
 }
 
-const latestPunchesByWorker = (evidence = [], date) => {
+export const latestPunchesByWorker = (evidence = [], date) => {
   const latest = new Map()
   ;(Array.isArray(evidence) ? evidence : []).forEach((event) => {
     if (date && String(event?.attendance_date || '') !== date) return
@@ -74,7 +74,7 @@ const latestPunchesByWorker = (evidence = [], date) => {
   return latest
 }
 
-const biometricIdsByWorker = (mappings = []) => {
+export const biometricIdsByWorker = (mappings = []) => {
   const idsByWorker = new Map()
   ;(Array.isArray(mappings) ? mappings : []).forEach((mapping) => {
     const workerId = workerKey(mapping?.worker_id)

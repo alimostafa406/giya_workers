@@ -6,6 +6,7 @@ import { getMorningVerificationStatusRequest } from '../api/attendanceAgentApi.j
 import { getBiometricMappingsRequest } from '../api/biometricMappingApi.js'
 import { getWorkersRequest } from '../api/workersApi.js'
 import { getErrorMessage } from '../api/axios.js'
+import DailyAttendanceSummary from '../components/Attendance/DailyAttendanceSummary.jsx'
 import { useTranslation } from '../i18n/LanguageContext.jsx'
 import { kinshasaClock } from '../utils/attendanceOperationalGate.js'
 import { attendanceStatusKey } from '../utils/dailyOperationalReports.js'
@@ -59,7 +60,7 @@ export default function DailyReportsCenter() {
     return () => { live = false }
   }, [date, isDay, reload, valid, today, days])
 
-  const reports = useMemo(() => source ? (isDay ? (date <= today ? { [date]: dailyReportData({ date, ...source }) } : {}) : Object.fromEntries(days.filter((day) => day <= today).map((day) => [day, dailyReportData({ date: day, ...source })]))) : {}, [source, isDay, date, days, today])
+  const reports = useMemo(() => source ? (isDay ? (date <= today ? { [date]: dailyReportData({ date, businessDate: today, ...source }) } : {}) : Object.fromEntries(days.filter((day) => day <= today).map((day) => [day, dailyReportData({ date: day, businessDate: today, ...source })]))) : {}, [source, isDay, date, days, today])
   const report = reports[date]
   const print = (mode) => {
     setPrintMode(mode)
@@ -86,7 +87,8 @@ export default function DailyReportsCenter() {
     {!loading && !error && isDay && date > today && <p className="alert alert--warning mb-5">{labels.upcoming}</p>}
     {!loading && !error && isDay && report && <>
       {date === today && verification?.latestAttempt?.status !== 'complete' && <p className="daily-center-screen-only alert alert--warning mb-5">{labels.pending}</p>}
-      <div className="daily-center-screen-only mb-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">{[[labels.exceptionCount, report.counts.exceptions], [labels.absent, report.counts.absent], [labels.halfDay, report.counts.halfDay], [labels.notRecorded, report.counts.notRecorded], [labels.overtimeWorkers, report.counts.overtimeWorkers], [labels.overtimeHours, formatEveningOvertimeMinutes(report.counts.overtimeMinutes)]].map(([name, value]) => <div className="rounded-xl border border-(--border) bg-white p-3" key={name}><p className="text-xs text-(--muted)">{name}</p><p className="mt-1 text-xl font-extrabold">{value}</p></div>)}</div>
+      <DailyAttendanceSummary key={date} rows={report.monitoringRows} counts={report.monitoringCounts} labels={labels} t={t} />
+      <div className="daily-center-screen-only mb-6 grid gap-3 sm:grid-cols-3">{[[labels.exceptionCount, report.counts.exceptions], [labels.overtimeWorkers, report.counts.overtimeWorkers], [labels.overtimeHours, formatEveningOvertimeMinutes(report.counts.overtimeMinutes)]].map(([name, value]) => <div className="rounded-xl border border-(--border) bg-white p-3" key={name}><p className="text-xs text-(--muted)">{name}</p><p className="mt-1 text-xl font-extrabold">{value}</p></div>)}</div>
       <div className="daily-center-screen-only mb-5 flex flex-wrap gap-2"><button type="button" className="btn-primary" onClick={() => print('attendance')}>{labels.printAttendance}</button><button type="button" className="btn-primary" onClick={() => print('overtime')}>{labels.printOvertime}</button><button type="button" className="btn-primary" onClick={() => print('all')}>{labels.printAll}</button></div>
       <div className="daily-center-print-root"><header className="daily-center-print-header"><p>{t('app.name')}</p><h1>{labels.title} — {weekday(date, language)} {displayDate(date)}</h1><p>{labels.printed}: {printTime}</p></header>
         <article className="daily-center-report daily-center-attendance"><h2>{labels.exceptions} ({report.counts.exceptions})</h2><ReportTable rows={report.exceptions} labels={labels} t={t} /></article>

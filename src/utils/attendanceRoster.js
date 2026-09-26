@@ -87,6 +87,20 @@ export const operationalAttendanceStatus = (row = {}) => {
   return row.check_out ? 'present' : 'half_day'
 }
 
+// Summary/display classification only. Unfinished or unknown canonical states
+// are not recorded as a completed attendance outcome; never invent attendance.
+// Keep the original row/status so review information remains inspectable.
+export const dailyAttendanceBucket = (row = {}) => {
+  const status = operationalAttendanceStatus(row)
+  return ['present', 'half_day', 'absent'].includes(status) ? status : 'not_recorded'
+}
+
+export const summarizeDailyAttendanceRoster = (rows = []) => rows.reduce((counts, row) => {
+  counts.total += 1
+  counts[dailyAttendanceBucket(row)] += 1
+  return counts
+}, { total: 0, present: 0, half_day: 0, absent: 0, not_recorded: 0 })
+
 export const summarizeAttendanceRoster = (rows = []) => rows.reduce((summary, row) => {
   const category = attendanceRosterCategory(row)
   summary.total += 1
