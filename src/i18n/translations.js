@@ -509,3 +509,6 @@ Object.assign(translations.fr.workers, {
   noTeam: 'Sans équipe',
   noTeamAllowed: 'Une équipe est facultative pour le personnel spécial.',
 })
+Object.assign(translations.ar.attendance, { morningLateness: 'تأخير صباحي', hourShort: 'س', minuteShort: 'د' })
+Object.assign(translations.en.attendance, { morningLateness: 'Morning lateness', hourShort: 'h', minuteShort: 'm' })
+Object.assign(translations.fr.attendance, { morningLateness: 'Retard matinal', hourShort: 'h', minuteShort: 'min' })

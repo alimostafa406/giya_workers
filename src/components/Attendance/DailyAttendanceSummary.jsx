@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { filterDailyMonitoringRows } from '../../utils/dailyReportCenter.js'
+import { morningLateness } from '../../utils/morningLateness.js'
 
 const time = (value) => value && value !== '—' ? String(value).slice(0, 5) : '—'
 const statusKeys = { present: 'present', half_day: 'halfDay', absent: 'absent', late: 'late', pending: 'pending', in_progress: 'inProgress', not_recorded: 'notRecorded' }
@@ -15,9 +16,11 @@ export default function DailyAttendanceSummary({ rows, counts, labels, t }) {
     ['all', 'dashboard.totalWorkers', counts.total],
   ]
   const selectedRows = filter ? filterDailyMonitoringRows(rows, filter) : []
-  const statusLabel = (row) => row.roster_state === 'biometric_pending'
+  const canonicalStatusLabel = (row) => row.roster_state === 'biometric_pending'
     ? t('attendance.pending')
     : row.status ? (statusKeys[row.status] ? t(`attendance.${statusKeys[row.status]}`) : String(row.status)) : t('attendance.notRecorded')
+
+  const statusLabel = (row) => <>{canonicalStatusLabel(row)}{morningLateness(row, t) !== '—' && <small className="block text-(--muted)">{t('attendance.morningLateness')}: {morningLateness(row, t)}</small>}</>
 
   return <section className="daily-center-screen-only mb-8">
     <div className="mb-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">{cards.map(([key, label, value]) => <button type="button" key={key} aria-pressed={filter === key} aria-controls="daily-monitoring-worker-list" onClick={() => setFilter(key)} className={`cursor-pointer rounded-xl border p-3 text-start transition hover:border-blue-500 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-blue-600 ${filter === key ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-500' : 'border-(--border) bg-white'}`}><span className="block text-sm text-(--muted)">{t(label)}</span><span className="mt-1 block text-2xl font-extrabold">{value}</span></button>)}</div>

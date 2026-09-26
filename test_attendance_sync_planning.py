@@ -592,7 +592,7 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
 
     def test_saturday_morning_checkin_without_checkout_is_full_day(self):
         saturday = date(2026, 8, 15)
-        for clock in ('07:00:00', '08:15:00', '09:00:00'):
+        for clock in ('07:00:00', '08:00:00', '08:15:00', '09:27:50', '10:00:00'):
             with self.subTest(clock=clock):
                 plans, _ = plan_attendance(
                     [attendance_event(clock, event_date='2026-08-15')],
@@ -605,6 +605,8 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
                 self.assertEqual(payload['status'], 'present')
                 self.assertEqual(payload['attendance_day_fraction'], 1.0)
                 self.assertIsNone(payload['check_out'])
+                expected_seconds = max(0, int((datetime.fromisoformat('2026-08-15T' + clock) - datetime(2026, 8, 15, 8)).total_seconds()))
+                self.assertEqual(payload['biometric_sync_metadata']['lateness_seconds'], expected_seconds)
 
     def test_saturday_later_morning_punch_keeps_earliest_checkin_and_earns_full_day(self):
         saturday = date(2026, 8, 15)
@@ -624,11 +626,22 @@ class ExistingAttendanceProtectionTests(unittest.TestCase):
     def test_saturday_non_morning_checkin_without_checkout_remains_half_day(self):
         saturday = date(2026, 8, 15)
         plans, _ = plan_attendance(
-            [attendance_event('09:01:00', event_date='2026-08-15')],
+            [attendance_event('10:00:01', event_date='2026-08-15')],
             resolution_with(None), saturday,
         )
         self.assertEqual(plans[0]['proposed_status'], 'half_day')
         self.assertEqual(plans[0]['day_fraction'], 0.5)
+
+    def test_ignace_saturday_biometric_half_day_upgrades_without_checkout(self):
+        target = date(2026, 9, 26)
+        existing = {'id': 'ignace-attendance', 'worker_id': WORKER_ID, 'attendance_date': target.isoformat(), 'status': 'half_day', 'check_in': '09:27:50', 'check_out': None, 'attendance_source': 'biometric', 'manual_override': False, 'attendance_day_fraction': 0.5}
+        existing['biometric_sync_metadata'] = {'lateness_seconds': 5270, 'lateness_minutes': 87}
+        plan = plan_attendance([attendance_event('09:27:50', event_date=target.isoformat())], resolution_with(existing), target)[0][0]
+        payload = biometric_payload(plan, existing)
+        self.assertEqual(payload['status'], 'present')
+        self.assertEqual(payload['attendance_day_fraction'], 1.0)
+        self.assertEqual(payload['biometric_sync_metadata']['lateness_seconds'], 5270)
+        self.assertIsNone(payload['check_out'])
 
     def test_monday_and_friday_without_checkout_remain_half_day(self):
         for target_date, event_date in ((date(2026, 8, 10), '2026-08-10'), (date(2026, 8, 14), '2026-08-14')):

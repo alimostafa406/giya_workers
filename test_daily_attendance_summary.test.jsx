@@ -8,6 +8,14 @@ import { dailyReportData } from './src/utils/dailyReportCenter.js'
 import { attendanceRosterCategory, dailyAttendanceBucket, summarizeDailyAttendanceRoster } from './src/utils/attendanceRoster.js'
 
 afterEach(cleanup)
+test('present attendance shows informational morning lateness without changing its bucket', () => {
+  const row = { workerId: 'ignace', workerName: 'IGNACE', status: 'present', bucket: 'present', check_in: '09:27:50', check_out: null, biometric_sync_metadata: { lateness_seconds: 5270 } }
+  render(<MemoryRouter><DailyAttendanceSummary rows={[row]} counts={{ present: 1, half_day: 0, absent: 0, not_recorded: 0, total: 1 }} labels={labels} t={key => ({ 'attendance.hourShort': 'س', 'attendance.minuteShort': 'د', 'attendance.morningLateness': 'تأخير صباحي', ...dictionary })[key] || key} /></MemoryRouter>)
+  click('Present')
+  expect(screen.getByText('تأخير صباحي: 1س 27د')).toBeTruthy()
+  expect(row.status).toBe('present')
+  expect(row.check_out).toBe(null)
+})
 const date = '2026-09-26'
 const worker = (id) => ({ id, full_name: id, employee_code: id, is_active: true, staff_classification: 'normal', team: { name: 'Maison' } })
 const workers = ['present-worker', 'IGNACE', 'absent-worker', 'no-row', 'pending-worker'].map(worker)

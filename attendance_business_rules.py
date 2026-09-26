@@ -17,6 +17,7 @@ OFFICIAL_START = time(8, 0)
 # Saturday no-checkout full-day exception.
 MORNING_CHECKIN_START = time(7, 0)
 MORNING_CHECKIN_END = time(9, 0)
+SATURDAY_MORNING_CHECKIN_END = time(10, 0)
 WEEKDAY_OFFICIAL_END = time(17, 0)
 SATURDAY_OFFICIAL_END = time(14, 30)
 WEEKDAY_CHECKOUT_START = time(16, 30)
@@ -70,6 +71,7 @@ def workday_schedule(target_date: date) -> dict | None:
         return {
             **common,
             "label": "saturday",
+            "morning_checkin_end": SATURDAY_MORNING_CHECKIN_END,
             "official_end": SATURDAY_OFFICIAL_END,
             "checkout_start": SATURDAY_CHECKOUT_START,
             "finalization_time": SATURDAY_FINALIZATION,
