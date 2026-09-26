@@ -33,6 +33,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/special-staff-attendance', label: t('navigation.specialStaff'), icon: 'specialStaff' },
     { to: '/reports/weekly-attendance', label: t('navigation.reports'), icon: 'report' },
     { to: '/reports/daily', label: t('navigation.dailyCenter'), icon: 'report' },
+    { to: '/reports/publication', label: t('reportPublication.title'), icon: 'report' },
     { to: '/reports/daily-attendance-exceptions', label: t('navigation.dailyExceptions'), icon: 'report' },
     { to: '/reports/daily-overtime', label: t('navigation.dailyOvertime'), icon: 'report' },
     { to: '/payroll', label: t('navigation.payroll'), icon: 'payroll' },

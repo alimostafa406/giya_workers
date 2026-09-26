@@ -521,3 +521,24 @@ Object.assign(translations.fr.navigation, { settings: 'Paramètres', attendanceO
 Object.assign(translations.ar.reports, { overtimeSettingsTitle: 'فرق الوقت الإضافي', overtimeSettingsDescription: 'الفرق المسموح لعمالها بالظهور في تقارير الوقت الإضافي.' })
 Object.assign(translations.en.reports, { overtimeSettingsDescription: 'Teams whose workers may appear in overtime reports.' })
 Object.assign(translations.fr.reports, { overtimeSettingsDescription: 'Équipes dont les travailleurs peuvent figurer dans les rapports des heures supplémentaires.' })
+translations.ar.reportPublication = {
+  title: 'نشر التقارير', description: 'نشر تقارير الحضور والإضافي مستقل عن نشر الرواتب.', currentWeek: 'الأسبوع الحالي (الاثنين–السبت)',
+  published: 'منشور', unpublished: 'غير منشور', publish: 'نشر تقارير الأسبوع', republish: 'تحديث النسخة المنشورة', stop: 'إيقاف نشر التقارير', refresh: 'تحديث',
+  publishedAt: 'وقت النشر', version: 'النسخة', availableDates: 'الأيام المتاحة',
+  publishConfirm: 'هل تريد نشر نسخة من تقارير الأسبوع الحالية؟ سيتم استبدال النسخة السابقة إن وجدت.', stopConfirm: 'هل تريد إيقاف إتاحة تقارير الأسبوع للموقع الثاني؟',
+  snapshotNote: 'التقارير المنشورة نسخة ثابتة. تحديثها يتطلب إعادة النشر. اليوم لا يُتاح قبل اكتمال التحقق الصباحي؛ الأيام القادمة غير متاحة. تنتهي الإتاحة عند بدء الأسبوع التالي.',
+}
+translations.en.reportPublication = {
+  title: 'Report publication', description: 'Attendance and overtime report publication is independent of payroll publication.', currentWeek: 'Current week (Monday–Saturday)',
+  published: 'Published', unpublished: 'Unpublished', publish: 'Publish week reports', republish: 'Update published snapshot', stop: 'Stop report publication', refresh: 'Refresh',
+  publishedAt: 'Published at', version: 'Version', availableDates: 'Available dates',
+  publishConfirm: 'Publish a snapshot of this week’s current reports, replacing the previous version if any?', stopConfirm: 'Stop making this week’s reports available to the second site?',
+  snapshotNote: 'Published reports are frozen until explicitly republished. Today is withheld until morning verification completes; future days are unavailable. Availability expires next Monday.',
+}
+translations.fr.reportPublication = {
+  title: 'Publication des rapports', description: 'La publication des rapports de présence et des heures supplémentaires est indépendante de la paie.', currentWeek: 'Semaine en cours (lundi–samedi)',
+  published: 'Publié', unpublished: 'Non publié', publish: 'Publier les rapports', republish: 'Actualiser la version publiée', stop: 'Arrêter la publication', refresh: 'Actualiser',
+  publishedAt: 'Publié le', version: 'Version', availableDates: 'Dates disponibles',
+  publishConfirm: 'Publier les rapports actuels de cette semaine en remplaçant la version précédente éventuelle ?', stopConfirm: 'Arrêter la disponibilité des rapports de cette semaine sur le deuxième site ?',
+  snapshotNote: 'Les rapports publiés restent figés jusqu’à une nouvelle publication explicite. Aujourd’hui attend la vérification matinale complète ; les jours futurs sont indisponibles. La disponibilité expire lundi prochain.',
+}
