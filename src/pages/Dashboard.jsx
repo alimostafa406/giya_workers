@@ -2,14 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
-import { getRecentUnmappedBiometricIdentitiesRequest, getUnresolvedBiometricAttendanceRequest } from '../api/biometricMappingApi'
+import { getBiometricMappingsRequest, getRecentUnmappedBiometricIdentitiesRequest, getUnresolvedBiometricAttendanceRequest } from '../api/biometricMappingApi'
 import { getCurrentAttendanceEvidenceRequest } from '../api/currentAttendanceEvidenceApi'
 import { getWorkersRequest } from '../api/workersApi'
 import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatus'
+import DailyAttendanceSummary from '../components/Attendance/DailyAttendanceSummary'
 import UnresolvedBiometricAttendancePanel from '../components/Attendance/UnresolvedBiometricAttendancePanel'
 import Table from '../components/Table/Table'
 import { useTranslation } from '../i18n/LanguageContext'
-import { mergeAttendanceRoster, operationalAttendanceStatus, summarizeDailyAttendanceRoster } from '../utils/attendanceRoster'
+import { dailyAttendanceBucket, mergeAttendanceRoster, operationalAttendanceStatus, summarizeDailyAttendanceRoster } from '../utils/attendanceRoster'
+import { biometricIdsByWorker, latestPunchesByWorker } from '../utils/dailyOperationalReports'
 import { splitUnresolvedBiometricAttendance } from '../utils/unresolvedBiometricAttendance'
 
 const asArray = (value) => {
@@ -33,6 +35,7 @@ function Dashboard() {
   const [workers, setWorkers] = useState([])
   const [attendance, setAttendance] = useState([])
   const [biometricEvidence, setBiometricEvidence] = useState([])
+  const [biometricMappings, setBiometricMappings] = useState([])
   const [recentUnmappedCount, setRecentUnmappedCount] = useState(null)
   const [unresolvedBiometric, setUnresolvedBiometric] = useState([])
   const [unresolvedBiometricUnavailable, setUnresolvedBiometricUnavailable] = useState(false)
@@ -43,17 +46,19 @@ function Dashboard() {
       setError('')
       try {
         const attendanceDate = getTodayLocalDate()
-        const [workersRes, attendanceRes, biometricEvidenceRes, recentUnmappedRes, unresolvedRes] = await Promise.all([
+        const [workersRes, attendanceRes, biometricEvidenceRes, recentUnmappedRes, unresolvedRes, mappingsRes] = await Promise.all([
           getWorkersRequest(),
           getAttendanceRequest(),
           getCurrentAttendanceEvidenceRequest(attendanceDate),
           getRecentUnmappedBiometricIdentitiesRequest({ days: 7 }).catch(() => ({ data: [], unavailable: true })),
           getUnresolvedBiometricAttendanceRequest({ attendanceDate }).catch(() => ({ data: [], unavailable: true })),
+          getBiometricMappingsRequest(),
         ])
 
         setWorkers(asArray(workersRes.data))
         setAttendance(asArray(attendanceRes.data))
         setBiometricEvidence(asArray(biometricEvidenceRes.data))
+        setBiometricMappings(asArray(mappingsRes.data))
         setRecentUnmappedCount(recentUnmappedRes.unavailable ? null : asArray(recentUnmappedRes.data).length)
         setUnresolvedBiometric(asArray(unresolvedRes.data))
         setUnresolvedBiometricUnavailable(Boolean(unresolvedRes.unavailable))
@@ -77,6 +82,20 @@ function Dashboard() {
   }), [attendance, biometricEvidence, today, workers])
 
   const dailyCounts = useMemo(() => summarizeDailyAttendanceRoster(todayRoster), [todayRoster])
+  const summaryRows = useMemo(() => {
+    const ids = biometricIdsByWorker(biometricMappings)
+    const punches = latestPunchesByWorker(biometricEvidence, today)
+    return todayRoster.map((row) => ({
+      ...row,
+      workerId: row.worker.id,
+      workerName: row.worker.full_name,
+      employeeCode: row.worker.employee_code || '—',
+      biometricId: ids.get(String(row.worker.id)) || '—',
+      teamName: row.team?.name || row.team_name || '—',
+      lastPunch: punches.get(String(row.worker.id)) || '—',
+      bucket: dailyAttendanceBucket(row),
+    }))
+  }, [todayRoster, biometricMappings, biometricEvidence, today])
 
   const urgentBiometric = useMemo(
     () => splitUnresolvedBiometricAttendance(unresolvedBiometric).urgent,
@@ -94,14 +113,6 @@ function Dashboard() {
       })
       .slice(0, 8)
   }, [todayRoster])
-
-  const cards = [
-    { label: t('dashboard.presentToday'), value: dailyCounts.present },
-    { label: t('dashboard.halfDay'), value: dailyCounts.half_day },
-    { label: t('dashboard.absentToday'), value: dailyCounts.absent },
-    { label: t('dashboard.notRecorded'), value: dailyCounts.not_recorded },
-    { label: t('dashboard.totalWorkers'), value: dailyCounts.total },
-  ]
 
   const reviewLabelsByLanguage = {
     ar: { title: 'بصمات غير مربوطة خلال آخر 7 أيام', description: 'هويات سجلت بصمة فعلية حديثًا ولم يتم ربطها بعامل في النظام.', action: 'مراجعة' },
@@ -157,19 +168,12 @@ function Dashboard() {
         </p>
       ) : null}
 
-      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map((card) => (
-          <div
-            key={card.label}
-            className="surface-card bg-linear-to-br from-white to-stone-50 p-4"
-          >
-            <p className="text-sm text-(--muted)">{card.label}</p>
-            <p className="mt-2 text-3xl font-extrabold text-(--primary)">
-              {loading ? '...' : card.value}
-            </p>
-          </div>
-        ))}
-      </div>
+      {loading ? <p className="mb-5">{t('common.loading')}</p> : <DailyAttendanceSummary
+        rows={summaryRows}
+        counts={dailyCounts}
+        t={t}
+        labels={{ worker: t('attendance.worker'), biometric: t('reports.biometricId'), team: t('attendance.team'), status: t('attendance.status'), in: t('attendance.checkIn'), out: t('attendance.checkOut'), last: t('reports.lastPunch'), noRows: t('common.noResults') }}
+      />}
 
       <div className="surface-card mb-5 flex flex-wrap items-center justify-between gap-4 border-2 border-amber-200 bg-amber-50 p-4">
         <div><p className="font-extrabold">{reviewLabels.title}</p><p className="mt-1 text-sm text-(--muted)">{reviewLabels.description}</p></div>
