@@ -36,6 +36,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/reports/daily-attendance-exceptions', label: t('navigation.dailyExceptions'), icon: 'report' },
     { to: '/reports/daily-overtime', label: t('navigation.dailyOvertime'), icon: 'report' },
     { to: '/payroll', label: t('navigation.payroll'), icon: 'payroll' },
+    { to: '/settings/attendance-overtime', label: t('navigation.settings'), icon: 'attendance' },
   ]
   const advancedLinks = [
     { to: '/advanced-settings', label: t('navigation.agentStatus'), icon: 'alert' },

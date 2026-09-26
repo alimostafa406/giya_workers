@@ -6,6 +6,7 @@ import OvertimeReportSettings from './src/components/Reports/OvertimeReportSetti
 import { getOvertimeReportSettings, saveOvertimeReportSettings } from './src/api/overtimeReportSettingsApi.js'
 import { useOvertimeReportSettings } from './src/utils/useOvertimeReportSettings.js'
 import { dailyReportData } from './src/utils/dailyReportCenter.js'
+import AttendanceOvertimeSettings from './src/pages/AttendanceOvertimeSettings.jsx'
 vi.mock('./src/api/overtimeReportSettingsApi.js', () => ({ getOvertimeReportSettings: vi.fn(), saveOvertimeReportSettings: vi.fn(async () => ({})) }))
 const auth = vi.hoisted(() => ({ admin: { is_active: true } }))
 vi.mock('./src/store/authStore.js', () => ({ useAuthStore: selector => selector(auth) }))
@@ -27,6 +28,26 @@ test('configuration is hidden for non-admin users', () => {
   auth.admin = null
   render(<OvertimeReportSettings model={model()} />)
   expect(screen.queryByRole('checkbox')).toBe(null)
+})
+test('site settings loads saved teams, cancel is local, and save uses the canonical API', async () => {
+  let saved = ['a']
+  getOvertimeReportSettings.mockImplementation(async () => ({ team_ids: saved, teams: [{ id: 'a', name: 'Zarour' }, { id: 'b', name: 'Siraj' }] }))
+  saveOvertimeReportSettings.mockImplementation(async ids => { saved = ids; return {} })
+  render(<AttendanceOvertimeSettings />)
+  const zarour = await screen.findByRole('checkbox', { name: 'Zarour' })
+  const siraj = screen.getByRole('checkbox', { name: 'Siraj' })
+  expect(zarour.checked).toBe(true)
+  expect(siraj.checked).toBe(false)
+  fireEvent.click(siraj)
+  fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+  expect(siraj.checked).toBe(false)
+  expect(saved).toEqual(['a'])
+  expect(saveOvertimeReportSettings).not.toHaveBeenCalled()
+  fireEvent.click(siraj)
+  fireEvent.click(screen.getByRole('button', { name: 'common.save' }))
+  await screen.findByRole('status')
+  expect(saved).toEqual(['a', 'b'])
+  expect(saveOvertimeReportSettings).toHaveBeenCalledWith(['a', 'b'])
 })
 test('settings refresh immediately re-filters Monday and Tuesday without changing canonical rows', async () => {
   let selected = []

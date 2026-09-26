@@ -12,7 +12,6 @@ import { kinshasaClock } from '../utils/attendanceOperationalGate.js'
 import { attendanceStatusKey } from '../utils/dailyOperationalReports.js'
 import { adjacentOperationalDate, dailyReportData, operationalWeekDates } from '../utils/dailyReportCenter.js'
 import { formatEveningOvertimeMinutes } from '../utils/weeklyPayrollOvertime.js'
-import OvertimeReportSettings from '../components/Reports/OvertimeReportSettings.jsx'
 import { EMPTY_OVERTIME_TEAMS, useOvertimeReportSettings } from '../utils/useOvertimeReportSettings.js'
 
 const words = {
@@ -81,7 +80,6 @@ export default function DailyReportsCenter() {
   return <section className="daily-center" dir={language === 'ar' ? 'rtl' : 'ltr'} data-print-mode={printMode}>
     <style>{'@media print { @page { size: A4 landscape; margin: 12mm; } }'}</style>
     <header className="daily-center-screen-only mb-6 flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-2xl font-extrabold">{labels.title}</h1><p className="mt-1 text-(--muted)">{isDay ? `${weekday(date, language)} ${displayDate(date)}` : `${labels.week}: ${displayDate(days[0])} → ${displayDate(days[5])}`}</p></div><button type="button" className="btn-primary" onClick={() => setReload((value) => value + 1)} disabled={loading}>{labels.refresh}</button></header>
-    <OvertimeReportSettings model={overtimeSettings} />
     {error && <p className="alert alert--error mb-4">{error}</p>}
     {loading && <p className="py-8 text-center">{t('common.loading')}</p>}
     {!loading && !error && !isDay && <>{days.includes(today) && verification?.latestAttempt?.status !== 'complete' && <p className="alert alert--warning mb-5">{labels.pending}</p>}<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{days.map((day) => {

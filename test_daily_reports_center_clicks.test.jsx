@@ -4,20 +4,22 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DailyReportsCenter from './src/pages/DailyReportsCenter.jsx'
+import DailyOperationalReports from './src/pages/DailyOperationalReports.jsx'
+import { getOvertimeReportSettings } from './src/api/overtimeReportSettingsApi.js'
 import { translations } from './src/i18n/translations.js'
 import { getAttendanceRequest } from './src/api/attendanceApi.js'
 import { getWorkersRequest } from './src/api/workersApi.js'
 import { getBiometricMappingsRequest } from './src/api/biometricMappingApi.js'
-import { getAttendanceEvidenceRangeRequest } from './src/api/currentAttendanceEvidenceApi.js'
+import { getAttendanceEvidenceRangeRequest, getCurrentAttendanceEvidenceRequest } from './src/api/currentAttendanceEvidenceApi.js'
 import { getMorningVerificationStatusRequest } from './src/api/attendanceAgentApi.js'
 
 vi.mock('./src/api/attendanceApi.js', () => ({ getAttendanceRequest: vi.fn() }))
 vi.mock('./src/api/workersApi.js', () => ({ getWorkersRequest: vi.fn() }))
 vi.mock('./src/api/biometricMappingApi.js', () => ({ getBiometricMappingsRequest: vi.fn() }))
-vi.mock('./src/api/currentAttendanceEvidenceApi.js', () => ({ getAttendanceEvidenceRangeRequest: vi.fn() }))
+vi.mock('./src/api/currentAttendanceEvidenceApi.js', () => ({ getAttendanceEvidenceRangeRequest: vi.fn(), getCurrentAttendanceEvidenceRequest: vi.fn() }))
 vi.mock('./src/api/attendanceAgentApi.js', () => ({ getMorningVerificationStatusRequest: vi.fn() }))
 vi.mock('./src/api/overtimeReportSettingsApi.js', () => ({ getOvertimeReportSettings: vi.fn(async () => ({ team_ids: [], teams: [] })), saveOvertimeReportSettings: vi.fn() }))
-vi.mock('./src/store/authStore.js', () => ({ useAuthStore: selector => selector({ admin: null }) }))
+vi.mock('./src/store/authStore.js', () => ({ useAuthStore: selector => selector({ admin: { is_active: true } }) }))
 vi.mock('./src/utils/attendanceOperationalGate.js', () => ({ kinshasaClock: () => ({ date: '2026-09-26' }) }))
 vi.mock('./src/i18n/LanguageContext.jsx', () => ({ useTranslation: () => ({ language: 'ar', t: (key) => key.split('.').reduce((value, part) => value?.[part], translations.ar) || key }) }))
 
@@ -36,6 +38,8 @@ beforeEach(() => {
   getWorkersRequest.mockResolvedValue({ data: workers })
   getBiometricMappingsRequest.mockResolvedValue({ data: [{ worker_id: 'ignace-id', device_employee_no: '021', is_active: true, mapping_review_state: 'confirmed' }] })
   getAttendanceEvidenceRangeRequest.mockResolvedValue({ data: [] })
+  getCurrentAttendanceEvidenceRequest.mockResolvedValue({ data: [] })
+  getOvertimeReportSettings.mockResolvedValue({ team_ids: [], teams: [] })
   getMorningVerificationStatusRequest.mockResolvedValue({ latestAttempt: { status: 'complete' } })
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
@@ -43,8 +47,20 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 const setup = async () => {
   render(<MemoryRouter initialEntries={['/reports/daily/2026-09-26']}><Routes><Route path="/reports/daily/:date" element={<DailyReportsCenter />} /></Routes></MemoryRouter>)
   await screen.findByRole('button', { name: /نصف يوم/ })
+  expect(screen.queryByRole('checkbox')).toBe(null)
+  expect(screen.queryByText(translations.ar.reports.overtimeSettingsTitle)).toBe(null)
 }
 const list = () => document.getElementById('daily-monitoring-worker-list')
+test('standalone overtime report silently uses saved teams without rendering configuration controls', async () => {
+  const selectedWorker = { ...workers[1], team_id: 'selected-team', full_name: 'Qualified Worker' }
+  getOvertimeReportSettings.mockResolvedValue({ team_ids: ['selected-team'], teams: [{ id: 'selected-team', name: 'Zarour' }] })
+  getAttendanceRequest.mockResolvedValue({ data: [{ ...attendance[1], worker: selectedWorker, attendance_date: '2026-09-25', check_out: '19:00:00' }] })
+  render(<DailyOperationalReports type="overtime" />)
+  await screen.findByText('Qualified Worker')
+  expect(screen.getByText('2h00')).toBeTruthy()
+  expect(screen.queryByRole('checkbox')).toBe(null)
+  expect(screen.queryByText(translations.ar.reports.overtimeSettingsTitle)).toBe(null)
+})
 const click = (key) => {
   const button = screen.getByRole('button', { name: new RegExp(translations.ar.dashboard[key]) })
   // Dispatch on the rendered count span to cover event bubbling from the visible card content.

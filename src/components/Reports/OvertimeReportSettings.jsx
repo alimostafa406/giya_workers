@@ -18,8 +18,9 @@ export default function OvertimeReportSettings({ model }) {
     catch (cause) { setMessage(getErrorMessage(cause)) }
     finally { setBusy(false) }
   }
-  return <section className="daily-center-screen-only daily-report-screen-only mb-5 border-b border-(--border) pb-4">
+  return <section className="surface-card p-5">
     <h2 className="text-lg font-bold">{t('reports.overtimeSettingsTitle')}</h2>
+    <p className="mt-2 text-sm text-(--muted)">{t('reports.overtimeSettingsDescription')}</p>
     <p className="my-2 text-sm text-(--muted)">{t('reports.overtimeMinimum')}</p>
     {model.error && <p role="alert">{model.error}</p>}
     <div className="flex flex-wrap gap-x-5 gap-y-2">{model.settings.teams.map(team => <label key={team.id} className="flex items-center gap-2"><input type="checkbox" checked={draft.includes(team.id)} disabled={busy || model.loading} onChange={e => setDraft(ids => e.target.checked ? [...ids, team.id] : ids.filter(id => id !== team.id))} />{team.name}</label>)}</div>

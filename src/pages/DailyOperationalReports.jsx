@@ -8,7 +8,6 @@ import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
 import { attendanceStatusKey, buildDailyAttendanceExceptions, buildDailyOvertimeReport, yesterdayFromBusinessDate } from '../utils/dailyOperationalReports'
 import { formatEveningOvertimeMinutes } from '../utils/weeklyPayrollOvertime'
-import OvertimeReportSettings from '../components/Reports/OvertimeReportSettings.jsx'
 import { useOvertimeReportSettings } from '../utils/useOvertimeReportSettings.js'
 
 const yesterday = () => yesterdayFromBusinessDate(kinshasaClock().date)
@@ -62,7 +61,6 @@ export default function DailyOperationalReports({ type }) {
         <button type="button" className="btn-primary" disabled={loading} onClick={() => window.print()}>{t('reports.print')}</button>
       </div>
     </div>
-    {overtime && <OvertimeReportSettings model={overtimeSettings} />}
     {error ? <p className="daily-report-screen-only alert alert--error mb-4">{error}</p> : null}
     <article className="daily-report-print-root" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       <header className="daily-report-header"><p>{t('app.name')}</p><h1>{title}</h1><p>{formattedDate}</p></header>

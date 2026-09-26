@@ -26,6 +26,7 @@ import InactiveWorkers from '../pages/InactiveWorkers'
 import WorkerControlCenter from '../pages/WorkerControlCenter'
 import CompensationReviewReport from '../pages/CompensationReviewReport'
 import AdvancedSettings from '../pages/AdvancedSettings'
+import AttendanceOvertimeSettings from '../pages/AttendanceOvertimeSettings'
 import Payroll from '../pages/Payroll'
 import PayrollPublication from '../pages/PayrollPublication'
 import ForeignAttendance from '../pages/ForeignAttendance'
@@ -147,6 +148,8 @@ function AppRouter() {
             <Route path="/reports/daily-attendance-exceptions" element={<DailyOperationalReports type="exceptions" />} />
             <Route path="/reports/daily-overtime" element={<DailyOperationalReports type="overtime" />} />
             <Route path="/advanced-settings" element={<AdvancedSettings />} />
+            <Route path="/settings" element={<AttendanceOvertimeSettings />} />
+            <Route path="/settings/attendance-overtime" element={<AttendanceOvertimeSettings />} />
             <Route path="/payroll" element={<Payroll />} />
             <Route path="/payroll/publication" element={<PayrollPublication />} />
             <Route path="/payroll/compensation-review" element={<CompensationReviewReport />} />
