@@ -542,3 +542,6 @@ translations.fr.reportPublication = {
   publishConfirm: 'Publier les rapports actuels de cette semaine en remplaçant la version précédente éventuelle ?', stopConfirm: 'Arrêter la disponibilité des rapports de cette semaine sur le deuxième site ?',
   snapshotNote: 'Les rapports publiés restent figés jusqu’à une nouvelle publication explicite. Aujourd’hui attend la vérification matinale complète ; les jours futurs sont indisponibles. La disponibilité expire lundi prochain.',
 }
+Object.assign(translations.ar.payroll, { refreshFromAttendance: 'تحديث المسودة من الحضور', draftRefreshedFromAttendance: 'تم تحديث مسودة القبض من الحضور الحالي.', refreshDraftRequired: 'تغيّر الحضور أو الإضافي بعد حفظ المسودة. حدّثها من الحضور قبل المراجعة.' })
+Object.assign(translations.en.payroll, { refreshFromAttendance: 'Refresh draft from attendance', draftRefreshedFromAttendance: 'Draft refreshed from current attendance.', refreshDraftRequired: 'Attendance or overtime changed after the draft was saved. Refresh it before review.' })
+Object.assign(translations.fr.payroll, { refreshFromAttendance: 'Actualiser la paie depuis la présence', draftRefreshedFromAttendance: 'Le brouillon a été actualisé depuis la présence actuelle.', refreshDraftRequired: 'La présence ou les heures supplémentaires ont changé depuis l’enregistrement. Actualisez le brouillon avant validation.' })

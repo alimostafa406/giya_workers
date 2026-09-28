@@ -18,6 +18,7 @@ import PayrollNotes from './PayrollNotes'
 import { findPayrollTeam } from '../../utils/payrollTeamSelection'
 import { applyWeeklyOvertimePay, formatEveningOvertimeMinutes } from '../../utils/weeklyPayrollOvertime'
 import { positiveWeeklyPayrollFooterAmounts, weeklyPayrollTeamFooter } from '../../utils/weeklyPayrollTeamFooter'
+import { staleWeeklyPayrollWorkerIds } from '../../utils/weeklyPayrollDraftFreshness'
 import { payrollConfigurationWarnings } from '../../utils/payrollWarnings'
 
 const money = (amount, currency) => formatPayrollMoney(amount, { currency, paymentType: 'weekly' })
@@ -27,7 +28,6 @@ const weeklyLinesFor = (data, monday) => {
   const holidays = new Set((data?.holidays || []).map((item) => item.holiday_date))
   const saturday = weeklyDates(monday).at(-1)
   const sundayDate = sundayBefore(monday)
-  const run = (data?.runs || []).find((item) => item.payment_type === 'weekly' && item.weekly_period_start === monday && item.weekly_period_end === saturday)
   return (data?.workers || [])
     .filter((worker) => isWeeklyPayrollEligibleWorker(worker, saturday))
     .map((worker) => {
@@ -154,6 +154,7 @@ export default function PayrollOperations() {
     if (!draftRun || draftRun.payment_type !== 'weekly') errors.push(t('payroll.reviewValidationRun'))
     if (draftRun?.weekly_period_start !== monday || draftRun?.weekly_period_end !== saturday || new Date(`${monday}T12:00:00`).getDay() !== 1 || draftRun?.scheduled_payment_date !== saturday) errors.push(t('payroll.reviewValidationPeriod'))
     if (!currentStoredLines.length || currentStoredLines.length !== calculatedLines.length) errors.push(t('payroll.reviewValidationLines'))
+    if (staleWeeklyPayrollWorkerIds(currentStoredLines, calculatedLines).length) errors.push(t('payroll.refreshDraftRequired'))
     const invalidAmountLines = currentStoredLines.filter((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)
     if (invalidAmountLines.length) errors.push(`${t('payroll.reviewValidationAmounts')}: ${invalidAmountLines.map(payrollWorkerLabel).join(', ')}`)
     const activeAdjustmentLineIds = new Set((data?.payrollAdjustments || []).filter((adjustment) => !adjustment.voided_at).map((adjustment) => String(adjustment.payroll_line_id)))
@@ -198,6 +199,18 @@ export default function PayrollOperations() {
       lines: weeklyLinesFor(refreshed, monday),
     })
     return load()
+  }
+  const refreshDraftFromAttendance = async () => {
+    if (!draftRun || saving || runActionSaving) return
+    setSaving(true); setError(''); setMessage('')
+    try {
+      const refreshed = await refreshExistingDraft()
+      if (refreshed?.runs?.some(run => run.id === draftRun.id && run.status === 'draft')) {
+        setReviewErrors([])
+        setMessage(t('payroll.draftRefreshedFromAttendance'))
+      }
+    } catch (cause) { setError(getErrorMessage(cause)) }
+    finally { setSaving(false) }
   }
   const saveAttendanceCorrection = async (values) => {
     if (!editingAttendance) return
@@ -341,7 +354,7 @@ export default function PayrollOperations() {
         {draftRun ? <button className="btn-primary" disabled={saving || runActionSaving || weekValidationErrors.length > 0} onClick={() => changeRunStatus('reviewed')}>{t('payroll.submitForReview')}</button> : null}
         {weeklyRun?.status === 'reviewed' ? <><button className="btn-secondary" disabled={runActionSaving} onClick={() => changeRunStatus('draft')}>{t('payroll.returnToDraft')}</button><button className="btn-primary" disabled={runActionSaving} onClick={() => changeRunStatus('finalized')}>{t('payroll.finalize')}</button></> : null}
         {weeklyRun?.status === 'finalized' ? <button className="btn-primary" disabled={runActionSaving} onClick={() => changeRunStatus('paid')}>{t('payroll.markPaid')}</button> : null}
-        <button className="btn-secondary" disabled={loading || runActionSaving} onClick={load}>{t('payroll.refresh')}</button>
+        <button className="btn-secondary" disabled={loading || saving || runActionSaving} onClick={draftRun ? refreshDraftFromAttendance : () => load()}>{t(draftRun ? 'payroll.refreshFromAttendance' : 'payroll.refresh')}</button>
       </div>
     </div></div>
     <PayrollNotes warnings={payrollWarnings} t={t} />
