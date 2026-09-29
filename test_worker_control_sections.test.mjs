@@ -45,10 +45,12 @@ test('focused pages reuse bulk requests without keeping stacked tables on the ho
   assert.match(page, /category === 'monthly'/)
   assert.doesNotMatch(page, /scrollIntoView\(\{ behavior: 'smooth' \}\)/)
   assert.doesNotMatch(page, /ReportSection/)
-  // Route-specific bulk loading reuses short-lived reads and refreshes after
-  // explicit recovery, without per-worker requests on category pages.
-  assert.equal((page.match(/loadWorkerControlData\(/g) || []).length, 3)
+  // Route-specific bulk loading reuses shared reads; the other calls are
+  // explicit reactivation, recovery and manual-refresh paths.
+  assert.equal((page.match(/loadWorkerControlData\(/g) || []).length, 4)
   const loader = await readFile(new URL('./src/api/workerControlData.js', import.meta.url), 'utf8')
-  assert.equal((loader.match(/getAttendanceRowsRequest\(/g) || []).length, 1)
+  // One call path uses a fresh category entry; the other is the cache-miss
+  // fallback. Runtime tests verify neither path creates per-worker N+1 reads.
+  assert.equal((loader.match(/getAttendanceRowsRequest\(/g) || []).length, 2)
   assert.equal((loader.match(/getInactiveWorkerBiometricActivityRequest\(/g) || []).length, 1)
 })

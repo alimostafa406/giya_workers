@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { reactivateWorkerRequest } from '../api/workersApi'
-import { clearWorkerControlDataCache, loadWorkerControlData } from '../api/workerControlData'
+import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData } from '../api/workerControlData'
 import { buildWorkerControlDetail } from '../utils/workerControlDetail'
 import { buildWorkerControlPages, workerControlCategories } from '../utils/workerControlPages'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
 import WorkerControlWorkerPage from './WorkerControlWorkerPage'
+import { useAuthStore } from '../store/authStore'
 
 const base = '/worker-control-center'
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' })
@@ -32,11 +33,14 @@ function SubjectTable({ rows, columns, empty = 'لا توجد بيانات له�
 export default function WorkerControlCenter({ category = null }) {
   const { teamId, workerId } = useParams()
   const location = useLocation()
+  const authKey = useAuthStore((current) => current.user?.id || current.admin?.id || '')
   const [date, setDate] = useState(today())
-  const [state, setState] = useState({ workers: [], attendance: [], events: [], activated: [], mappings: [] })
+  const [state, setState] = useState(() => getWorkerControlDataSnapshot({ date: today(), category, workerId, authKey }) || { workers: [], attendance: [], events: [], activated: [], mappings: [] })
   const [reactivating, setReactivating] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [actionError, setActionError] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !getWorkerControlDataSnapshot({ date: today(), category, workerId, authKey }))
+  const [hasData, setHasData] = useState(() => Boolean(getWorkerControlDataSnapshot({ date: today(), category, workerId, authKey })))
   const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
   const [teamFilter, setTeamFilter] = useState('')
@@ -48,15 +52,23 @@ export default function WorkerControlCenter({ category = null }) {
     return () => clearInterval(timer)
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let current = true
-    setLoading(true)
+    const snapshot = getWorkerControlDataSnapshot({ date, category, workerId, authKey })
+    if (snapshot) {
+      setState(snapshot)
+      setHasData(true)
+      setLoading(false)
+    } else {
+      setHasData(false)
+      setLoading(true)
+    }
     setLoadError('')
-    loadWorkerControlData({ date, category, workerId }).then((data) => {
-      if (current) setState(data)
+    loadWorkerControlData({ date, category, workerId, authKey }).then((data) => {
+      if (current) { setState(data); setHasData(true) }
     }).catch((error) => { if (current) setLoadError(error?.message || 'تعذر تحميل بيانات المتابعة.') }).finally(() => { if (current) setLoading(false) })
     return () => { current = false }
-  }, [date, category, workerId])
+  }, [date, category, workerId, authKey])
 
   const period = workerControlPeriods(date)
   const pages = useMemo(() => buildWorkerControlPages({ ...state, today: date, weekStart: period.weekStart, monthStart: period.monthStart }), [state, date, period.weekStart, period.monthStart])
@@ -72,7 +84,7 @@ export default function WorkerControlCenter({ category = null }) {
     try {
       await reactivateWorkerRequest(worker)
       clearWorkerControlDataCache()
-      setState(await loadWorkerControlData({ date, category, workerId }))
+      setState(await loadWorkerControlData({ date, category, workerId, authKey }))
     } catch (error) {
       setActionError(error?.message || 'تعذر تفعيل العامل.')
     } finally {
@@ -80,8 +92,21 @@ export default function WorkerControlCenter({ category = null }) {
     }
   }
   const refreshAttendance = async () => {
+    invalidateWorkerControlAttendanceCache()
+    setState(await loadWorkerControlData({ date, category, workerId, authKey }))
+  }
+  const refreshAll = async () => {
     clearWorkerControlDataCache()
-    setState(await loadWorkerControlData({ date, category, workerId }))
+    setRefreshing(true)
+    setLoadError('')
+    try {
+      setState(await loadWorkerControlData({ date, category, workerId, authKey }))
+      setHasData(true)
+    } catch (error) {
+      setLoadError(error?.message || 'تعذر تحديث بيانات المتابعة.')
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   const config = workerControlCategories.find((item) => item.key === category)
@@ -113,11 +138,12 @@ export default function WorkerControlCenter({ category = null }) {
   if (category === 'worker-detail') return <WorkerControlWorkerPage detail={selectedDetail} currentStreak={pages.rows['consecutive-absence'].find((row) => String(row.worker.id) === workerId)} loading={loading} loadError={loadError} backTo={location.state?.from?.startsWith(`${base}/`) && !location.state.from.startsWith(`${base}/worker/`) ? location.state.from : base} focusActions={location.state?.focusActions === true} onReactivate={reactivate} reactivating={reactivating} onRecovered={refreshAttendance} actionError={actionError} />
 
   return <section className="w-full pb-12" dir="rtl">
+    <button type="button" className="btn-secondary mb-5 px-3 py-1" aria-label="تحديث بيانات المتابعة" disabled={refreshing} onClick={refreshAll}>{refreshing ? 'جارٍ التحديث...' : 'تحديث'}</button>
     {category ? <>
       <Link className="mb-7 inline-flex text-base font-bold text-(--primary) hover:underline" to={base}>← العودة إلى مركز مراقبة العمال</Link>
       <div className="mb-7"><h2 className="text-3xl font-extrabold">{subject?.title || 'مركز مراقبة العمال'}</h2><p className="mt-2 text-base text-(--muted)">{subject?.description}</p>{category === 'weekly' ? <p className="mt-3 text-lg font-bold">هذا الأسبوع: <span dir="ltr" className="inline-block">{dateText(period.weekStart)} → {dateText(period.weekEnd)}</span></p> : null}{category === 'monthly' ? <p className="mt-3 text-lg font-bold">هذا الشهر: <span dir="ltr" className="inline-block">{dateText(period.monthStart)} → {dateText(period.monthEnd)}</span></p> : null}{category === 'team-detail' ? <Link className="mt-3 inline-flex font-semibold text-(--primary) hover:underline" to={`${base}/teams`}>العودة إلى مراقبة الفرق</Link> : null}</div>
       {category === 'monthly' ? <div className="mb-6 flex flex-wrap gap-3"><input type="search" className="input-base max-w-xs" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="بحث بالاسم أو كود الموظف" aria-label="بحث عن عامل" /><select className="input-base max-w-xs" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)} aria-label="تصفية حسب الفريق"><option value="">كل الفرق</option>{pages.rows.teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="input-base max-w-xs" value={minimumAbsences} onChange={(event) => setMinimumAbsences(Number(event.target.value))} aria-label="الحد الأدنى للغياب"><option value={1}>غياب يوم أو أكثر</option><option value={3}>غياب 3 أيام أو أكثر</option><option value={5}>غياب 5 أيام أو أكثر</option></select></div> : null}
-      {loading ? <p className="py-8 text-(--muted)">جارٍ تحميل بيانات المتابعة...</p> : loadError ? <p className="alert alert--error">{loadError}</p> : <><p className="mb-4 text-base font-bold">{displayedRows.length} {category === 'teams' ? 'فرق' : 'عامل'}</p><SubjectTable rows={displayedRows} columns={columns} /></>}
+      {loading ? <p className="py-8 text-(--muted)">جارٍ تحميل بيانات المتابعة...</p> : loadError && !hasData ? <p className="alert alert--error">{loadError}</p> : <>{loadError ? <p className="alert alert--error mb-4">{loadError}</p> : null}<p className="mb-4 text-base font-bold">{displayedRows.length} {category === 'teams' ? 'فرق' : 'عامل'}</p><SubjectTable rows={displayedRows} columns={columns} /></>}
     </> : <>
       <div className="mb-7"><h2 className="text-3xl font-extrabold">مركز مراقبة العمال</h2><p className="mt-2 text-base text-(--muted)">ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.</p></div>
       {loadError ? <p className="alert alert--error mb-5">{loadError}</p> : null}

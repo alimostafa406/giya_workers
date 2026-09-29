@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getWorkersRequest, getWorkersActivatedTodayRequest } from './workersApi'
 import { getAttendanceRowsRequest } from './attendanceApi'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from './biometricMappingApi'
-import { clearWorkerControlDataCache, loadWorkerControlData, workerControlAttendanceParams } from './workerControlData'
+import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData, workerControlAttendanceParams, WORKER_CONTROL_CACHE_TTL } from './workerControlData'
 
 vi.mock('./workersApi', () => ({
   getWorkersRequest: vi.fn(async () => ({ data: [{ id: 'one' }] })),
@@ -22,7 +22,7 @@ vi.mock('./biometricMappingApi', () => ({
 
 const date = '2026-09-29'
 beforeEach(() => { clearWorkerControlDataCache(); vi.clearAllMocks() })
-afterEach(() => clearWorkerControlDataCache())
+afterEach(() => { clearWorkerControlDataCache(); vi.restoreAllMocks() })
 
 describe('Worker Control Center bulk data loading', () => {
   it('bounds the weekly read to Monday and reads no unused RPC or mappings', async () => {
@@ -73,5 +73,101 @@ describe('Worker Control Center bulk data loading', () => {
     clearWorkerControlDataCache()
     await loadWorkerControlData({ date, category: 'weekly' })
     expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps the shared roster through normal navigation after 45 seconds', async () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    await loadWorkerControlData({ date, category: null })
+    now += 45_000
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses hub data through weekly, monthly, detail and back navigation', async () => {
+    await loadWorkerControlData({ date, category: null })
+    await loadWorkerControlData({ date, category: 'weekly' })
+    await loadWorkerControlData({ date, category: 'monthly' })
+    await loadWorkerControlData({ date, category: 'weekly' })
+    await loadWorkerControlData({ date, category: 'worker-detail', workerId: 'one' })
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
+    expect(getBiometricMappingsRequest).toHaveBeenCalledTimes(1)
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })).not.toBeNull()
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })?.attendance).toHaveLength(2)
+  })
+
+  it('measures warm navigation at 45 seconds: no shared reads until detail mappings', async () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    await loadWorkerControlData({ date, category: null })
+    vi.clearAllMocks()
+    now += 45_000
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getWorkersRequest).not.toHaveBeenCalled()
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    await loadWorkerControlData({ date, category: 'monthly' })
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    await loadWorkerControlData({ date, category: 'worker-detail', workerId: 'one' })
+    expect(getBiometricMappingsRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getWorkersRequest).not.toHaveBeenCalled()
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+  })
+
+  it('keeps a stale snapshot visible while attendance revalidates after its shorter TTL', async () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    await loadWorkerControlData({ date, category: 'weekly' })
+    now += WORKER_CONTROL_CACHE_TTL.attendance + 1
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })).not.toBeNull()
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })?.attendance).toHaveLength(3)
+    getAttendanceRowsRequest.mockResolvedValueOnce({ data: [{ worker_id: 'one', attendance_date: date, status: 'present' }] })
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })?.attendance).toHaveLength(1)
+  })
+
+  it('deduplicates simultaneous reads of the same in-flight dataset', async () => {
+    let release
+    getAttendanceRowsRequest.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    const first = loadWorkerControlData({ date, category: 'weekly' })
+    const second = loadWorkerControlData({ date, category: 'weekly' })
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    release({ data: [] })
+    await Promise.all([first, second])
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('invalidates attendance after recovery without needlessly refetching the roster', async () => {
+    await loadWorkerControlData({ date, category: 'weekly' })
+    invalidateWorkerControlAttendanceCache()
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })).toBeNull()
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('starts cold after the in-memory cache is cleared, as on a full app reload', async () => {
+    await loadWorkerControlData({ date, category: 'weekly' })
+    clearWorkerControlDataCache()
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })).toBeNull()
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getWorkersRequest).toHaveBeenCalledTimes(2)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not reuse cached worker data across authenticated users', async () => {
+    await loadWorkerControlData({ date, category: 'weekly', authKey: 'admin-one' })
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly', authKey: 'admin-two' })).toBeNull()
+    await loadWorkerControlData({ date, category: 'weekly', authKey: 'admin-two' })
+    expect(getWorkersRequest).toHaveBeenCalledTimes(2)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
   })
 })

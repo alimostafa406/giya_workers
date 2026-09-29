@@ -7,7 +7,7 @@ import WorkerControlCenter from './WorkerControlCenter'
 import { getAttendanceRowsRequest } from '../api/attendanceApi'
 import { clearWorkerControlDataCache } from '../api/workerControlData'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
-import { reactivateWorkerRequest } from '../api/workersApi'
+import { getWorkersRequest, reactivateWorkerRequest } from '../api/workersApi'
 
 globalThis.React = React
 const auth = vi.hoisted(() => ({ admin: null }))
@@ -70,6 +70,32 @@ describe('Worker Control Center information architecture', () => {
     expect(screen.getByRole('link', { name: /الغائبون اليوم/ }).getAttribute('href')).toBe('/worker-control-center/absent-today')
   })
 
+  it('reuses the SPA cache across hub, weekly and back navigation without a loading flash', async () => {
+    getWorkersRequest.mockClear()
+    getAttendanceRowsRequest.mockClear()
+    open()
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('link', { name: /المراقبة الأسبوعية/ }))
+    expect(screen.queryByText('جارٍ تحميل بيانات المتابعة...')).toBeNull()
+    await screen.findByRole('heading', { name: 'المراقبة الأسبوعية', level: 2 })
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('link', { name: /العودة إلى مركز مراقبة العمال/ }))
+    expect(screen.queryByText('جارٍ تحميل بيانات المتابعة...')).toBeNull()
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('explicit refresh invalidates shared data and refetches it', async () => {
+    getWorkersRequest.mockClear()
+    getAttendanceRowsRequest.mockClear()
+    open()
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'تحديث بيانات المتابعة' }))
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2))
+    expect(getWorkersRequest).toHaveBeenCalledTimes(2)
+  })
+
   it.each([
     ['الغائبون اليوم', 'absent-today'],
     ['الغياب المتتالي', 'consecutive-absence'],
@@ -109,6 +135,20 @@ describe('Worker Control Center information architecture', () => {
     expect(back.getAttribute('href')).toBe('/worker-control-center/absent-today')
     fireEvent.click(back)
     expect(await screen.findByRole('heading', { name: 'الغائبون اليوم', level: 2 })).toBeTruthy()
+  })
+
+  it('returns from worker detail to the cached category without another category read', async () => {
+    getWorkersRequest.mockClear()
+    getAttendanceRowsRequest.mockClear()
+    open('/worker-control-center/absent-today')
+    expect(await screen.findByText('Absent Worker')).toBeTruthy()
+    fireEvent.click(screen.getByRole('link', { name: 'التفاصيل' }))
+    expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
+    const afterDetail = getAttendanceRowsRequest.mock.calls.length
+    fireEvent.click(screen.getByRole('link', { name: '← العودة' }))
+    expect(await screen.findByText('Absent Worker')).toBeTruthy()
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(afterDetail)
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
   })
 
   it('direct worker route falls back to the hub and admin actions remain available', async () => {
