@@ -73,12 +73,14 @@ export class BiometricMappingConflictError extends Error {
   }
 }
 
-export const getBiometricMappingsRequest = async () => {
+export const getBiometricMappingsRequest = async ({ workerId } = {}) => {
   const client = getSupabaseClient()
-  const { data, error } = await client
+  let query = client
     .from('biometric_worker_mapping')
     .select(mappingFields)
     .order('created_at', { ascending: false })
+  if (workerId) query = query.eq('worker_id', workerId)
+  const { data, error } = await query
 
   if (error) {
     throw error

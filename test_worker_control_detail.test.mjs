@@ -55,11 +55,12 @@ test('Chauffeur has no normal overtime while other teams use the canonical overt
   assert.equal(detail({ attendance }).weekCounts.overtimeMinutes, 90)
 })
 
-test('mapping details are derived from one bulk result without a worker-specific request', async () => {
+test('mapping details use one bounded worker mapping read', async () => {
   const result = detail({ mappings: [{ id: 'm', worker_id: 'w', device_id: 'office-main', device_employee_no: '73', is_active: true, mapping_review_state: 'confirmed' }] })
   assert.deepEqual(result.mappings.map((mapping) => mapping.device_employee_no), ['73'])
   const page = await readFile(new URL('./src/pages/WorkerControlCenter.jsx', import.meta.url), 'utf8')
-  assert.equal((page.match(/getBiometricMappingsRequest\(/g) || []).length, 1)
+  const loader = await readFile(new URL('./src/api/workerControlData.js', import.meta.url), 'utf8')
+  assert.equal((loader.match(/getBiometricMappingsRequest\(\{ workerId \}\)/g) || []).length, 1)
   assert.match(page, /WorkerControlWorkerPage/)
   assert.doesNotMatch(page, /WorkerControlDetailPanel/)
   assert.doesNotMatch(page, /r\.severity/)

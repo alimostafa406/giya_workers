@@ -101,12 +101,12 @@ export const saveWorkerStaffClassificationRequest = async (workerId, classificat
 	return { data }
 }
 
-export const getWorkersRequest = async () => {
+export const getWorkersRequest = async ({ includePayrollProfiles = true } = {}) => {
 	const client = getSupabaseClient()
 	const [workers, teams, payrollProfiles, classifications] = await Promise.all([
 		readWorkers(client),
 		readTeams(client),
-		readPayrollProfiles(client),
+		includePayrollProfiles ? readPayrollProfiles(client) : [],
 		readWorkerClassifications(client),
 	])
 

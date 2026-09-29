@@ -4,7 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import WorkerControlCenter from './WorkerControlCenter'
-import { getAttendanceRequest } from '../api/attendanceApi'
+import { getAttendanceRowsRequest } from '../api/attendanceApi'
+import { clearWorkerControlDataCache } from '../api/workerControlData'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
 import { reactivateWorkerRequest } from '../api/workersApi'
 
@@ -25,7 +26,7 @@ vi.mock('../api/workersApi', () => ({
   reactivateWorkerRequest: vi.fn(),
 }))
 vi.mock('../api/attendanceApi', () => ({
-  getAttendanceRequest: vi.fn(async () => ({ data: [
+  getAttendanceRowsRequest: vi.fn(async () => ({ data: [
     { worker_id: 'absent', attendance_date: day, status: 'absent' },
     { worker_id: 'absent', attendance_date: prior, status: 'absent' },
     { worker_id: 'activated', attendance_date: day, status: 'present', check_in: '07:30:00' },
@@ -36,7 +37,7 @@ vi.mock('../api/biometricMappingApi', () => ({
   getInactiveWorkerBiometricActivityRequest: vi.fn(async () => ({ data: [{ worker_id: 'inactive', device_id: 'office-main', device_employee_no: '73', event_timestamp: `${day}T07:00:00Z` }] })),
 }))
 vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ admin: auth.admin }) }))
-vi.mock('../components/WorkerWeekAttendanceRecovery', () => ({ default: () => <button type="button">استرجاع حضور الأسبوع</button> }))
+vi.mock('../components/WorkerWeekAttendanceRecovery', () => ({ default: ({ onRecovered }) => <button type="button" onClick={onRecovered}>استرجاع حضور الأسبوع</button> }))
 
 const routes = <Routes>
   <Route path="/worker-control-center" element={<WorkerControlCenter />} />
@@ -51,7 +52,7 @@ const routes = <Routes>
   <Route path="/worker-control-center/worker/:workerId" element={<WorkerControlCenter category="worker-detail" />} />
 </Routes>
 const open = (path = '/worker-control-center') => render(<MemoryRouter initialEntries={[path]}>{routes}</MemoryRouter>)
-afterEach(() => { cleanup(); auth.admin = null; vi.restoreAllMocks() })
+afterEach(() => { cleanup(); clearWorkerControlDataCache(); auth.admin = null; vi.restoreAllMocks() })
 
 describe('Worker Control Center information architecture', () => {
   it('routes an identified inactive-worker punch to the inactive-punched page', async () => {
@@ -121,6 +122,16 @@ describe('Worker Control Center information architecture', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('reloads canonical attendance after the explicit recovery refresh', async () => {
+    auth.admin = { id: 'admin' }
+    getAttendanceRowsRequest.mockClear()
+    open('/worker-control-center/worker/absent')
+    expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'استرجاع حضور الأسبوع' }))
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2))
+  })
+
   it('keeps the existing inactive-worker activation action on the worker page', async () => {
     auth.admin = { id: 'admin' }
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -153,22 +164,22 @@ describe('Worker Control Center information architecture', () => {
   it('shows explicit weekly and monthly ranges and loads history for cross-period streaks', async () => {
     const period = workerControlPeriods(day)
     const fullDate = (value) => value.split('-').reverse().join('/')
-    getAttendanceRequest.mockClear()
+    getAttendanceRowsRequest.mockClear()
     const weekly = open('/worker-control-center/weekly')
     expect(await screen.findByText(/هذا الأسبوع:/)).toHaveProperty('textContent', `هذا الأسبوع: ${fullDate(period.weekStart)} → ${fullDate(period.weekEnd)}`)
-    expect(getAttendanceRequest).toHaveBeenCalledWith({ date_from: period.monthStart, date_to: day, paginate: true })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ date_from: period.weekStart, date_to: day, paginate: true })
     weekly.unmount()
 
-    getAttendanceRequest.mockClear()
+    getAttendanceRowsRequest.mockClear()
     const monthly = open('/worker-control-center/monthly')
     expect(await screen.findByText(/هذا الشهر:/)).toHaveProperty('textContent', `هذا الشهر: ${fullDate(period.monthStart)} → ${fullDate(day)}`)
-    expect(getAttendanceRequest).toHaveBeenCalledWith({ date_from: period.monthStart, date_to: day, paginate: true })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ date_from: period.monthStart, date_to: day, paginate: true })
     monthly.unmount()
 
-    getAttendanceRequest.mockClear()
+    getAttendanceRowsRequest.mockClear()
     open('/worker-control-center/consecutive-absence')
     await screen.findByText('Absent Worker')
-    expect(getAttendanceRequest).toHaveBeenCalledWith({ date_to: day, paginate: true })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ date_to: day, paginate: true })
   })
 
   it('monthly page has only monthly workers and its search/absence filters', async () => {

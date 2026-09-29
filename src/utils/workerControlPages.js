@@ -28,8 +28,15 @@ export const buildWorkerControlPages = ({ workers = [], attendance = [], events 
   const { halfDayRows, teamRows } = buildWorkerControlSectionMetrics({ ...source, alerts })
   const details = new Map()
   const operationalWorkers = workers.filter((worker) => isOperationalAttendanceWorkerOnDate(worker, today))
+  const attendanceByWorker = new Map()
+  attendance.forEach((row) => {
+    const id = String(row.worker_id)
+    if (!attendanceByWorker.has(id)) attendanceByWorker.set(id, new Map())
+    attendanceByWorker.get(id).set(row.attendance_date || row.date, row)
+  })
   operationalWorkers.forEach((worker) => {
-    details.set(String(worker.id), buildWorkerControlDetail({ ...source, worker }))
+    const workerRows = [...(attendanceByWorker.get(String(worker.id))?.values() || [])]
+    details.set(String(worker.id), buildWorkerControlDetail({ ...source, worker, attendance: workerRows }))
   })
   const workerById = new Map(workers.map((worker) => [String(worker.id), worker]))
   const inactiveEvents = new Map()
@@ -50,12 +57,6 @@ export const buildWorkerControlPages = ({ workers = [], attendance = [], events 
     activation: record,
   })))
   const monthly = [...details.values()].filter((detail) => detail.monthCounts.absent >= 1).map((detail) => ({ worker: detail.worker, detail }))
-  const attendanceByWorker = new Map()
-  attendance.forEach((row) => {
-    const id = String(row.worker_id)
-    if (!attendanceByWorker.has(id)) attendanceByWorker.set(id, new Map())
-    attendanceByWorker.get(id).set(row.attendance_date || row.date, row)
-  })
   const consecutive = operationalWorkers.map((worker) => {
     const workerRows = attendanceByWorker.get(String(worker.id)) || new Map()
     const currentDates = currentConsecutiveAbsenceDates({ worker, rowsByDate: workerRows, today, monthStart })

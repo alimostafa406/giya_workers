@@ -1,6 +1,73 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
-const k=(v)=>String(v||'')
-const dates=(from,to)=>{const r=[];for(const d=new Date(`${from}T12:00:00`);d<=new Date(`${to}T12:00:00`);d.setDate(d.getDate()+1))if(d.getDay()!==0)r.push(d.toISOString().slice(0,10));return r}
-const attendance=(rows,id,date)=>rows.find(r=>k(r.worker_id)===k(id)&&(r.attendance_date||r.date)===date)
-const absent=(row)=>!row||row.status==='absent'
-export const buildWorkerControlAlerts=({workers=[],attendance:rows=[],events=[],activated=[],today,weekStart,monthStart}={})=>{const alerts=[];workers.filter(w=>(w.staff_classification||'normal')==='normal').forEach(w=>{const month=dates(monthStart,today).filter(d=>isOperationalAttendanceWorkerOnDate(w,d));if(!month.length)return;const week=dates(weekStart,today).filter(d=>isOperationalAttendanceWorkerOnDate(w,d));const monthRows=month.map(d=>attendance(rows,w.id,d));const weekAbsent=week.filter(d=>absent(attendance(rows,w.id,d))).length;const monthAbsent=monthRows.filter(absent).length;const half=monthRows.filter(r=>r?.status==='half_day').length;let s=0,longest=0;monthRows.forEach(r=>{s=absent(r)?s+1:0;longest=Math.max(longest,s)});let current=0;[...monthRows].reverse().forEach(r=>{if(absent(r)&&current===0)current++;else if(absent(r))current++;});const todayRow=attendance(rows,w.id,today);const lastAttendance=[...rows].filter(r=>k(r.worker_id)===k(w.id)&&r.status!=='absent').sort((a,b)=>String(b.attendance_date).localeCompare(String(a.attendance_date)))[0];const lastPunch=[...events].filter(e=>k(e.worker_id)===k(w.id)).sort((a,b)=>String(b.event_timestamp).localeCompare(String(a.event_timestamp)))[0];const base={worker:w,todayRow,longest,weekAbsent,monthAbsent,half,lastAttendance,lastPunch};if(longest>=3)alerts.push({...base,type:'consecutive_absence',severity:'critical'});else if(longest>=2)alerts.push({...base,type:'consecutive_absence',severity:'warning'});if(weekAbsent>=2)alerts.push({...base,type:'weekly_absence',severity:'warning'});if(monthAbsent>=5)alerts.push({...base,type:'monthly_absence',severity:'critical'});else if(monthAbsent>=3)alerts.push({...base,type:'monthly_absence',severity:'watch'});if(todayRow&&todayRow.status==='present'){let pre=0;for(let i=monthRows.length-2;i>=0&&absent(monthRows[i]);i--)pre++;if(pre>=2)alerts.push({...base,type:'returned_after_absence',severity:'watch',longest:pre})}});workers.filter(w=>w.is_active===false).forEach(w=>events.filter(e=>k(e.worker_id)===k(w.id)).forEach(lastPunch=>alerts.push({worker:w,lastPunch,type:'inactive_punch',severity:'critical'})));activated.forEach(a=>alerts.push({worker:a,type:'activated_today',severity:'info'}));return alerts}
+
+const key = (value) => String(value || '')
+const dates = (from, to) => {
+  const result = []
+  for (const day = new Date(`${from}T12:00:00`); day <= new Date(`${to}T12:00:00`); day.setDate(day.getDate() + 1)) {
+    if (day.getDay() !== 0) result.push(day.toISOString().slice(0, 10))
+  }
+  return result
+}
+const absent = (row) => !row || row.status === 'absent'
+
+export const buildWorkerControlAlerts = ({ workers = [], attendance: rows = [], events = [], activated = [], today, weekStart, monthStart } = {}) => {
+  const alerts = []
+  const attendanceByWorker = new Map()
+  const lastAttendanceByWorker = new Map()
+  rows.forEach((row) => {
+    const id = key(row.worker_id)
+    if (!attendanceByWorker.has(id)) attendanceByWorker.set(id, new Map())
+    const workerRows = attendanceByWorker.get(id)
+    const date = row.attendance_date || row.date
+    // The former Array.find selected the first row for a worker/date.
+    if (!workerRows.has(date)) workerRows.set(date, row)
+    const previous = lastAttendanceByWorker.get(id)
+    if (row.status !== 'absent' && (!previous || String(row.attendance_date) > String(previous.attendance_date))) {
+      lastAttendanceByWorker.set(id, row)
+    }
+  })
+  const eventsByWorker = new Map()
+  events.forEach((event) => {
+    const id = key(event.worker_id)
+    if (!eventsByWorker.has(id)) eventsByWorker.set(id, [])
+    eventsByWorker.get(id).push(event)
+  })
+
+  workers.filter((worker) => (worker.staff_classification || 'normal') === 'normal').forEach((worker) => {
+    const id = key(worker.id)
+    const workerRows = attendanceByWorker.get(id) || new Map()
+    const month = dates(monthStart, today).filter((date) => isOperationalAttendanceWorkerOnDate(worker, date))
+    if (!month.length) return
+    const week = dates(weekStart, today).filter((date) => isOperationalAttendanceWorkerOnDate(worker, date))
+    const monthRows = month.map((date) => workerRows.get(date))
+    const weekAbsent = week.filter((date) => absent(workerRows.get(date))).length
+    const monthAbsent = monthRows.filter(absent).length
+    const half = monthRows.filter((row) => row?.status === 'half_day').length
+    let streak = 0
+    let longest = 0
+    monthRows.forEach((row) => {
+      streak = absent(row) ? streak + 1 : 0
+      longest = Math.max(longest, streak)
+    })
+    const todayRow = workerRows.get(today)
+    const lastAttendance = lastAttendanceByWorker.get(id)
+    const lastPunch = [...(eventsByWorker.get(id) || [])].sort((a, b) => String(b.event_timestamp).localeCompare(String(a.event_timestamp)))[0]
+    const base = { worker, todayRow, longest, weekAbsent, monthAbsent, half, lastAttendance, lastPunch }
+    if (longest >= 3) alerts.push({ ...base, type: 'consecutive_absence', severity: 'critical' })
+    else if (longest >= 2) alerts.push({ ...base, type: 'consecutive_absence', severity: 'warning' })
+    if (weekAbsent >= 2) alerts.push({ ...base, type: 'weekly_absence', severity: 'warning' })
+    if (monthAbsent >= 5) alerts.push({ ...base, type: 'monthly_absence', severity: 'critical' })
+    else if (monthAbsent >= 3) alerts.push({ ...base, type: 'monthly_absence', severity: 'watch' })
+    if (todayRow?.status === 'present') {
+      let previousAbsent = 0
+      for (let index = monthRows.length - 2; index >= 0 && absent(monthRows[index]); index--) previousAbsent += 1
+      if (previousAbsent >= 2) alerts.push({ ...base, type: 'returned_after_absence', severity: 'watch', longest: previousAbsent })
+    }
+  })
+  workers.filter((worker) => worker.is_active === false).forEach((worker) => {
+    const workerEvents = eventsByWorker.get(key(worker.id)) || []
+    workerEvents.forEach((lastPunch) => alerts.push({ worker, lastPunch, type: 'inactive_punch', severity: 'critical' }))
+  })
+  activated.forEach((worker) => alerts.push({ worker, type: 'activated_today', severity: 'info' }))
+  return alerts
+}

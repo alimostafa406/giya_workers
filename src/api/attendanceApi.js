@@ -109,6 +109,7 @@ const readAttendance = async (client, params = {}) => {
     .from('attendance')
     .select(`${attendanceFields},biometric_sync_metadata,manual_override,attendance_source`)
     .order('attendance_date', { ascending: false })
+    .order('id', { ascending: true })
   if (params.date) query = query.eq('attendance_date', params.date)
   if (params.date_from) query = query.gte('attendance_date', params.date_from)
   if (params.date_to) query = query.lte('attendance_date', params.date_to)
@@ -122,6 +123,7 @@ const readAttendance = async (client, params = {}) => {
       .from('attendance')
       .select(attendanceFields)
       .order('attendance_date', { ascending: false })
+      .order('id', { ascending: true })
     if (params.date) fallbackQuery = fallbackQuery.eq('attendance_date', params.date)
     if (params.date_from) fallbackQuery = fallbackQuery.gte('attendance_date', params.date_from)
     if (params.date_to) fallbackQuery = fallbackQuery.lte('attendance_date', params.date_to)
@@ -187,6 +189,12 @@ const readConfirmedBiometricMappings = async (client) => {
   if (error) throw error
   return toArray(data)
 }
+
+// Control Center already loads the worker roster separately. Avoid fetching and
+// joining that same roster again for every attendance page.
+export const getAttendanceRowsRequest = async (params = {}) => ({
+  data: await readAttendance(getSupabaseClient(), params),
+})
 
 export const getAttendanceRequest = async (params = {}) => {
   const client = getSupabaseClient()

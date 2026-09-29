@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { getWorkersRequest, getWorkersActivatedTodayRequest, reactivateWorkerRequest } from '../api/workersApi'
-import { getAttendanceRequest } from '../api/attendanceApi'
-import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from '../api/biometricMappingApi'
+import { reactivateWorkerRequest } from '../api/workersApi'
+import { clearWorkerControlDataCache, loadWorkerControlData } from '../api/workerControlData'
 import { buildWorkerControlDetail } from '../utils/workerControlDetail'
 import { buildWorkerControlPages, workerControlCategories } from '../utils/workerControlPages'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
@@ -10,10 +9,6 @@ import WorkerControlWorkerPage from './WorkerControlWorkerPage'
 
 const base = '/worker-control-center'
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' })
-const attendanceRange = (date, category) => ({
-  ...(category === null || category === 'consecutive-absence' || category === 'worker-detail' ? {} : { date_from: workerControlPeriods(date).monthStart }),
-  date_to: date, paginate: true,
-})
 const dateText = (date) => date ? String(date).slice(0, 10).split('-').reverse().join('/') : '—'
 const timeText = (value) => {
   if (!value) return '—'
@@ -57,20 +52,14 @@ export default function WorkerControlCenter({ category = null }) {
     let current = true
     setLoading(true)
     setLoadError('')
-    Promise.all([
-      getWorkersRequest(),
-      getAttendanceRequest(attendanceRange(date, category)),
-      getInactiveWorkerBiometricActivityRequest({ attendanceDate: date }),
-      getWorkersActivatedTodayRequest(),
-      getBiometricMappingsRequest().catch(() => ({ data: [] })),
-    ]).then(([workers, attendance, events, activated, mappings]) => {
-      if (current) setState({ workers: workers.data || [], attendance: attendance.data || [], events: events.data || [], activated: activated.data || [], mappings: mappings.data || [] })
+    loadWorkerControlData({ date, category, workerId }).then((data) => {
+      if (current) setState(data)
     }).catch((error) => { if (current) setLoadError(error?.message || 'تعذر تحميل بيانات المتابعة.') }).finally(() => { if (current) setLoading(false) })
     return () => { current = false }
-  }, [date, category])
+  }, [date, category, workerId])
 
   const period = workerControlPeriods(date)
-  const pages = useMemo(() => buildWorkerControlPages({ ...state, today: date, weekStart: period.weekStart, monthStart: period.monthStart }), [state, date])
+  const pages = useMemo(() => buildWorkerControlPages({ ...state, today: date, weekStart: period.weekStart, monthStart: period.monthStart }), [state, date, period.weekStart, period.monthStart])
   const selectedWorker = category === 'worker-detail' ? state.workers.find((worker) => String(worker.id) === workerId)
     || pages.rows['activated-today'].find((row) => String(row.worker.id) === workerId)?.worker : null
   const selectedDetail = selectedWorker && (pages.details.get(String(selectedWorker.id)) || buildWorkerControlDetail({ ...state, worker: selectedWorker, today: date, weekStart: period.weekStart, monthStart: period.monthStart }))
@@ -82,8 +71,8 @@ export default function WorkerControlCenter({ category = null }) {
     setActionError('')
     try {
       await reactivateWorkerRequest(worker)
-      const [workers, activated] = await Promise.all([getWorkersRequest(), getWorkersActivatedTodayRequest()])
-      setState((current) => ({ ...current, workers: workers.data || [], activated: activated.data || [] }))
+      clearWorkerControlDataCache()
+      setState(await loadWorkerControlData({ date, category, workerId }))
     } catch (error) {
       setActionError(error?.message || 'تعذر تفعيل العامل.')
     } finally {
@@ -91,8 +80,8 @@ export default function WorkerControlCenter({ category = null }) {
     }
   }
   const refreshAttendance = async () => {
-    const response = await getAttendanceRequest(attendanceRange(date, category))
-    setState((current) => ({ ...current, attendance: response.data || [] }))
+    clearWorkerControlDataCache()
+    setState(await loadWorkerControlData({ date, category, workerId }))
   }
 
   const config = workerControlCategories.find((item) => item.key === category)
