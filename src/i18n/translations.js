@@ -521,6 +521,9 @@ Object.assign(translations.fr.navigation, { settings: 'Paramètres', attendanceO
 Object.assign(translations.ar.reports, { overtimeSettingsTitle: 'فرق الوقت الإضافي', overtimeSettingsDescription: 'الفرق المسموح لعمالها بالظهور في تقارير الوقت الإضافي.' })
 Object.assign(translations.en.reports, { overtimeSettingsDescription: 'Teams whose workers may appear in overtime reports.' })
 Object.assign(translations.fr.reports, { overtimeSettingsDescription: 'Équipes dont les travailleurs peuvent figurer dans les rapports des heures supplémentaires.' })
+Object.assign(translations.ar.biometricMapping, { currentIdentityUnresolved: 'الهوية غير محلولة بأمان' })
+Object.assign(translations.en.biometricMapping, { currentIdentityUnresolved: 'Identity not safely resolved' })
+Object.assign(translations.fr.biometricMapping, { currentIdentityUnresolved: 'Identité non résolue de manière sûre' })
 translations.ar.reportPublication = {
   title: 'نشر التقارير', description: 'نشر تقارير الحضور والإضافي مستقل عن نشر الرواتب.', currentWeek: 'الأسبوع الحالي (الاثنين–السبت)',
   published: 'منشور', unpublished: 'غير منشور', publish: 'نشر تقارير الأسبوع', republish: 'تحديث النسخة المنشورة', stop: 'إيقاف نشر التقارير', refresh: 'تحديث',

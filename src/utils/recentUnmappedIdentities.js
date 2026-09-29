@@ -65,7 +65,8 @@ export const buildRecentIdentityUsers = ({ activityIdentities, inventoryUsers, m
 
 export const recentUnmappedIdentityUsers = (users) => (users || [])
   .filter((user) => user.deviceId && user.employeeNo && user.recentEventCount > 0)
-  .filter((user) => !user.hasActiveMapping)
+  // The admin RPC has already decided safe current mapping status. An active
+  // but unconfirmed/conflicting mapping must not be hidden again by the UI.
   .filter((user) => !user.ignored)
   .sort((a, b) => new Date(b.latestRecentEventAt || 0) - new Date(a.latestRecentEventAt || 0)
     || String(a.name || '').localeCompare(String(b.name || '')))

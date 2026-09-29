@@ -142,7 +142,7 @@ export default function BiometricMapping() {
       .slice(0, 10)
   }, [availableWorkers, selectedDevice])
   const deviceSource = (user) => (user?.devices || []).map((device) => device === 'office-main' ? t('biometric.officeMain') : device === 'office-secondary' ? t('biometric.officeSecondary') : device).join(' / ') || '—'
-  const deviceStatus = (user) => user?.mapping?.mapping_review_state === 'confirmed' ? t('biometric.linked') : user?.mapping?.mapping_review_state === 'needs_review' ? t('biometric.needsConfirmation') : t('biometric.unlinked')
+  const deviceStatus = (user) => user?.hasActiveMapping ? t('biometricMapping.currentIdentityUnresolved') : t('biometric.unlinked')
   const clearSelections = () => { setSelectedDeviceIdentity(null); setSelectedWorker(null) }
   const selectDevice = (user) => { setSelectedDeviceIdentity(user.identityKey); setSelectedWorker(null); setMessage('') }
   const selectWorker = (worker) => { setSelectedWorker(worker); setMessage('') }

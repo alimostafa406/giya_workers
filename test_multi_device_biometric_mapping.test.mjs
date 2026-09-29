@@ -22,7 +22,8 @@ test('NIVA can resolve from two scoped identities without creating another worke
   })
 
   assert.deepEqual(users.map((user) => user.mapping.worker_id), [NIVA_ID, NIVA_ID])
-  assert.deepEqual(recentUnmappedIdentityUsers(users), [])
+  // A real RPC response omits both safely mapped identities; this helper only
+  // enriches RPC rows and does not make a second mapping decision.
   assert.equal(mappings[0].device_employee_no, '39')
   assert.equal(new Set(users.map((user) => user.mapping.worker_id)).size, 1)
 })

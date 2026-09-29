@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { buildRecentIdentityUsers, recentUnmappedIdentityUsers } from './src/utils/recentUnmappedIdentities.js'
 import { mergeAttendanceRoster } from './src/utils/attendanceRoster.js'
+import { translations } from './src/i18n/translations.js'
 
 test('only identities backed by recent real events enter operational review', () => {
   const users = buildRecentIdentityUsers({
@@ -25,9 +26,8 @@ test('only identities backed by recent real events enter operational review', ()
   assert.deepEqual(review[0].devices, ['office-main'])
 })
 
-test('active mappings to active workers leave the unmapped list regardless of review state', () => {
+test('the RPC decides current safety; the UI does not hide unresolved active mappings again', () => {
   const activityIdentities = [
-    { employeeNo: '100', deviceId: 'office-main', recent_event_count: 1 },
     { employeeNo: '200', deviceId: 'office-main', recent_event_count: 1 },
     { employeeNo: '300', deviceId: 'office-main', recent_event_count: 1 },
     { employeeNo: '39', deviceId: 'office-main', recent_event_count: 2 },
@@ -55,14 +55,50 @@ test('active mappings to active workers leave the unmapped list regardless of re
   })
 
   const review = recentUnmappedIdentityUsers(users)
-  assert.deepEqual(review.map((user) => user.employeeNo), ['300'])
-  assert.equal(review.some((user) => user.employeeNo === '39'), false)
-  assert.equal(review.some((user) => user.employeeNo === '400'), false)
-  assert.equal(review.some((user) => user.employeeNo === '500'), false)
+  assert.deepEqual(review.map((user) => user.employeeNo), ['300', '39', '400', '500'])
+  assert.equal(review.some((user) => user.employeeNo === '100'), false)
+  assert.equal(review.find((user) => user.employeeNo === '39').hasActiveMapping, true)
   assert.deepEqual(mappings.find((mapping) => mapping.id === 'niva-map'), {
     id: 'niva-map', worker_id: 'niva-worker', device_employee_no: '39',
     is_active: true, mapping_review_state: 'needs_review',
   })
+})
+
+test('current RPC result, not historical NULL event ownership, decides the visible identities', () => {
+  const mappings = [
+    ['BOB', 'office-secondary', '71'],
+    ['FRANCIS', 'office-main', '77'],
+    ['heritier', 'office-main', '78'],
+  ].map(([worker_id, device_id, device_employee_no]) => ({
+    worker_id, device_id, device_employee_no, is_active: true, mapping_review_state: 'confirmed',
+  }))
+  // The authoritative RPC omits BOB/FRANCIS/heritier after they are mapped,
+  // despite their historical event.worker_id values remaining NULL.
+  const users = buildRecentIdentityUsers({
+    activityIdentities: [{ deviceId: 'office-main', employeeNo: '030', name: 'MARCUS', recent_event_count: 1 }],
+    mappings,
+    workers: mappings.map(({ worker_id }) => ({ id: worker_id, is_active: true })),
+  })
+  assert.deepEqual(recentUnmappedIdentityUsers(users).map((user) => user.identityKey), ['office-main::030'])
+})
+
+test('the deployed RPC is the sole safe-mapping decision and the UI labels unresolved active mappings honestly', async () => {
+  const sql = await readFile(new URL('./supabase/sql/recent_unmapped_safe_current_resolution.sql', import.meta.url), 'utf8')
+  const page = await readFile(new URL('./src/pages/BiometricMapping.jsx', import.meta.url), 'utf8')
+  const helper = await readFile(new URL('./src/utils/recentUnmappedIdentities.js', import.meta.url), 'utf8')
+  assert.match(sql, /mapping_review_state = 'confirmed'/)
+  assert.match(sql, /count\(distinct m\.worker_id\)/)
+  assert.match(sql, /exact_owner_count > 1 then false/)
+  assert.match(sql, /legacy_owner_count > 1 then false/)
+  assert.match(sql, /operational_start_date/)
+  assert.match(sql, /btrim\(m\.device_employee_no\) = i\.identity_employee_no/)
+  assert.match(sql, /if not public\.is_admin\(\)/)
+  assert.doesNotMatch(sql, /\bupdate public\.biometric_attendance_events\b/i)
+  assert.doesNotMatch(helper, /\.filter\(\(user\) => !user\.hasActiveMapping\)/)
+  assert.match(page, /user\?\.hasActiveMapping \? t\('biometricMapping\.currentIdentityUnresolved'\)/)
+  for (const language of ['ar', 'en', 'fr']) {
+    assert.ok(translations[language].biometricMapping.currentIdentityUnresolved)
+  }
 })
 
 test('no mapping remains genuinely unmapped and can enter recent review', () => {
@@ -92,7 +128,7 @@ test('mapping review is separate from dashboard and attendance roster totals', a
 test('normal active worker roster totals cannot be changed by recent device identities', () => {
   const roster = mergeAttendanceRoster({
     workers: [
-      { id: 'normal', is_active: true, staff_classification: 'normal' },
+      { id: 'normal', team_id: 'team', team_name: 'Team', is_active: true, staff_classification: 'normal' },
       { id: 'special', is_active: true, staff_classification: 'special_staff' },
       { id: 'inactive', is_active: false, staff_classification: 'normal' },
     ],
