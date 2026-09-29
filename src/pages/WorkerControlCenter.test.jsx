@@ -54,6 +54,13 @@ const open = (path = '/worker-control-center') => render(<MemoryRouter initialEn
 afterEach(() => { cleanup(); auth.admin = null; vi.restoreAllMocks() })
 
 describe('Worker Control Center information architecture', () => {
+  it('routes an identified inactive-worker punch to the inactive-punched page', async () => {
+    open('/worker-control-center/inactive-punched')
+    expect(await screen.findByText('Inactive Worker')).toBeTruthy()
+    expect(screen.getByText('73')).toBeTruthy()
+    expect(screen.queryByText('Absent Worker')).toBeNull()
+  })
+
   it('home renders nine compact route cards and no worker table', async () => {
     open()
     await screen.findByText('ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.')

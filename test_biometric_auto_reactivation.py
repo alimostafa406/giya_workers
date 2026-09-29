@@ -19,10 +19,10 @@ def inactive_resolution():
     }
 
 class ManualOnlyReactivationTests(unittest.TestCase):
-    def test_inactive_worker_event_is_preserved_without_operational_worker_ownership(self):
+    def test_inactive_worker_event_keeps_identity_without_operational_attendance(self):
         rows = resolved_biometric_event_rows([event()], inactive_resolution(), TARGET_DATE)
         self.assertEqual(len(rows), 1)
-        self.assertIsNone(rows[0]['worker_id'])
+        self.assertEqual(rows[0]['worker_id'], WORKER_ID)
         self.assertEqual(rows[0]['device_employee_no'], '15')
 
     def test_attendance_planning_never_reactivates_or_reenters_inactive_worker(self):

@@ -1,8 +1,6 @@
--- REVIEW / EXECUTE MANUALLY. Classify recent device identities against the
--- current safe mapping, never against the worker_id frozen on an old event.
--- Identity ownership is independent of attendance eligibility: an inactive
--- mapped worker still owns the device identity.
--- No biometric event, mapping, worker, or attendance row is changed.
+-- REVIEW / EXECUTE MANUALLY. An inactive worker still owns a safely mapped
+-- biometric identity. This changes only read-only unmapped classification;
+-- it never changes stored events, mappings, workers, or attendance.
 create or replace function public.get_recent_unmapped_biometric_identities(
   p_end_date date,
   p_days integer default 7

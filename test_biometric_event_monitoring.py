@@ -138,7 +138,7 @@ class BiometricEventMonitoringTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertIsNone(rows[0]['worker_id'])
 
-    def test_inactive_worker_event_is_observed_without_creating_attendance(self):
+    def test_inactive_worker_event_keeps_identity_without_creating_attendance(self):
         inactive = resolution()
         inactive['workers'][WORKER_ID]['is_active'] = False
         punch = event('inactive-worker', '07:57:44')
@@ -149,7 +149,35 @@ class BiometricEventMonitoringTests(unittest.TestCase):
         self.assertEqual(plans, [])
         self.assertEqual(counters['ignored_inactive_worker'], 1)
         self.assertEqual(len(rows), 1)
-        self.assertIsNone(rows[0]['worker_id'])
+        self.assertEqual(rows[0]['worker_id'], WORKER_ID)
+        self.assertFalse(inactive['workers'][WORKER_ID]['is_active'])
+
+    def test_inactive_buini_identity_resolves_on_both_devices(self):
+        inactive = resolution()
+        inactive['workers'][WORKER_ID]['is_active'] = False
+        inactive['confirmed'] = {
+            ('office-main', '50'): {'worker_id': WORKER_ID},
+            ('office-secondary', '50'): {'worker_id': WORKER_ID},
+        }
+        punches = [
+            event('buini-main', '07:30:00', employee_no='50', device_id='office-main'),
+            event('buini-secondary', '08:00:00', employee_no='50', device_id='office-secondary'),
+        ]
+        rows = resolved_biometric_event_rows(punches, inactive, TARGET_DATE)
+        plans, counters = plan_attendance(punches, inactive, TARGET_DATE)
+        self.assertEqual({row['worker_id'] for row in rows}, {WORKER_ID})
+        self.assertEqual({row['device_id'] for row in rows}, {'office-main', 'office-secondary'})
+        self.assertEqual(plans, [])
+        self.assertEqual(counters['ignored_inactive_worker'], 2)
+        self.assertFalse(inactive['workers'][WORKER_ID]['is_active'])
+
+    def test_inactive_legacy_mapping_resolves_exact_device_string(self):
+        inactive = resolution()
+        inactive['workers'][WORKER_ID]['is_active'] = False
+        inactive['confirmed'] = {(None, '19'): {'worker_id': WORKER_ID}}
+        rows = resolved_biometric_event_rows([event('jean22', '07:45:00', employee_no='19')], inactive, TARGET_DATE)
+        self.assertEqual(rows[0]['worker_id'], WORKER_ID)
+        self.assertIsNone(resolved_biometric_event_rows([event('not-019', '07:45:00', employee_no='019')], inactive, TARGET_DATE)[0]['worker_id'])
 
     def test_explicitly_ignored_events_preserve_existing_suppression_behavior(self):
         ignored = resolution()

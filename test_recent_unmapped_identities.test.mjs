@@ -83,14 +83,17 @@ test('current RPC result, not historical NULL event ownership, decides the visib
 })
 
 test('the deployed RPC is the sole safe-mapping decision and the UI labels unresolved active mappings honestly', async () => {
-  const sql = await readFile(new URL('./supabase/sql/recent_unmapped_safe_current_resolution.sql', import.meta.url), 'utf8')
+  const sql = await readFile(new URL('./supabase/sql/recent_unmapped_identity_ownership_not_eligibility.sql', import.meta.url), 'utf8')
   const page = await readFile(new URL('./src/pages/BiometricMapping.jsx', import.meta.url), 'utf8')
   const helper = await readFile(new URL('./src/utils/recentUnmappedIdentities.js', import.meta.url), 'utf8')
   assert.match(sql, /mapping_review_state = 'confirmed'/)
   assert.match(sql, /count\(distinct m\.worker_id\)/)
   assert.match(sql, /exact_owner_count > 1 then false/)
   assert.match(sql, /legacy_owner_count > 1 then false/)
-  assert.match(sql, /operational_start_date/)
+  assert.match(sql, /exact_worker\.id is not null as exact_worker_exists/)
+  assert.match(sql, /legacy_worker\.id is not null as legacy_worker_exists/)
+  assert.doesNotMatch(sql, /(?:exact_worker|legacy_worker)\.is_active/)
+  assert.doesNotMatch(sql, /operational_start_date/)
   assert.match(sql, /btrim\(m\.device_employee_no\) = i\.identity_employee_no/)
   assert.match(sql, /if not public\.is_admin\(\)/)
   assert.doesNotMatch(sql, /\bupdate public\.biometric_attendance_events\b/i)
@@ -99,6 +102,21 @@ test('the deployed RPC is the sole safe-mapping decision and the UI labels unres
   for (const language of ['ar', 'en', 'fr']) {
     assert.ok(translations[language].biometricMapping.currentIdentityUnresolved)
   }
+})
+
+test('inactive mapped device identities are omitted by the authoritative RPC, while 030 remains', () => {
+  const users = buildRecentIdentityUsers({
+    // The RPC excludes buini/50, jean22/19 and jonas/32 despite old NULL event.worker_id.
+    activityIdentities: [{ deviceId: 'office-main', employeeNo: '030', name: 'MARCUS', recent_event_count: 1 }],
+    mappings: [
+      { worker_id: 'buini', device_id: 'office-main', device_employee_no: '50', is_active: true, mapping_review_state: 'confirmed' },
+      { worker_id: 'buini', device_id: 'office-secondary', device_employee_no: '50', is_active: true, mapping_review_state: 'confirmed' },
+      { worker_id: 'jean', device_id: null, device_employee_no: '19', is_active: true, mapping_review_state: 'confirmed' },
+      { worker_id: 'jones', device_id: null, device_employee_no: '32', is_active: true, mapping_review_state: 'confirmed' },
+    ],
+    workers: ['buini', 'jean', 'jones'].map((id) => ({ id, is_active: false })),
+  })
+  assert.deepEqual(recentUnmappedIdentityUsers(users).map((user) => user.identityKey), ['office-main::030'])
 })
 
 test('no mapping remains genuinely unmapped and can enter recent review', () => {

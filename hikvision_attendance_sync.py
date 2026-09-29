@@ -155,13 +155,14 @@ def deduplicate_hikvision_events(events: list[dict]) -> list[dict]:
 def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_date: date_type) -> list[dict]:
     """Build append-only monitoring rows without changing attendance planning.
 
-    Every non-ignored device identity is retained. A confirmed active worker is
-    attached when available; unmapped observations deliberately keep worker_id
-    null. This data is observation-only and is not used by ``plan_attendance``.
+    Every non-ignored device identity is retained. A confirmed, conflict-free
+    mapping to an existing worker attaches that worker even when the worker is
+    inactive or not yet attendance-eligible. Unmapped observations keep
+    worker_id null. This data is observation-only and is not used by
+    ``plan_attendance``.
     """
     rows: list[dict] = []
     seen: set[tuple[str, str]] = set()
-    confirmed = resolution.get('confirmed', {})
     workers = resolution.get('workers', {})
 
     for event in deduplicate_hikvision_events(events):
@@ -170,7 +171,7 @@ def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_d
             continue
         mapping = biometric_mapping_for_event(resolution, event)
         worker = workers.get(str(mapping.get('worker_id') or '')) if mapping else None
-        worker_id = str(worker['id']) if worker_is_operational_on_date(worker, target_date) else None
+        worker_id = str(worker['id']) if worker else None
         try:
             event_timestamp = parse_monitoring_event_time(str(event.get('time') or ''))
         except ValueError:
@@ -1196,6 +1197,9 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             counters['needs_review' if biometric_identity_needs_review(resolution, event) else 'unmapped'] += 1
             continue
         worker = resolution['workers'].get(str(mapping.get('worker_id') or ''))
+        if not worker:
+            counters['unmapped'] += 1
+            continue
         if not worker_is_operational_on_date(worker, target_date):
             counters['ignored_inactive_worker'] += 1
             continue
