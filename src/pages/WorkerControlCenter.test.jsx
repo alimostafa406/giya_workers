@@ -8,6 +8,7 @@ import { getAttendanceRowsRequest } from '../api/attendanceApi'
 import { clearWorkerControlDataCache } from '../api/workerControlData'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
 import { getWorkersRequest, reactivateWorkerRequest } from '../api/workersApi'
+import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from '../api/biometricMappingApi'
 
 globalThis.React = React
 const auth = vi.hoisted(() => ({ admin: null }))
@@ -94,6 +95,51 @@ describe('Worker Control Center information architecture', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تحديث بيانات المتابعة' }))
     await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2))
     expect(getWorkersRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('removes cold loading after a read fails and allows a successful retry', async () => {
+    getAttendanceRowsRequest.mockRejectedValueOnce(new Error('Temporary read failure'))
+    open('/worker-control-center/weekly')
+    expect(await screen.findByText('Temporary read failure')).toBeTruthy()
+    expect(screen.queryByText('جارٍ تحميل بيانات المتابعة...')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'تحديث بيانات المتابعة' }))
+    expect(await screen.findByRole('table')).toBeTruthy()
+    expect(await screen.findByText('Absent Worker')).toBeTruthy()
+  })
+
+  it('renders the hub when an optional activity request is still pending', async () => {
+    let release
+    getInactiveWorkerBiometricActivityRequest.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    open()
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByRole('link', { name: /الغائبون اليوم/ }).textContent).not.toContain('—'))
+    expect(screen.queryByText('جارٍ تحميل بيانات المتابعة...')).toBeNull()
+    release({ data: [] })
+  })
+
+  it('keeps cached category rows visible through a never-settling background refresh', async () => {
+    let now = Date.now()
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const first = open('/worker-control-center/weekly')
+    expect(await screen.findByText('Absent Worker')).toBeTruthy()
+    first.unmount()
+    now += 61_000
+    let release
+    getAttendanceRowsRequest.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    open('/worker-control-center/weekly')
+    expect(screen.getByText('Absent Worker')).toBeTruthy()
+    expect(screen.queryByText('جارٍ تحميل بيانات المتابعة...')).toBeNull()
+    await waitFor(() => expect(release).toBeTypeOf('function'))
+    release({ data: [] })
+  })
+
+  it('shows worker detail while optional mappings are pending', async () => {
+    let release
+    getBiometricMappingsRequest.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    open('/worker-control-center/worker/absent')
+    expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
+    expect(screen.queryByText('جارٍ تحميل بيانات المتابعة...')).toBeNull()
+    release({ data: [] })
   })
 
   it.each([

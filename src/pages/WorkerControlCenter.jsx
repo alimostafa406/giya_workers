@@ -64,7 +64,10 @@ export default function WorkerControlCenter({ category = null }) {
       setLoading(true)
     }
     setLoadError('')
-    loadWorkerControlData({ date, category, workerId, authKey }).then((data) => {
+    loadWorkerControlData({ date, category, workerId, authKey,
+      onCore: (data) => { if (current) { setState(data); setHasData(true); setLoading(false) } },
+      onOptionalError: (error) => { if (current) setLoadError(error?.message || 'تعذر تحميل بعض بيانات المتابعة.') },
+    }).then((data) => {
       if (current) { setState(data); setHasData(true) }
     }).catch((error) => { if (current) setLoadError(error?.message || 'تعذر تحميل بيانات المتابعة.') }).finally(() => { if (current) setLoading(false) })
     return () => { current = false }

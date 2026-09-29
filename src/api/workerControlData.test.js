@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getWorkersRequest, getWorkersActivatedTodayRequest } from './workersApi'
 import { getAttendanceRowsRequest } from './attendanceApi'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from './biometricMappingApi'
-import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData, workerControlAttendanceParams, WORKER_CONTROL_CACHE_TTL } from './workerControlData'
+import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData, workerControlAttendanceParams, WORKER_CONTROL_CACHE_TTL, WORKER_CONTROL_READ_TIMEOUT_MS } from './workerControlData'
 
 vi.mock('./workersApi', () => ({
   getWorkersRequest: vi.fn(async () => ({ data: [{ id: 'one' }] })),
@@ -22,7 +22,7 @@ vi.mock('./biometricMappingApi', () => ({
 
 const date = '2026-09-29'
 beforeEach(() => { clearWorkerControlDataCache(); vi.clearAllMocks() })
-afterEach(() => { clearWorkerControlDataCache(); vi.restoreAllMocks() })
+afterEach(() => { clearWorkerControlDataCache(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('Worker Control Center bulk data loading', () => {
   it('bounds the weekly read to Monday and reads no unused RPC or mappings', async () => {
@@ -169,5 +169,52 @@ describe('Worker Control Center bulk data loading', () => {
     await loadWorkerControlData({ date, category: 'weekly', authKey: 'admin-two' })
     expect(getWorkersRequest).toHaveBeenCalledTimes(2)
     expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('delivers core hub data without waiting for optional activity reads', async () => {
+    let release
+    getInactiveWorkerBiometricActivityRequest.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    const onCore = vi.fn()
+    const loading = loadWorkerControlData({ date, category: null, onCore })
+    await vi.waitFor(() => expect(onCore).toHaveBeenCalledTimes(1))
+    expect(onCore.mock.calls[0][0].workers).toHaveLength(1)
+    release({ data: [] })
+    await loading
+  })
+
+  it('keeps the core hub data when an optional read rejects and retries it later', async () => {
+    getInactiveWorkerBiometricActivityRequest.mockRejectedValueOnce(new Error('Activity unavailable'))
+    const onCore = vi.fn()
+    const onOptionalError = vi.fn()
+    const data = await loadWorkerControlData({ date, category: null, onCore, onOptionalError })
+    expect(onCore).toHaveBeenCalledTimes(1)
+    expect(data.workers).toHaveLength(1)
+    expect(onOptionalError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Activity unavailable' }))
+    await loadWorkerControlData({ date, category: null })
+    expect(getInactiveWorkerBiometricActivityRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('times out a cold hanging read and removes its in-flight cache entry for retry', async () => {
+    vi.useFakeTimers()
+    getAttendanceRowsRequest.mockImplementationOnce(() => new Promise(() => {}))
+    const first = loadWorkerControlData({ date, category: 'weekly' })
+    const failure = expect(first).rejects.toThrow('Timed out loading Worker Control Center data')
+    await vi.advanceTimersByTimeAsync(WORKER_CONTROL_READ_TIMEOUT_MS)
+    await failure
+    const recovered = await loadWorkerControlData({ date, category: 'weekly' })
+    expect(recovered.attendance).toHaveLength(3)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not keep a failed stale refresh pending in the cache', async () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    await loadWorkerControlData({ date, category: 'weekly' })
+    now += WORKER_CONTROL_CACHE_TTL.attendance + 1
+    getAttendanceRowsRequest.mockRejectedValueOnce(new Error('Refresh failed'))
+    await expect(loadWorkerControlData({ date, category: 'weekly' })).rejects.toThrow('Refresh failed')
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })?.attendance).toHaveLength(3)
+    await loadWorkerControlData({ date, category: 'weekly' })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(3)
   })
 })
