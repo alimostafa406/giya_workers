@@ -187,7 +187,7 @@ test('screen, print, PDF, and Excel use the same calculated report and export ro
   assert.match(source, /reportBaseTitle.*weeklyFilters\.startDate.*weeklyFilters\.endDate/s)
   assert.doesNotMatch(source, /\|\|\s*['"]absent['"]/)
   assert.match(source, /data=\{weeklyReportRows\}/)
-  assert.match(source, /isOperationalAttendanceWorker\(worker, team\)/)
+  assert.match(source, /isOperationalAttendanceWorkerOnDate\(worker, date, team\)/)
   assert.doesNotMatch(source, /return t\('attendance\.late'\)/)
   assert.match(source, /const tableRows = exportRows/)
   assert.match(source, /<html dir="\$\{language === 'ar' \? 'rtl' : 'ltr'\}">/)
