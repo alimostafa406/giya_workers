@@ -103,9 +103,15 @@ export const weeklyPayrollDisplayStatus = (detail) => {
 }
 
 export const weeklyPayrollOvertimeForDetail = (detail) => {
-  if (!detail?.date || !isWeekday(detail.date) || isChauffeurNormalOvertimeExcluded(detail)) {
+  if (!detail?.date || isChauffeurNormalOvertimeExcluded(detail)) {
     return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   }
+  const row = detail?.row || {}
+  if (row.manual_override === true && row.emergency_overtime_mode === 'manual_overtime_duration'
+    && Number.isInteger(Number(row.emergency_overtime_minutes)) && Number(row.emergency_overtime_minutes) > 0) {
+    return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: Number(row.emergency_overtime_minutes) }
+  }
+  if (!isWeekday(detail.date)) return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   const checkOut = normalizedCheckoutMinutes(detail)
   const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(Math.floor(checkOut - 1020), 0)
   return {

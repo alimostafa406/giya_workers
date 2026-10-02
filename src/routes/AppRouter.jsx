@@ -10,6 +10,7 @@ import {
 import { supabase } from '../lib/supabase'
 import Layout from '../components/Layout/Layout'
 import Attendance from '../pages/Attendance'
+import BulkEmergencyOvertime from '../pages/BulkEmergencyOvertime'
 import AbsenceReport from '../pages/AbsenceReport'
 import SpecialStaffAttendance from '../pages/SpecialStaffAttendance'
 import BiometricMapping from '../pages/BiometricMapping'
@@ -139,6 +140,7 @@ function AppRouter() {
             <Route path="/worker-control-center/teams/:teamId" element={<WorkerControlCenter category="team-detail" />} />
             <Route path="/worker-control-center/worker/:workerId" element={<WorkerControlCenter category="worker-detail" />} />
             <Route path="/attendance" element={<Attendance />} />
+            <Route path="/attendance/emergency-overtime" element={<BulkEmergencyOvertime />} />
             <Route path="/attendance/absence-report" element={<AbsenceReport />} />
             <Route path="/special-staff-attendance" element={<SpecialStaffAttendance />} />
             <Route path="/biometric-mapping" element={<BiometricMapping />} />

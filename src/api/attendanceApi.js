@@ -8,7 +8,7 @@ const attendanceFields = 'id,worker_id,attendance_date,status,check_in,check_out
 const isMissingManualSyncColumnError = (error) => (
   error?.code === '42703'
   || error?.code === 'PGRST204'
-  || /manual_override|attendance_source|biometric_sync_metadata/i.test(String(error?.message || ''))
+  || /manual_override|attendance_source|biometric_sync_metadata|emergency_overtime_mode|emergency_overtime_minutes/i.test(String(error?.message || ''))
 )
 
 export const getCheckoutOnlyInfo = (row) => {
@@ -107,7 +107,7 @@ const readAttendance = async (client, params = {}) => {
   }
   let query = client
     .from('attendance')
-    .select(`${attendanceFields},biometric_sync_metadata,manual_override,attendance_source`)
+    .select(`${attendanceFields},biometric_sync_metadata,manual_override,attendance_source,emergency_overtime_mode,emergency_overtime_minutes`)
     .order('attendance_date', { ascending: false })
     .order('id', { ascending: true })
   if (params.date) query = query.eq('attendance_date', params.date)

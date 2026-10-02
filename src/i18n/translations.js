@@ -1,3 +1,5 @@
+import { emergencyOvertimeTranslations } from './emergencyOvertimeTranslations.js'
+
 export const translations = {
   ar: {
     app: { name: 'نظام إدارة الحضور', subtitle: 'لوحة إدارة العمال', loading: 'جارٍ التحقق من الجلسة...' },
@@ -548,3 +550,4 @@ translations.fr.reportPublication = {
 Object.assign(translations.ar.payroll, { refreshFromAttendance: 'تحديث المسودة من الحضور', draftRefreshedFromAttendance: 'تم تحديث مسودة القبض من الحضور الحالي.', refreshDraftRequired: 'تغيّر الحضور أو الإضافي بعد حفظ المسودة. حدّثها من الحضور قبل المراجعة.' })
 Object.assign(translations.en.payroll, { refreshFromAttendance: 'Refresh draft from attendance', draftRefreshedFromAttendance: 'Draft refreshed from current attendance.', refreshDraftRequired: 'Attendance or overtime changed after the draft was saved. Refresh it before review.' })
 Object.assign(translations.fr.payroll, { refreshFromAttendance: 'Actualiser la paie depuis la présence', draftRefreshedFromAttendance: 'Le brouillon a été actualisé depuis la présence actuelle.', refreshDraftRequired: 'La présence ou les heures supplémentaires ont changé depuis l’enregistrement. Actualisez le brouillon avant validation.' })
+for (const language of ['ar', 'en', 'fr']) translations[language].emergencyOvertime = emergencyOvertimeTranslations[language]

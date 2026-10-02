@@ -26,6 +26,7 @@ function Sidebar({ isOpen, onClose }) {
   const mainLinks = [
     { to: '/', label: t('navigation.dashboard'), icon: 'dashboard' },
     { to: '/attendance', label: t('navigation.attendance'), icon: 'attendance' },
+    { to: '/attendance/emergency-overtime', label: t('emergencyOvertime.title'), icon: 'attendance' },
     { to: '/workers', label: t('navigation.workers'), icon: 'workers' },
     { to: '/inactive-workers', label: t('navigation.inactiveWorkers'), icon: 'inactiveWorkers' },
     { to: '/worker-control-center', label: 'مركز مراقبة العمال', icon: 'alert' },

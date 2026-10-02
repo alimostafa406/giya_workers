@@ -137,7 +137,9 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
     attendanceWage += baseEffect; holidayAmount += holidayEffect
     const candidate = isChauffeurNormalOvertimeExcluded(worker)
       ? 0
-      : calculateCandidateOvertimeHours(term?.overtime_start_time, row?.check_out, rules)
+      : row?.manual_override === true && row?.emergency_overtime_mode === 'manual_overtime_duration'
+        ? Number(row.emergency_overtime_minutes || 0) / 60
+        : calculateCandidateOvertimeHours(term?.overtime_start_time, row?.check_out, rules)
     overtimeHours += candidate
     return { date, row, status, isFuture, isHoliday, baseEffect: money(baseEffect), holidayEffect: money(holidayEffect), candidateOvertimeHours: candidate, transportEffect: eligibleTransport ? transportRate : 0 }
   })
