@@ -63,7 +63,7 @@ describe('simplified bulk emergency overtime page', () => {
     open()
     await chooseTeam()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select all workers in team' }))
-    expect(screen.getByText('Selected: 2')).toBeTruthy()
+    expect(screen.getByText(/Shown: 2 .* Selected: 2/)).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Common checkout time'), { target: { value: '21:00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save overtime' }))
     expect(mocks.rpc).not.toHaveBeenCalled()
@@ -91,6 +91,66 @@ describe('simplified bulk emergency overtime page', () => {
     await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(1))
     expect(mocks.rpc.mock.calls[0][1].p_entries).toEqual([
       { worker_id: 'worker-1', checkout: '22:30', expected_updated_at: attendance[0].updated_at },
+    ])
+  })
+
+  it('searches names case-insensitively within the selected team without new requests', async () => {
+    open()
+    await chooseTeam()
+    const callsBeforeSearch = mocks.attendance.mock.calls.length
+    fireEvent.change(screen.getByLabelText('Search worker or biometric ID'), { target: { value: 'fIrSt' } })
+    expect(screen.getByText('FIRST WORKER')).toBeTruthy()
+    expect(screen.queryByText('SECOND WORKER')).toBeNull()
+    expect(screen.queryByText('OTHER WORKER')).toBeNull()
+    expect(screen.getByText(/Shown: 1 .* Selected: 0/)).toBeTruthy()
+    expect(mocks.attendance).toHaveBeenCalledTimes(callsBeforeSearch)
+  })
+
+  it('searches biometric IDs and never includes a worker from another team', async () => {
+    open()
+    await chooseTeam()
+    fireEvent.change(screen.getByLabelText('Search worker or biometric ID'), { target: { value: '022' } })
+    expect(screen.getByText('SECOND WORKER')).toBeTruthy()
+    expect(screen.queryByText('FIRST WORKER')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Search worker or biometric ID'), { target: { value: '023' } })
+    expect(screen.queryByText('OTHER WORKER')).toBeNull()
+    expect(screen.getByText('No workers match the search')).toBeTruthy()
+  })
+
+  it('selects only visible search results and preserves selection when search is cleared', async () => {
+    open()
+    await chooseTeam()
+    const search = screen.getByLabelText('Search worker or biometric ID')
+    fireEvent.change(search, { target: { value: 'FIRST' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Select visible' }))
+    expect(screen.getByText(/Shown: 1 .* Selected: 1/)).toBeTruthy()
+    fireEvent.change(search, { target: { value: '' } })
+    expect(screen.getByRole('checkbox', { name: 'FIRST WORKER' }).checked).toBe(true)
+    expect(screen.getByRole('checkbox', { name: 'SECOND WORKER' }).checked).toBe(false)
+    expect(screen.getByText(/Shown: 2 .* Selected: 1/)).toBeTruthy()
+  })
+
+  it('keeps Select all workers in team independent of the search filter', async () => {
+    open()
+    await chooseTeam()
+    fireEvent.change(screen.getByLabelText('Search worker or biometric ID'), { target: { value: 'FIRST' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all workers in team' }))
+    expect(screen.getByText(/Shown: 1 .* Selected: 2/)).toBeTruthy()
+  })
+
+  it('keeps hidden selections in the unchanged save payload', async () => {
+    open()
+    await chooseTeam()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'FIRST WORKER' }))
+    fireEvent.change(screen.getByLabelText('Search worker or biometric ID'), { target: { value: '022' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Select visible' }))
+    expect(screen.getByText(/Shown: 1 .* Selected: 2/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Save overtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and save' }))
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(1))
+    expect(mocks.rpc.mock.calls[0][1].p_entries).toEqual([
+      { worker_id: 'worker-1', checkout: '21:00', expected_updated_at: attendance[0].updated_at },
+      { worker_id: 'worker-2', checkout: '21:00', expected_updated_at: attendance[1].updated_at },
     ])
   })
 

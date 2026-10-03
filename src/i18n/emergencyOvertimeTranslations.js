@@ -1,5 +1,7 @@
 export const emergencyOvertimeTranslations = {
   ar: {
+    searchWorkers: 'بحث عن عامل أو رقم البصمة', shown: 'المعروضون',
+    noSearchResults: 'لا يوجد عمال مطابقون للبحث',
     team: 'الفريق', chooseTeam: 'اختر فريقًا', selectAll: 'تحديد جميع عمال الفريق',
     saveOvertime: 'حفظ الإضافي', advanced: 'خيارات متقدمة', manualDurationOption: 'إدخال مدة الإضافي يدويًا',
     title: 'إدخال إضافي جماعي للطوارئ', description: 'تصحيح إداري موثق عند تعذر تسجيل الخروج بالبصمة.',
@@ -18,6 +20,8 @@ export const emergencyOvertimeTranslations = {
     checkoutInvalid: 'وقت الخروج يجب أن يكون صحيحًا وبعد الدخول.',
   },
   en: {
+    searchWorkers: 'Search worker or biometric ID', shown: 'Shown',
+    noSearchResults: 'No workers match the search',
     team: 'Team', chooseTeam: 'Choose a team', selectAll: 'Select all workers in team',
     saveOvertime: 'Save overtime', advanced: 'Advanced options', manualDurationOption: 'Enter overtime duration manually',
     title: 'Bulk Emergency Overtime', description: 'Audited admin correction when biometric checkout was unavailable.',
@@ -36,6 +40,8 @@ export const emergencyOvertimeTranslations = {
     checkoutInvalid: 'Checkout time must be valid and later than check-in.',
   },
   fr: {
+    searchWorkers: 'Rechercher un travailleur ou un ID biométrique', shown: 'Affichés',
+    noSearchResults: 'Aucun travailleur ne correspond à la recherche',
     team: 'Équipe', chooseTeam: 'Choisir une équipe', selectAll: 'Sélectionner tous les travailleurs de l’équipe',
     saveOvertime: 'Enregistrer les heures supplémentaires', advanced: 'Options avancées', manualDurationOption: 'Saisir la durée des heures supplémentaires manuellement',
     title: 'Heures supplémentaires d’urgence en lot', description: 'Correction administrative auditée lorsque la sortie biométrique était indisponible.',

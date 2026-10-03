@@ -26,6 +26,7 @@ export default function BulkEmergencyOvertime() {
   const e = (key) => t(`emergencyOvertime.${key}`)
   const [date, setDate] = useState(yesterday)
   const [teamId, setTeamId] = useState('')
+  const [search, setSearch] = useState('')
   const [workers, setWorkers] = useState([])
   const [attendance, setAttendance] = useState([])
   const [mappings, setMappings] = useState([])
@@ -90,13 +91,20 @@ export default function BulkEmergencyOvertime() {
     })
     return new Map([...map].map(([id, values]) => [id, [...values].join(' · ')]))
   }, [mappings])
-  const visible = useMemo(() => workers.filter((worker) =>
+  const teamWorkers = useMemo(() => workers.filter((worker) =>
     teamId && String(worker.team_id) === teamId
     && isOperationalAttendanceWorkerOnDate(worker, date)
     && worker.team_name !== 'Chauffeur',
   ), [workers, date, teamId])
-  const selected = useMemo(() => visible.filter((worker) => selectedIds.includes(String(worker.id))), [visible, selectedIds])
-  const allSelected = visible.length > 0 && visible.every((worker) => selectedIds.includes(String(worker.id)))
+  const visible = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase()
+    if (!query) return teamWorkers
+    return teamWorkers.filter((worker) =>
+      String(worker.full_name || '').toLocaleLowerCase().includes(query)
+      || String(idsByWorker.get(String(worker.id)) || '').toLocaleLowerCase().includes(query))
+  }, [teamWorkers, search, idsByWorker])
+  const selected = useMemo(() => teamWorkers.filter((worker) => selectedIds.includes(String(worker.id))), [teamWorkers, selectedIds])
+  const allSelected = teamWorkers.length > 0 && teamWorkers.every((worker) => selectedIds.includes(String(worker.id)))
   const toggleWorker = (workerId) => {
     setSelectedIds((current) => current.includes(workerId)
       ? current.filter((id) => id !== workerId) : [...current, workerId])
@@ -162,17 +170,18 @@ export default function BulkEmergencyOvertime() {
 
     <div className="surface-card grid gap-4 p-4 md:grid-cols-3">
       <label>{t('attendance.date')}<input className="input-base mt-1" type="date" max={kinshasaClock().date} value={date} onChange={(event) => setDate(event.target.value)} /></label>
-      <label>{e('team')}<select className="input-base mt-1" value={teamId} onChange={(event) => setTeamId(event.target.value)}><option value="">{e('chooseTeam')}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+      <label>{e('team')}<select className="input-base mt-1" value={teamId} onChange={(event) => { setTeamId(event.target.value); setSearch('') }}><option value="">{e('chooseTeam')}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
       <label>{mode === 'manual_checkout' ? e('commonCheckout') : e('duration')}<input className="input-base mt-1" type={mode === 'manual_checkout' ? 'time' : 'text'} value={mode === 'manual_checkout' ? checkout : duration} onChange={(event) => { (mode === 'manual_checkout' ? setCheckout : setDuration)(event.target.value); setPreview(null) }} placeholder={mode === 'manual_checkout' ? undefined : '3h30'} /></label>
     </div>
 
     {teamId && <div className="surface-card space-y-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-extrabold">{teams.find((team) => String(team.id) === teamId)?.name}</h2><span className="text-sm text-(--muted)">{e('selected')}: {selected.length}</span></div>
-      <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={allSelected} disabled={!visible.length || loading} onChange={() => { setSelectedIds(allSelected ? [] : visible.map((worker) => String(worker.id))); setPreview(null) }} />{e('selectAll')}</label>
-      <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-start"><th></th><th>{t('common.worker')}</th><th>{e('biometricId')}</th><th>{t('attendance.checkIn')}</th><th>{t('attendance.checkOut')}</th><th>{e('currentOvertime')}</th>{mode === 'manual_checkout' && <th>{e('overrideCheckout')}</th>}</tr></thead><tbody>{visible.map((worker) => {
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-extrabold">{teams.find((team) => String(team.id) === teamId)?.name}</h2><span className="text-sm text-(--muted)">{e('shown')}: {visible.length} · {e('selected')}: {selected.length}</span></div>
+      <label className="block text-sm">{e('searchWorkers')}<input className="input-base mt-1" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={e('searchWorkers')} /></label>
+      <div className="flex flex-wrap items-center gap-3"><label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={allSelected} disabled={!teamWorkers.length || loading} onChange={() => { setSelectedIds(allSelected ? [] : teamWorkers.map((worker) => String(worker.id))); setPreview(null) }} />{e('selectAll')}</label><button type="button" className="btn-secondary" disabled={!visible.length || loading} onClick={() => { setSelectedIds((current) => [...new Set([...current, ...visible.map((worker) => String(worker.id))])]); setPreview(null) }}>{e('selectVisible')}</button></div>
+      {visible.length > 0 ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-start"><th></th><th>{t('common.worker')}</th><th>{e('biometricId')}</th><th>{t('attendance.checkIn')}</th><th>{t('attendance.checkOut')}</th><th>{e('currentOvertime')}</th>{mode === 'manual_checkout' && <th>{e('overrideCheckout')}</th>}</tr></thead><tbody>{visible.map((worker) => {
         const row = rowsByWorker.get(String(worker.id))
         return <tr key={worker.id} className="border-b"><td><input aria-label={worker.full_name} type="checkbox" checked={selectedIds.includes(String(worker.id))} onChange={() => toggleWorker(String(worker.id))} /></td><td>{worker.full_name}</td><td dir="ltr">{idsByWorker.get(String(worker.id)) || '—'}</td><td dir="ltr">{clock(row?.check_in)}</td><td dir="ltr">{clock(row?.check_out)}</td><td dir="ltr">{formatEveningOvertimeMinutes(weeklyPayrollOvertimeForDetail({ date, row, worker, team: worker.team }).eveningOvertimeMinutes)}</td>{mode === 'manual_checkout' && <td><input className="input-base max-w-36" type="time" aria-label={`${e('overrideCheckout')}: ${worker.full_name}`} value={overrides[worker.id] || ''} onChange={(event) => { setOverrides((current) => ({ ...current, [worker.id]: event.target.value })); setPreview(null) }} /></td>}</tr>
-      })}</tbody></table>{!loading && !visible.length && <p className="py-4 text-center">{e('noWorkers')}</p>}</div>
+      })}</tbody></table></div> : !loading && <p className="py-4 text-center">{search.trim() ? e('noSearchResults') : e('noWorkers')}</p>}
     </div>}
 
     <details className="text-sm"><summary className="cursor-pointer font-semibold">{e('advanced')}</summary><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={mode === 'manual_overtime_duration'} onChange={(event) => { setMode(event.target.checked ? 'manual_overtime_duration' : 'manual_checkout'); setPreview(null) }} />{e('manualDurationOption')}</label></details>
