@@ -1,5 +1,7 @@
 export const emergencyOvertimeTranslations = {
   ar: {
+    team: 'الفريق', chooseTeam: 'اختر فريقًا', selectAll: 'تحديد جميع عمال الفريق',
+    saveOvertime: 'حفظ الإضافي', advanced: 'خيارات متقدمة', manualDurationOption: 'إدخال مدة الإضافي يدويًا',
     title: 'إدخال إضافي جماعي للطوارئ', description: 'تصحيح إداري موثق عند تعذر تسجيل الخروج بالبصمة.',
     mode: 'طريقة الإدخال', checkoutMode: 'وقت خروج يدوي', durationMode: 'مدة إضافي مباشرة',
     commonCheckout: 'وقت الخروج المشترك', duration: 'مدة الإضافي (س:د)', teams: 'الفرق',
@@ -16,6 +18,8 @@ export const emergencyOvertimeTranslations = {
     checkoutInvalid: 'وقت الخروج يجب أن يكون صحيحًا وبعد الدخول.',
   },
   en: {
+    team: 'Team', chooseTeam: 'Choose a team', selectAll: 'Select all workers in team',
+    saveOvertime: 'Save overtime', advanced: 'Advanced options', manualDurationOption: 'Enter overtime duration manually',
     title: 'Bulk Emergency Overtime', description: 'Audited admin correction when biometric checkout was unavailable.',
     mode: 'Entry mode', checkoutMode: 'Manual checkout time', durationMode: 'Direct overtime duration',
     commonCheckout: 'Common checkout time', duration: 'Overtime duration (h:mm)', teams: 'Teams',
@@ -32,6 +36,8 @@ export const emergencyOvertimeTranslations = {
     checkoutInvalid: 'Checkout time must be valid and later than check-in.',
   },
   fr: {
+    team: 'Équipe', chooseTeam: 'Choisir une équipe', selectAll: 'Sélectionner tous les travailleurs de l’équipe',
+    saveOvertime: 'Enregistrer les heures supplémentaires', advanced: 'Options avancées', manualDurationOption: 'Saisir la durée des heures supplémentaires manuellement',
     title: 'Heures supplémentaires d’urgence en lot', description: 'Correction administrative auditée lorsque la sortie biométrique était indisponible.',
     mode: 'Mode de saisie', checkoutMode: 'Heure de sortie manuelle', durationMode: 'Durée supplémentaire directe',
     commonCheckout: 'Heure de sortie commune', duration: 'Durée (h:mm)', teams: 'Équipes',
