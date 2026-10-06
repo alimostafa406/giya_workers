@@ -5,6 +5,7 @@ import { cancelSundayWorkRequest, confirmSundayWorkRequest, createPayrollAdjustm
 import { saveWorkerPayrollSettingsRequest } from '../../api/payrollSettingsApi'
 import { applyPayrollAdjustments, calculatePayrollLine, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
+import { printAllWeeklyPayrollTeams } from '../../utils/weeklyPayrollPrintAll'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { payrollWorkerLabel } from '../../utils/payrollLineCurrency'
 import { isWeeklyPayrollEligibleWorker, positiveWeeklyPayrollCurrencyTotals, weeklyPayrollCurrencyTotalsMatch, weeklyPayrollEligibleLines, weeklyPayrollTotalsByCurrency } from '../../utils/weeklyPayrollEligibility'
@@ -200,6 +201,19 @@ export default function PayrollOperations() {
     })
     return load()
   }
+  const printEveryTeam = () => printAllWeeklyPayrollTeams({
+    title: t('payroll.weeklyPayrollReport'), periodStart: monday, periodEnd: saturday,
+    groups: teamGroups, overallTotalsByCurrency: weeklyPayrollTotalsByCurrency(lines),
+    dates: weeklyDates(monday), language, direction,
+    labels: {
+      period: t('payroll.payrollPeriod'), teams: t('payroll.teamCount'), workers: t('payroll.workerCount'),
+      overallTotal: t('payroll.allTeamsPayrollTotal'), teamTotal: t('payroll.teamPayrollTotal'),
+      worker: t('payroll.worker'), workDayPay: t('payroll.workDayPay'),
+      overtimeHours: t('payroll.overtimeHours'), overtimeAmount: t('payroll.overtimeAmount'),
+      transport: t('payroll.transport'), total: t('payroll.finalPay'),
+      status: { present: t('attendance.present'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), neutral: '—' },
+    },
+  })
   const refreshDraftFromAttendance = async () => {
     if (!draftRun || saving || runActionSaving) return
     setSaving(true); setError(''); setMessage('')
@@ -359,7 +373,7 @@ export default function PayrollOperations() {
     </div></div>
     <PayrollNotes warnings={payrollWarnings} t={t} />
     <PayrollWorkerSearch lines={lines} paymentType="weekly" value={workerSearch} onChange={setWorkerSearch} onSelect={(line) => { setSelectedTeamId(String(line.worker.team_id || 'unassigned')); setEditingWorkerId(String(line.worker.id)) }} t={t} />
-    {!selectedTeam ? <div className="mb-3 flex justify-end">{exportButtons(exportAllTeams)}</div> : null}
+    {!selectedTeam ? <div className="mb-3 flex flex-wrap justify-end gap-2"><button type="button" className="btn-primary px-3 py-2" disabled={loading || !teamGroups.length} onClick={printEveryTeam}>{t('payroll.printAllTeams')}</button>{exportButtons(exportAllTeams)}</div> : null}
     <div className="mb-4"><WeeklyPayrollTeamSummary groups={teamGroups} selectedTeamId={selectedTeamId} onSelectTeam={(id) => { setSelectedTeamId(id); setEditingWorkerId('') }} /></div>
     {(reviewErrors.length || weekValidationErrors.length) ? <div className="mb-3 rounded bg-amber-50 p-3 text-amber-900"><p className="font-bold">{t('payroll.reviewValidationFailed')}</p><ul className="mt-2 list-inside list-disc text-sm">{(reviewErrors.length ? reviewErrors : weekValidationErrors).map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
     {selectedTeam ? <div data-weekly-team-review><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><div className="mb-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><p><strong>{t('common.team')}:</strong> {selectedTeam.name}</p><p><strong>{t('payroll.workers')}:</strong> {selectedTeam.lines.length}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {amountDue(selectedTeam.amountDueByCurrency)}</p></div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} /><div className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>{t('payroll.presentDays')}:</strong> {selectedTeam.totals.presentDays + (selectedTeam.totals.halfDays * 0.5)}</p><p><strong>{t('payroll.totalEveningOvertime')}:</strong> <span className="font-extrabold" dir="ltr">{formatEveningOvertimeMinutes(selectedTeamFooter.eveningOvertimeMinutes)}</span></p><p><strong>{t('payroll.totalOvertimePay')}:</strong> <span className="font-extrabold">{overtimePayFooterAmounts.length ? overtimePayFooterAmounts : '—'}</span></p><p><strong>{t('payroll.teamPayrollTotal')}:</strong> <span className="font-extrabold">{amountDue(selectedTeam.amountDueByCurrency)}</span></p>{transportFooterAmounts.length ? <p><strong>{t('payroll.transport')}:</strong> <span className="font-extrabold">{transportFooterAmounts}</span></p> : null}</div></div> : <p className="py-3 text-center text-sm font-bold text-(--muted)">{loading ? t('common.loading') : t('payroll.choosePayrollTeam')}</p>}
