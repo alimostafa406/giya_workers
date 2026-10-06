@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { reactivateWorkerRequest } from '../api/workersApi'
-import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData } from '../api/workerControlData'
+import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData, loadWorkerControlSearchMappings } from '../api/workerControlData'
 import { buildWorkerControlDetail } from '../utils/workerControlDetail'
 import { buildWorkerControlPages, workerControlCategories } from '../utils/workerControlPages'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
+import { workerControlSearchResults } from '../utils/workerControlSearch'
 import WorkerControlWorkerPage from './WorkerControlWorkerPage'
 import { useAuthStore } from '../store/authStore'
 
@@ -43,6 +44,10 @@ export default function WorkerControlCenter({ category = null }) {
   const [hasData, setHasData] = useState(() => Boolean(getWorkerControlDataSnapshot({ date: today(), category, workerId, authKey })))
   const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
+  const [workerSearch, setWorkerSearch] = useState('')
+  const hasWorkerSearch = Boolean(workerSearch.trim())
+  const [searchMappings, setSearchMappings] = useState([])
+  const [searchError, setSearchError] = useState('')
   const [teamFilter, setTeamFilter] = useState('')
   const [minimumAbsences, setMinimumAbsences] = useState(1)
   const [visibleAbsenceDays, setVisibleAbsenceDays] = useState(null)
@@ -73,12 +78,22 @@ export default function WorkerControlCenter({ category = null }) {
     return () => { current = false }
   }, [date, category, workerId, authKey])
 
+  useEffect(() => {
+    if (category !== null || !hasWorkerSearch) return undefined
+    let current = true
+    loadWorkerControlSearchMappings(authKey).then((response) => {
+      if (current) { setSearchMappings(response.data || []); setSearchError('') }
+    }).catch((error) => { if (current) setSearchError(error?.message || 'تعذر تحميل أرقام البصمة.') })
+    return () => { current = false }
+  }, [category, hasWorkerSearch, authKey])
+
   const period = workerControlPeriods(date)
   const pages = useMemo(() => buildWorkerControlPages({ ...state, today: date, weekStart: period.weekStart, monthStart: period.monthStart }), [state, date, period.weekStart, period.monthStart])
   const selectedWorker = category === 'worker-detail' ? state.workers.find((worker) => String(worker.id) === workerId)
     || pages.rows['activated-today'].find((row) => String(row.worker.id) === workerId)?.worker : null
   const selectedDetail = selectedWorker && (pages.details.get(String(selectedWorker.id)) || buildWorkerControlDetail({ ...state, worker: selectedWorker, today: date, weekStart: period.weekStart, monthStart: period.monthStart }))
   const workerLink = (worker, focusActions = false) => ({ pathname: `${base}/worker/${encodeURIComponent(worker.id)}`, state: { from: location.pathname, focusActions } })
+  const workerSearchRows = useMemo(() => workerControlSearchResults(state.workers, searchMappings, workerSearch), [state.workers, searchMappings, workerSearch])
   const details = { label: 'التفاصيل', render: (row) => <Link className="btn-secondary px-3 py-1" to={workerLink(row.worker).pathname} state={workerLink(row.worker).state}>التفاصيل</Link> }
   const reactivate = async (worker) => {
     if (!window.confirm('تفعيل هذا العامل؟')) return
@@ -150,6 +165,7 @@ export default function WorkerControlCenter({ category = null }) {
     </> : <>
       <div className="mb-7"><h2 className="text-3xl font-extrabold">مركز مراقبة العمال</h2><p className="mt-2 text-base text-(--muted)">ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.</p></div>
       {loadError ? <p className="alert alert--error mb-5">{loadError}</p> : null}
+      <div className="mb-7 rounded-xl border border-(--border) bg-white p-5"><label htmlFor="worker-control-search" className="mb-2 block font-bold">بحث عن عامل</label><input id="worker-control-search" type="search" className="input-base w-full max-w-xl" value={workerSearch} onChange={(event) => setWorkerSearch(event.target.value)} placeholder="بحث عن عامل أو رقم البصمة" />{workerSearch.trim() ? <div className="mt-4"><p className="mb-3 text-sm text-(--muted)">{workerSearchRows.length} عامل</p>{searchError ? <p className="alert alert--error mb-3">{searchError}</p> : null}{workerSearchRows.length ? <ul className="max-h-80 space-y-2 overflow-y-auto">{workerSearchRows.map(({ worker, biometricIds }) => <li key={worker.id}><Link to={workerLink(worker).pathname} state={workerLink(worker).state} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-(--border) px-4 py-3 hover:border-(--primary) hover:bg-(--surface-subtle)"><b>{worker.full_name}</b><span>{worker.employee_code || '—'}</span><span>{worker.team?.name || worker.team_name || '—'}</span><span dir="ltr">{biometricIds.join(' · ') || '—'}</span><span className="text-sm text-(--muted)">{worker.is_active ? 'نشط' : 'غير نشط'}</span></Link></li>)}</ul> : <p className="text-(--muted)">لا يوجد عمال مطابقون.</p>}</div> : null}</div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-worker-control-hub>{workerControlCategories.map((item) => <Link key={item.key} to={item.path} className="surface-card flex min-h-36 flex-col justify-between p-5 transition hover:border-(--primary) hover:shadow-md"><div><h3 className="text-lg font-extrabold">{item.title}</h3><p className="mt-2 text-sm text-(--muted)">{item.description}</p></div><div className="mt-5 flex items-end justify-between"><b className="text-3xl">{loading ? '—' : pages.rows[item.key]?.length || 0}</b><span className="font-bold text-(--primary)">فتح ←</span></div></Link>)}</div>
     </>}
     {actionError ? <p className="alert alert--error mt-5">{actionError}</p> : null}

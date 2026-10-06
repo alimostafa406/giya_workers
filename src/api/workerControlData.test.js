@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getWorkersRequest, getWorkersActivatedTodayRequest } from './workersApi'
 import { getAttendanceRowsRequest } from './attendanceApi'
-import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from './biometricMappingApi'
-import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData, workerControlAttendanceParams, WORKER_CONTROL_CACHE_TTL, WORKER_CONTROL_READ_TIMEOUT_MS } from './workerControlData'
+import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest, getWorkerBiometricSearchIndexRequest } from './biometricMappingApi'
+import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData, loadWorkerControlHistoryRows, loadWorkerControlSearchMappings, workerControlAttendanceParams, WORKER_CONTROL_CACHE_TTL, WORKER_CONTROL_READ_TIMEOUT_MS } from './workerControlData'
 
 vi.mock('./workersApi', () => ({
   getWorkersRequest: vi.fn(async () => ({ data: [{ id: 'one' }] })),
@@ -17,6 +17,7 @@ vi.mock('./attendanceApi', () => ({
 }))
 vi.mock('./biometricMappingApi', () => ({
   getBiometricMappingsRequest: vi.fn(async () => ({ data: [] })),
+  getWorkerBiometricSearchIndexRequest: vi.fn(async () => ({ data: [] })),
   getInactiveWorkerBiometricActivityRequest: vi.fn(async () => ({ data: [] })),
 }))
 
@@ -25,6 +26,18 @@ beforeEach(() => { clearWorkerControlDataCache(); vi.clearAllMocks() })
 afterEach(() => { clearWorkerControlDataCache(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('Worker Control Center bulk data loading', () => {
+  it('loads one-worker bounded history and reuses the same-period cache', async () => {
+    await loadWorkerControlHistoryRows({ workerId: 'one', dateFrom: '2026-08-01', dateTo: date })
+    await loadWorkerControlHistoryRows({ workerId: 'one', dateFrom: '2026-08-01', dateTo: date })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ worker_id: 'one', date_from: '2026-08-01', date_to: date, paginate: true })
+  })
+
+  it('reads a cached confirmed-mapping search index only on demand', async () => {
+    await loadWorkerControlSearchMappings()
+    await loadWorkerControlSearchMappings()
+    expect(getWorkerBiometricSearchIndexRequest).toHaveBeenCalledTimes(1)
+  })
   it('bounds the weekly read to Monday and reads no unused RPC or mappings', async () => {
     const data = await loadWorkerControlData({ date, category: 'weekly' })
     expect(workerControlAttendanceParams(date, 'weekly')).toEqual({ date_from: '2026-09-28', date_to: date, paginate: true })

@@ -8,7 +8,7 @@ import { getAttendanceRowsRequest } from '../api/attendanceApi'
 import { clearWorkerControlDataCache } from '../api/workerControlData'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
 import { getWorkersRequest, reactivateWorkerRequest } from '../api/workersApi'
-import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from '../api/biometricMappingApi'
+import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest, getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 
 globalThis.React = React
 const auth = vi.hoisted(() => ({ admin: null }))
@@ -35,6 +35,7 @@ vi.mock('../api/attendanceApi', () => ({
 }))
 vi.mock('../api/biometricMappingApi', () => ({
   getBiometricMappingsRequest: vi.fn(async () => ({ data: [] })),
+  getWorkerBiometricSearchIndexRequest: vi.fn(async () => ({ data: [{ worker_id: 'absent', device_employee_no: '021', is_active: true, mapping_review_state: 'confirmed' }] })),
   getInactiveWorkerBiometricActivityRequest: vi.fn(async () => ({ data: [{ worker_id: 'inactive', device_id: 'office-main', device_employee_no: '73', event_timestamp: `${day}T07:00:00Z` }] })),
 }))
 vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ admin: auth.admin }) }))
@@ -69,6 +70,19 @@ describe('Worker Control Center information architecture', () => {
     expect(screen.getAllByRole('link')).toHaveLength(9)
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.getByRole('link', { name: /الغائبون اليوم/ }).getAttribute('href')).toBe('/worker-control-center/absent-today')
+  })
+
+  it('finds a worker by name or confirmed biometric ID and opens the worker page', async () => {
+    open()
+    await screen.findByText('ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.')
+    fireEvent.change(screen.getByPlaceholderText('بحث عن عامل أو رقم البصمة'), { target: { value: 'Absent' } })
+    expect((await screen.findByRole('link', { name: /Absent Worker/ })).getAttribute('href')).toBe('/worker-control-center/worker/absent')
+    fireEvent.change(screen.getByPlaceholderText('بحث عن عامل أو رقم البصمة'), { target: { value: '021' } })
+    expect(await screen.findByRole('link', { name: /Absent Worker/ })).toBeTruthy()
+    expect(getWorkerBiometricSearchIndexRequest).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('link', { name: /Absent Worker/ }))
+    expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
+    expect(screen.getByRole('link', { name: '← العودة' }).getAttribute('href')).toBe('/worker-control-center')
   })
 
   it('reuses the SPA cache across hub, weekly and back navigation without a loading flash', async () => {
@@ -142,6 +156,21 @@ describe('Worker Control Center information architecture', () => {
     release({ data: [] })
   })
 
+  it('filters one-worker history without changing canonical attendance rows', async () => {
+    open('/worker-control-center/worker/absent')
+    const history = await screen.findByTestId('worker-attendance-history')
+    await waitFor(() => expect(history.querySelector('table tbody tr')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /الغائبون \(/ }))
+    expect([...history.querySelectorAll('table tbody tr')].every((row) => row.textContent.includes('غائب'))).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: /نصف يوم \(/ }))
+    expect(history.textContent).toContain('لا توجد أيام مطابقة')
+    fireEvent.click(screen.getByRole('button', { name: /الحاضرون \(/ }))
+    expect([...history.querySelectorAll('table tbody tr')].every((row) => row.textContent.includes('حاضر'))).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'فترة مخصصة' }))
+    expect(screen.getByLabelText('من')).toBeTruthy()
+    expect(screen.getByLabelText('إلى')).toBeTruthy()
+  })
+
   it.each([
     ['الغائبون اليوم', 'absent-today'],
     ['الغياب المتتالي', 'consecutive-absence'],
@@ -171,7 +200,7 @@ describe('Worker Control Center information architecture', () => {
     expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
     expect(screen.queryByRole('dialog', { name: /متابعة العامل/ })).toBeNull()
     expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
-      'ملخص سريع', 'هذا الأسبوع', 'هذا الشهر', 'سجل الغياب', 'سجل نصف اليوم', 'معلومات البصمة',
+      'ملخص سريع', 'هذا الأسبوع', 'هذا الشهر', 'سجل الحضور والغياب', 'سجل الغياب', 'سجل نصف اليوم', 'معلومات البصمة',
     ])
     const absencePeriod = screen.getByText('عرض الأيام').closest('details')
     expect(absencePeriod.open).toBe(false)
@@ -213,9 +242,9 @@ describe('Worker Control Center information architecture', () => {
     getAttendanceRowsRequest.mockClear()
     open('/worker-control-center/worker/absent')
     expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
-    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'استرجاع حضور الأسبوع' }))
     await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByRole('button', { name: 'استرجاع حضور الأسبوع' }))
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(3))
   })
 
   it('keeps the existing inactive-worker activation action on the worker page', async () => {

@@ -89,6 +89,16 @@ export const getBiometricMappingsRequest = async ({ workerId } = {}) => {
   return { data: toArray(data) }
 }
 
+export const getWorkerBiometricSearchIndexRequest = async () => {
+  const { data, error } = await getSupabaseClient()
+    .from('biometric_worker_mapping')
+    .select('worker_id,device_employee_no,is_active,mapping_review_state')
+    .eq('is_active', true)
+    .eq('mapping_review_state', 'confirmed')
+  if (error) throw error
+  return { data: toArray(data) }
+}
+
 const getWorkerClassificationsRequest = async () => {
   const client = getSupabaseClient()
   const { data, error } = await client

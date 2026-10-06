@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import WorkerWeekAttendanceRecovery from '../components/WorkerWeekAttendanceRecovery'
+import WorkerControlAttendanceHistory from './WorkerControlAttendanceHistory'
 import { formatEveningOvertimeMinutes } from '../utils/weeklyPayrollOvertime'
 import { useAuthStore } from '../store/authStore'
 
@@ -29,8 +30,9 @@ function Table({ headers, rows, emptyText }) {
 export default function WorkerControlWorkerPage({ detail, currentStreak, loading, loadError, backTo, focusActions = false, onReactivate, reactivating = false, onRecovered, actionError = '' }) {
   const admin = useAuthStore((state) => state.admin)
   const actionsRef = useRef(null)
+  const selectedWorkerId = detail?.worker?.id
   useEffect(() => { if (detail && focusActions) actionsRef.current?.scrollIntoView?.({ block: 'start' }) }, [detail, focusActions])
-  useEffect(() => { if (detail && !focusActions) { document.documentElement.scrollTop = 0; document.body.scrollTop = 0 } }, [detail?.worker?.id, focusActions])
+  useEffect(() => { if (selectedWorkerId && !focusActions) { document.documentElement.scrollTop = 0; document.body.scrollTop = 0 } }, [selectedWorkerId, focusActions])
 
   if (loading || loadError || !detail) return <section className="w-full pb-12" dir="rtl"><Link className="mb-6 inline-flex font-bold text-(--primary) hover:underline" to={backTo}>← العودة</Link><p className="py-6 text-(--muted)">{loading ? 'جارٍ تحميل بيانات العامل...' : loadError || 'العامل غير موجود.'}</p></section>
 
@@ -52,6 +54,8 @@ export default function WorkerControlWorkerPage({ detail, currentStreak, loading
     <Section title="هذا الأسبوع"><Table headers={['اليوم', 'التاريخ', 'الحالة', 'الدخول', 'الخروج', 'الإضافي']} rows={week.map((day) => <tr key={day.date} className="border-t border-(--border)"><td className="whitespace-nowrap px-4 py-3">{weekdays[new Date(`${day.date}T12:00:00Z`).getUTCDay()]}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{dateText(day.date)}</td><td className="whitespace-nowrap px-4 py-3">{statusText[day.status] || day.status}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{timeText(day.checkIn)}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{timeText(day.checkOut)}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{formatEveningOvertimeMinutes(day.overtimeMinutes)}</td></tr>)} emptyText="لا توجد أيام لهذا الأسبوع." /></Section>
 
     <Section title="هذا الشهر"><div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Fact label="حاضر" value={monthCounts.present} /><Fact label="غائب" value={monthCounts.absent} /><Fact label="نصف يوم" value={monthCounts.halfDay} /><Fact label="أطول غياب متتالٍ" value={detail.longestAbsence} /><Fact label="آخر حضور" value={dateText(detail.lastAttendance)} /></div><Table headers={['التاريخ', 'الحالة', 'الدخول', 'الخروج']} rows={month.map((day) => <tr key={day.date} className="border-t border-(--border)"><td className="whitespace-nowrap px-4 py-3" dir="ltr">{dateText(day.date)}</td><td className="whitespace-nowrap px-4 py-3">{statusText[day.status] || day.status}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{timeText(day.checkIn)}</td><td className="whitespace-nowrap px-4 py-3" dir="ltr">{timeText(day.checkOut)}</td></tr>)} emptyText="لا توجد أيام لهذا الشهر." /></Section>
+
+    <WorkerControlAttendanceHistory worker={worker} today={detail.today.date} />
 
     <Section title="سجل الغياب">{absencePeriods.length ? <div className="space-y-2">{absencePeriods.map((period) => <details key={`${period.from}-${period.to}`} className="rounded-lg border border-(--border) px-4 py-3"><summary className="cursor-pointer font-semibold"><span dir="ltr" className="inline-block">{dateText(period.from)} → {dateText(period.to)}</span><span className="mr-3">{period.count} أيام</span><span className="mr-3 text-sm text-(--primary)">عرض الأيام</span></summary><ul className="mt-3 grid gap-2 border-t border-(--border) pt-3 sm:grid-cols-3 lg:grid-cols-6">{period.dates.map((date) => <li key={date} dir="ltr">{dateText(date)}</li>)}</ul></details>)}</div> : <p className="text-(--muted)">لا يوجد غياب مسجل.</p>}</Section>
 

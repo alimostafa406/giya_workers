@@ -1,6 +1,6 @@
 import { getWorkersRequest, getWorkersActivatedTodayRequest } from './workersApi'
 import { getAttendanceRowsRequest } from './attendanceApi'
-import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest } from './biometricMappingApi'
+import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest, getWorkerBiometricSearchIndexRequest } from './biometricMappingApi'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
 
 // This module is shared by every Control Center route for the lifetime of the
@@ -52,6 +52,19 @@ const ensureScope = (date, authKey = '') => {
 export const clearWorkerControlDataCache = () => { cache.clear(); cacheDate = null; cacheAuthKey = null }
 export const invalidateWorkerControlAttendanceCache = () => {
   for (const key of cache.keys()) if (key.startsWith('attendance:')) cache.delete(key)
+}
+
+export const loadWorkerControlSearchMappings = (authKey = '') => {
+  ensureScope(cacheDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' }), authKey)
+  return cached('search-mappings', getWorkerBiometricSearchIndexRequest, WORKER_CONTROL_CACHE_TTL.mappings)
+}
+
+export const loadWorkerControlHistoryRows = ({ workerId, dateFrom, dateTo, authKey = '' }) => {
+  if (!workerId || !dateFrom || !dateTo) return Promise.reject(new Error('Worker and date range are required.'))
+  ensureScope(cacheDate || dateTo, authKey)
+  return cached(`attendance:worker-history:${workerId}:${dateFrom}:${dateTo}`,
+    () => getAttendanceRowsRequest({ worker_id: workerId, date_from: dateFrom, date_to: dateTo, paginate: true }),
+    WORKER_CONTROL_CACHE_TTL.attendance)
 }
 
 export const workerControlAttendanceParams = (date, category, workerId) => {
