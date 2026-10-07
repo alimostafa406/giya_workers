@@ -97,7 +97,9 @@ export default function WorkerControlCenter({ category = null }) {
     }), [category, state, workerId, date, period.weekStart, period.monthStart])
   const selectedWorker = category === 'worker-detail' ? state.workers.find((worker) => String(worker.id) === workerId)
     || pages.rows['activated-today'].find((row) => String(row.worker.id) === workerId)?.worker : null
-  const selectedDetail = selectedWorker && (pages.details.get(String(selectedWorker.id)) || buildWorkerControlDetail({ ...state, worker: selectedWorker, today: date, weekStart: period.weekStart, monthStart: period.monthStart }))
+  const selectedDetail = selectedWorker && (category === 'worker-detail'
+    ? buildWorkerControlDetail({ ...state, worker: selectedWorker, today: date, weekStart: period.weekStart, monthStart: period.monthStart, deriveMissingAbsence: true })
+    : pages.details.get(String(selectedWorker.id)))
   const workerLink = (worker, focusActions = false) => ({ pathname: `${base}/worker/${encodeURIComponent(worker.id)}`, state: { from: location.pathname, focusActions } })
   const workerSearchRows = useMemo(() => workerControlSearchResults(state.workers, searchMappings, workerSearch), [state.workers, searchMappings, workerSearch])
   const details = { label: 'التفاصيل', render: (row) => <Link className="btn-secondary px-3 py-1" to={workerLink(row.worker).pathname} state={workerLink(row.worker).state}>التفاصيل</Link> }

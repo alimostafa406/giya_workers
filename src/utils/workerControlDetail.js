@@ -45,7 +45,7 @@ export const monitoringFactText = (fact) => {
   }
 }
 
-export const buildWorkerControlDetail = ({ worker, attendance = [], events = [], mappings = [], activated = [], today, weekStart, monthStart } = {}) => {
+export const buildWorkerControlDetail = ({ worker, attendance = [], events = [], mappings = [], activated = [], today, weekStart, monthStart, deriveMissingAbsence = false } = {}) => {
   if (!worker?.id) return null
   const id = key(worker.id)
   const rows = new Map(attendance.filter((row) => key(row.worker_id) === id).map((row) => [dateOf(row), row]))
@@ -68,9 +68,11 @@ export const buildWorkerControlDetail = ({ worker, attendance = [], events = [],
     const eligible = isOperationalAttendanceWorkerOnDate(worker, date)
     const future = date > today
     const evidence = evidenceFor(date, row)
+    // Worker detail may derive a display-only absence; category pages retain
+    // their existing not-recorded classification and no attendance is written.
     return {
       date, row, eligible, future,
-      status: future ? 'future' : !eligible && worker.is_active ? 'not_applicable' : row?.status || (eligible ? 'no_record' : 'not_applicable'),
+      status: future ? 'future' : !eligible && worker.is_active ? 'not_applicable' : row ? (row.status || 'no_record') : eligible ? (deriveMissingAbsence ? 'absent' : 'no_record') : 'not_applicable',
       checkIn: row?.check_in || null,
       checkOut: row?.check_out || null,
       overtimeMinutes: row && !future ? weeklyPayrollOvertimeForDetail({ date, row, worker, status: row.status }).eveningOvertimeMinutes : 0,

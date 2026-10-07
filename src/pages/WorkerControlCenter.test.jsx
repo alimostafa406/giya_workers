@@ -188,6 +188,16 @@ describe('Worker Control Center information architecture', () => {
     expect(screen.getByLabelText('إلى')).toBeTruthy()
   })
 
+  it('renders an eligible missing date as absent in the worker history, not no record', async () => {
+    open('/worker-control-center/worker/activated')
+    const history = await screen.findByTestId('worker-attendance-history')
+    const missingDate = prior.split('-').reverse().join('/')
+    await waitFor(() => expect([...history.querySelectorAll('tbody tr')].find((row) => row.textContent.includes(missingDate))).toBeTruthy())
+    const row = [...history.querySelectorAll('tbody tr')].find((item) => item.textContent.includes(missingDate))
+    expect(row.textContent).toContain('غائب')
+    expect(row.textContent).not.toContain('لا يوجد سجل')
+  })
+
   it('requests only the selected worker and the newly selected two-month range', async () => {
     getAttendanceRowsRequest.mockClear()
     open('/worker-control-center/worker/absent')

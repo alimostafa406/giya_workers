@@ -34,7 +34,7 @@ export const buildWorkerHistory = ({ worker, attendance = [], dateFrom, dateTo }
     if (date.getUTCDay() === 0 || !isOperationalAttendanceWorkerOnDate(worker, workday)) continue
     const row = rows.get(workday) || null
     days.push({
-      date: workday, status: row?.status || 'no_record', checkIn: row?.check_in || null, checkOut: row?.check_out || null,
+      date: workday, status: row ? (row.status || 'no_record') : 'absent', checkIn: row?.check_in || null, checkOut: row?.check_out || null,
       overtimeMinutes: row ? weeklyPayrollOvertimeForDetail({ date: workday, row, worker, status: row.status }).eveningOvertimeMinutes : 0,
       note: row?.note || null, source: row?.attendance_source || null,
     })
