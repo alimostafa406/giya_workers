@@ -27,14 +27,14 @@ function Table({ headers, rows, emptyText }) {
   return rows.length ? <div className="overflow-x-auto rounded-xl border border-(--border)"><table className="min-w-full text-sm md:text-base"><thead className="bg-(--surface-subtle)"><tr>{headers.map((header) => <th key={header} className="whitespace-nowrap px-4 py-3 text-start">{header}</th>)}</tr></thead><tbody>{rows}</tbody></table></div> : <p className="text-(--muted)">{emptyText}</p>
 }
 
-export default function WorkerControlWorkerPage({ detail, currentStreak, loading, loadError, backTo, focusActions = false, onReactivate, reactivating = false, onRecovered, actionError = '' }) {
+export default function WorkerControlWorkerPage({ detail, basicWorker, currentStreak, loading, loadError, backTo, focusActions = false, onReactivate, reactivating = false, onRecovered, actionError = '' }) {
   const admin = useAuthStore((state) => state.admin)
   const actionsRef = useRef(null)
   const selectedWorkerId = detail?.worker?.id
   useEffect(() => { if (detail && focusActions) actionsRef.current?.scrollIntoView?.({ block: 'start' }) }, [detail, focusActions])
   useEffect(() => { if (selectedWorkerId && !focusActions) { document.documentElement.scrollTop = 0; document.body.scrollTop = 0 } }, [selectedWorkerId, focusActions])
 
-  if (loading || loadError || !detail) return <section className="w-full pb-12" dir="rtl"><Link className="mb-6 inline-flex font-bold text-(--primary) hover:underline" to={backTo}>← العودة</Link><p className="py-6 text-(--muted)">{loading ? 'جارٍ تحميل بيانات العامل...' : loadError || 'العامل غير موجود.'}</p></section>
+  if (loading || !detail) return <section className="w-full pb-12" dir="rtl"><Link className="mb-6 inline-flex font-bold text-(--primary) hover:underline" to={backTo}>← العودة</Link>{basicWorker ? <header className="mt-5"><h2 className="text-2xl font-extrabold">{basicWorker.full_name}</h2><p className="mt-2 text-(--muted)">{basicWorker.employee_code || empty} · {basicWorker.team?.name || basicWorker.team_name || empty}</p></header> : null}<p className="py-6 text-(--muted)">{loading ? 'جارٍ تحميل بيانات العامل...' : loadError || 'العامل غير موجود.'}</p></section>
 
   const { worker, today, week, month, weekCounts, monthCounts } = detail
   const biometricIds = [...new Set(detail.mappings.filter((mapping) => mapping.is_active === true && mapping.mapping_review_state === 'confirmed').map((mapping) => mapping.device_employee_no).filter(Boolean))]

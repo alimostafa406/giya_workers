@@ -556,7 +556,7 @@ Object.assign(translations.fr.payroll, { refreshFromAttendance: 'Actualiser la p
 for (const language of ['ar', 'en', 'fr']) translations[language].emergencyOvertime = emergencyOvertimeTranslations[language]
 
 translations.ar.workerControlHistory = {
-  title: 'سجل الحضور والغياب', dateFrom: 'من', dateTo: 'إلى', apply: 'تطبيق', invalidRange: 'اختر فترة صحيحة لا تتجاوز اليوم.', loadError: 'تعذر تحميل سجل الحضور.', empty: 'لا توجد أيام مطابقة.',
+  title: 'سجل الحضور والغياب', dateFrom: 'من', dateTo: 'إلى', apply: 'تطبيق', loading: 'جارٍ تحميل سجل العامل...', invalidRange: 'اختر فترة صحيحة لا تتجاوز اليوم.', loadError: 'تعذر تحميل سجل الحضور.', empty: 'لا توجد أيام مطابقة.',
   range: { 'this-month': 'هذا الشهر', 'last-month': 'آخر شهر', 'last-two-months': 'آخر شهرين', 'last-three-months': 'آخر 3 أشهر', custom: 'فترة مخصصة' },
   summary: { eligible: 'أيام العمل المؤهلة', present: 'حاضر', halfDay: 'نصف يوم', absent: 'غائب', percentage: 'نسبة الحضور' },
   filter: { all: 'الكل', absent: 'الغائبون', half_day: 'نصف يوم', present: 'الحاضرون' },
@@ -565,7 +565,7 @@ translations.ar.workerControlHistory = {
   weekday: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
 }
 translations.en.workerControlHistory = {
-  title: 'Attendance History', dateFrom: 'From', dateTo: 'To', apply: 'Apply', invalidRange: 'Choose a valid period ending no later than today.', loadError: 'Could not load attendance history.', empty: 'No matching workdays.',
+  title: 'Attendance History', dateFrom: 'From', dateTo: 'To', apply: 'Apply', loading: 'Loading worker history...', invalidRange: 'Choose a valid period ending no later than today.', loadError: 'Could not load attendance history.', empty: 'No matching workdays.',
   range: { 'this-month': 'This month', 'last-month': 'Last month', 'last-two-months': 'Last 2 months', 'last-three-months': 'Last 3 months', custom: 'Custom period' },
   summary: { eligible: 'Eligible workdays', present: 'Present', halfDay: 'Half days', absent: 'Absent', percentage: 'Attendance rate' },
   filter: { all: 'All', absent: 'Absent', half_day: 'Half day', present: 'Present' },
@@ -574,7 +574,7 @@ translations.en.workerControlHistory = {
   weekday: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
 }
 translations.fr.workerControlHistory = {
-  title: 'Historique de présence', dateFrom: 'Du', dateTo: 'Au', apply: 'Appliquer', invalidRange: 'Choisissez une période valide ne dépassant pas aujourd’hui.', loadError: 'Impossible de charger l’historique de présence.', empty: 'Aucun jour correspondant.',
+  title: 'Historique de présence', dateFrom: 'Du', dateTo: 'Au', apply: 'Appliquer', loading: 'Chargement de l’historique du travailleur...', invalidRange: 'Choisissez une période valide ne dépassant pas aujourd’hui.', loadError: 'Impossible de charger l’historique de présence.', empty: 'Aucun jour correspondant.',
   range: { 'this-month': 'Ce mois-ci', 'last-month': 'Dernier mois', 'last-two-months': '2 derniers mois', 'last-three-months': '3 derniers mois', custom: 'Période personnalisée' },
   summary: { eligible: 'Jours ouvrés admissibles', present: 'Présents', halfDay: 'Demi-journées', absent: 'Absents', percentage: 'Taux de présence' },
   filter: { all: 'Tous', absent: 'Absents', half_day: 'Demi-journées', present: 'Présents' },

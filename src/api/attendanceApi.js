@@ -100,6 +100,7 @@ const readAttendance = async (client, params = {}) => {
     const rows = []
     const pageSize = 1000
     for (let start = 0; ; start += pageSize) {
+      if (params.signal?.aborted) throw new DOMException('Attendance read aborted.', 'AbortError')
       const page = await readAttendance(client, { ...params, paginate: false, range_from: start, range_to: start + pageSize - 1 })
       rows.push(...page)
       if (page.length < pageSize) return rows
@@ -116,6 +117,7 @@ const readAttendance = async (client, params = {}) => {
   if (params.worker_id) query = query.eq('worker_id', params.worker_id)
   if (Array.isArray(params.worker_ids) && params.worker_ids.length) query = query.in('worker_id', params.worker_ids)
   if (Number.isInteger(params.range_from) && Number.isInteger(params.range_to)) query = query.range(params.range_from, params.range_to)
+  if (params.signal) query = query.abortSignal(params.signal)
   const { data, error } = await query
 
   if (error && isMissingManualSyncColumnError(error)) {
@@ -130,6 +132,7 @@ const readAttendance = async (client, params = {}) => {
     if (params.worker_id) fallbackQuery = fallbackQuery.eq('worker_id', params.worker_id)
     if (Array.isArray(params.worker_ids) && params.worker_ids.length) fallbackQuery = fallbackQuery.in('worker_id', params.worker_ids)
     if (Number.isInteger(params.range_from) && Number.isInteger(params.range_to)) fallbackQuery = fallbackQuery.range(params.range_from, params.range_to)
+    if (params.signal) fallbackQuery = fallbackQuery.abortSignal(params.signal)
     const fallback = await fallbackQuery
     if (fallback.error) throw fallback.error
     return toArray(fallback.data)
@@ -195,6 +198,22 @@ const readConfirmedBiometricMappings = async (client) => {
 export const getAttendanceRowsRequest = async (params = {}) => ({
   data: await readAttendance(getSupabaseClient(), params),
 })
+
+// A single boundary row keeps an ongoing absence streak accurate when the
+// detail page's main attendance read is limited to the selected month.
+export const getWorkerLastNonAbsentBeforeRequest = async ({ workerId, dateBefore, signal } = {}) => {
+  let query = getSupabaseClient().from('attendance')
+    .select('worker_id,attendance_date,status,check_in,check_out')
+    .eq('worker_id', workerId)
+    .lt('attendance_date', dateBefore)
+    .neq('status', 'absent')
+    .order('attendance_date', { ascending: false })
+    .limit(1)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
+  if (error) throw error
+  return { data: toArray(data)[0] || null }
+}
 
 export const getAttendanceRequest = async (params = {}) => {
   const client = getSupabaseClient()

@@ -1,5 +1,5 @@
 import { getWorkersRequest, getWorkersActivatedTodayRequest } from './workersApi'
-import { getAttendanceRowsRequest } from './attendanceApi'
+import { getAttendanceRowsRequest, getWorkerLastNonAbsentBeforeRequest } from './attendanceApi'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest, getWorkerBiometricSearchIndexRequest } from './biometricMappingApi'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
 
@@ -12,16 +12,20 @@ let cacheDate = null
 let cacheAuthKey = null
 const isFresh = (entry, ttl) => entry?.value !== undefined && Date.now() - entry.loadedAt < ttl
 const peek = (key) => cache.get(key)?.value
-const readWithTimeout = (read) => new Promise((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error('Timed out loading Worker Control Center data. Please retry.')), WORKER_CONTROL_READ_TIMEOUT_MS)
-  Promise.resolve().then(read).then(resolve, reject).finally(() => clearTimeout(timer))
+const readWithTimeout = (read, timeoutMessage) => new Promise((resolve, reject) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => {
+    controller.abort()
+    reject(new Error(timeoutMessage))
+  }, WORKER_CONTROL_READ_TIMEOUT_MS)
+  Promise.resolve().then(() => read(controller.signal)).then(resolve, reject).finally(() => clearTimeout(timer))
 })
-const cached = (key, read, ttl) => {
+const cached = (key, read, ttl, timeoutMessage = 'Timed out loading Worker Control Center data. Please retry.') => {
   const entry = cache.get(key)
   if (entry?.pending) return entry.promise
   if (isFresh(entry, ttl)) return Promise.resolve(entry.value)
   const next = { value: entry?.value, loadedAt: entry?.loadedAt || 0, pending: true, promise: null }
-  next.promise = readWithTimeout(read).then((value) => {
+  next.promise = readWithTimeout(read, timeoutMessage).then((value) => {
     next.value = value
     next.loadedAt = Date.now()
     next.pending = false
@@ -43,7 +47,7 @@ const ensureScope = (date, authKey = '') => {
   cacheAuthKey = authKey
   if (cacheDate && cacheDate !== date) {
     for (const key of cache.keys()) {
-      if (key !== 'workers' && !key.startsWith('mappings:')) cache.delete(key)
+      if (key !== 'workers' && key !== 'search-mappings' && !key.startsWith('mappings:') && !key.startsWith('attendance:worker-history:')) cache.delete(key)
     }
   }
   cacheDate = date
@@ -56,35 +60,44 @@ export const invalidateWorkerControlAttendanceCache = () => {
 
 export const loadWorkerControlSearchMappings = (authKey = '') => {
   ensureScope(cacheDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kinshasa' }), authKey)
-  return cached('search-mappings', getWorkerBiometricSearchIndexRequest, WORKER_CONTROL_CACHE_TTL.mappings)
+  return cached('search-mappings', getWorkerBiometricSearchIndexRequest, WORKER_CONTROL_CACHE_TTL.mappings,
+    'Timed out loading biometric search IDs. Please retry.')
 }
 
 export const loadWorkerControlHistoryRows = ({ workerId, dateFrom, dateTo, authKey = '' }) => {
   if (!workerId || !dateFrom || !dateTo) return Promise.reject(new Error('Worker and date range are required.'))
   ensureScope(cacheDate || dateTo, authKey)
   return cached(`attendance:worker-history:${workerId}:${dateFrom}:${dateTo}`,
-    () => getAttendanceRowsRequest({ worker_id: workerId, date_from: dateFrom, date_to: dateTo, paginate: true }),
-    WORKER_CONTROL_CACHE_TTL.attendance)
+    (signal) => getAttendanceRowsRequest({ worker_id: workerId, date_from: dateFrom, date_to: dateTo, paginate: true, signal }),
+    WORKER_CONTROL_CACHE_TTL.attendance, 'Timed out loading worker attendance history. Please retry.')
 }
 
 export const workerControlAttendanceParams = (date, category, workerId) => {
-  if (category === 'worker-detail') return { worker_id: workerId, date_to: date, paginate: true }
+  if (category === 'worker-detail') return { worker_id: workerId, date_from: workerControlPeriods(date).monthStart, date_to: date, paginate: true }
   if (category === 'weekly') return { date_from: workerControlPeriods(date).weekStart, date_to: date, paginate: true }
-  if (category === null || category === 'consecutive-absence') return { date_to: date, paginate: true }
+  if (category === 'consecutive-absence') return { date_to: date, paginate: true }
   return { date_from: workerControlPeriods(date).monthStart, date_to: date, paginate: true }
 }
 
-const attendanceFor = async (date, category, workerId) => {
+const attendanceFor = async (date, category, workerId, authKey) => {
   // These two lists come from their dedicated current-day RPCs; they do not
   // display attendance-derived counts.
-  if (category === 'inactive-punched' || category === 'activated-today') return { data: [] }
+  if (category === null || category === 'inactive-punched' || category === 'activated-today') return { data: [] }
   const params = workerControlAttendanceParams(date, category, workerId)
+  if (category === 'worker-detail') {
+    const [month, boundary] = await Promise.all([
+      loadWorkerControlHistoryRows({ workerId, dateFrom: params.date_from, dateTo: date, authKey }),
+      cached(`attendance:streak-boundary:${workerId}:${params.date_from}`,
+        (signal) => getWorkerLastNonAbsentBeforeRequest({ workerId, dateBefore: params.date_from, signal }), WORKER_CONTROL_CACHE_TTL.attendance),
+    ])
+    return { data: [...(month.data || []), ...(boundary.data ? [boundary.data] : [])] }
+  }
   const historyKey = `attendance:${date}:history`
-  const key = category === null || category === 'consecutive-absence' ? historyKey
+  const key = category === 'consecutive-absence' ? historyKey
     : `attendance:${date}:${params.date_from || 'history'}:${workerId || 'all'}`
   const target = cache.get(key)
   if (target?.pending || isFresh(target, WORKER_CONTROL_CACHE_TTL.attendance)) {
-    return cached(key, () => getAttendanceRowsRequest(params), WORKER_CONTROL_CACHE_TTL.attendance)
+    return cached(key, (signal) => getAttendanceRowsRequest({ ...params, signal }), WORKER_CONTROL_CACHE_TTL.attendance)
   }
   const history = cache.get(historyKey)
   if (key !== historyKey && (history?.pending || isFresh(history, WORKER_CONTROL_CACHE_TTL.attendance))) {
@@ -95,14 +108,19 @@ const attendanceFor = async (date, category, workerId) => {
     cache.set(key, { value: derived, loadedAt: history.loadedAt, pending: false, promise: Promise.resolve(derived) })
     return derived
   }
-  return cached(key, () => getAttendanceRowsRequest(params), WORKER_CONTROL_CACHE_TTL.attendance)
+  return cached(key, (signal) => getAttendanceRowsRequest({ ...params, signal }), WORKER_CONTROL_CACHE_TTL.attendance)
 }
 
 const attendanceSnapshot = (date, category, workerId) => {
-  if (category === 'inactive-punched' || category === 'activated-today') return { data: [] }
+  if (category === null || category === 'inactive-punched' || category === 'activated-today') return { data: [] }
   const params = workerControlAttendanceParams(date, category, workerId)
+  if (category === 'worker-detail') {
+    const month = peek(`attendance:worker-history:${workerId}:${params.date_from}:${date}`)
+    const boundary = peek(`attendance:streak-boundary:${workerId}:${params.date_from}`)
+    return month && boundary ? { data: [...(month.data || []), ...(boundary.data ? [boundary.data] : [])] } : null
+  }
   const historyKey = `attendance:${date}:history`
-  const key = category === null || category === 'consecutive-absence' ? historyKey
+  const key = category === 'consecutive-absence' ? historyKey
     : `attendance:${date}:${params.date_from || 'history'}:${workerId || 'all'}`
   const direct = peek(key)
   if (direct) return direct
@@ -128,18 +146,23 @@ export const getWorkerControlDataSnapshot = ({ date, category, workerId, authKey
   return { workers: workers.data || [], attendance: attendance.data || [], events: events?.data || [], activated: activated?.data || [], mappings: mappings?.data || [] }
 }
 
-export const loadWorkerControlData = async ({ date, category, workerId, authKey = '', onCore, onOptionalError }) => {
+export const loadWorkerControlData = async ({ date, category, workerId, authKey = '', onRoster, onCore, onOptionalError }) => {
   ensureScope(date, authKey)
   const needsEvents = category === null || category === 'inactive-punched' || category === 'worker-detail'
   const needsActivated = category === null || category === 'activated-today' || category === 'worker-detail'
-  const eventRead = needsEvents ? cached(`inactive-events:${date}`, () => getInactiveWorkerBiometricActivityRequest({ attendanceDate: date }), WORKER_CONTROL_CACHE_TTL.activity) : Promise.resolve({ data: [] })
-  const activationRead = needsActivated ? cached(`activated:${date}`, getWorkersActivatedTodayRequest, WORKER_CONTROL_CACHE_TTL.activity) : Promise.resolve({ data: [] })
-  const mappingRead = category === 'worker-detail' ? cached(`mappings:${workerId}`, () => getBiometricMappingsRequest({ workerId }), WORKER_CONTROL_CACHE_TTL.mappings) : Promise.resolve({ data: [] })
+  const eventRead = needsEvents ? cached(`inactive-events:${date}`, () => getInactiveWorkerBiometricActivityRequest({ attendanceDate: date }), WORKER_CONTROL_CACHE_TTL.activity,
+    'Timed out loading inactive-worker biometric activity. Please retry.') : Promise.resolve({ data: [] })
+  const activationRead = needsActivated ? cached(`activated:${date}`, getWorkersActivatedTodayRequest, WORKER_CONTROL_CACHE_TTL.activity,
+    'Timed out loading worker activation activity. Please retry.') : Promise.resolve({ data: [] })
+  const mappingRead = category === 'worker-detail' ? cached(`mappings:${workerId}`, () => getBiometricMappingsRequest({ workerId }), WORKER_CONTROL_CACHE_TTL.mappings,
+    'Timed out loading worker biometric mappings. Please retry.') : Promise.resolve({ data: [] })
   // Attach handlers immediately: optional reads may reject before core reads finish.
   const optional = Promise.allSettled([eventRead, activationRead, mappingRead])
+  const rosterRead = cached('workers', () => getWorkersRequest({ includePayrollProfiles: false }), WORKER_CONTROL_CACHE_TTL.roster)
+  if (category === 'worker-detail') rosterRead.then((response) => onRoster?.(response.data || []), () => {})
   const [workers, attendance, requiredEvents, requiredActivated] = await Promise.all([
-    cached('workers', () => getWorkersRequest({ includePayrollProfiles: false }), WORKER_CONTROL_CACHE_TTL.roster),
-    attendanceFor(date, category, workerId),
+    rosterRead,
+    attendanceFor(date, category, workerId, authKey),
     category === 'inactive-punched' ? eventRead : Promise.resolve(null),
     category === 'activated-today' ? activationRead : Promise.resolve(null),
   ])

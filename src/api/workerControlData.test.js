@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getWorkersRequest, getWorkersActivatedTodayRequest } from './workersApi'
-import { getAttendanceRowsRequest } from './attendanceApi'
+import { getAttendanceRowsRequest, getWorkerLastNonAbsentBeforeRequest } from './attendanceApi'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest, getWorkerBiometricSearchIndexRequest } from './biometricMappingApi'
 import { clearWorkerControlDataCache, getWorkerControlDataSnapshot, invalidateWorkerControlAttendanceCache, loadWorkerControlData, loadWorkerControlHistoryRows, loadWorkerControlSearchMappings, workerControlAttendanceParams, WORKER_CONTROL_CACHE_TTL, WORKER_CONTROL_READ_TIMEOUT_MS } from './workerControlData'
 
@@ -14,6 +14,7 @@ vi.mock('./attendanceApi', () => ({
     { worker_id: 'two', attendance_date: '2026-09-28', status: 'absent' },
     { worker_id: 'one', attendance_date: '2026-09-29', status: 'half_day' },
   ] })),
+  getWorkerLastNonAbsentBeforeRequest: vi.fn(async () => ({ data: null })),
 }))
 vi.mock('./biometricMappingApi', () => ({
   getBiometricMappingsRequest: vi.fn(async () => ({ data: [] })),
@@ -30,7 +31,7 @@ describe('Worker Control Center bulk data loading', () => {
     await loadWorkerControlHistoryRows({ workerId: 'one', dateFrom: '2026-08-01', dateTo: date })
     await loadWorkerControlHistoryRows({ workerId: 'one', dateFrom: '2026-08-01', dateTo: date })
     expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
-    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ worker_id: 'one', date_from: '2026-08-01', date_to: date, paginate: true })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith(expect.objectContaining({ worker_id: 'one', date_from: '2026-08-01', date_to: date, paginate: true, signal: expect.any(AbortSignal) }))
   })
 
   it('reads a cached confirmed-mapping search index only on demand', async () => {
@@ -41,7 +42,7 @@ describe('Worker Control Center bulk data loading', () => {
   it('bounds the weekly read to Monday and reads no unused RPC or mappings', async () => {
     const data = await loadWorkerControlData({ date, category: 'weekly' })
     expect(workerControlAttendanceParams(date, 'weekly')).toEqual({ date_from: '2026-09-28', date_to: date, paginate: true })
-    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ date_from: '2026-09-28', date_to: date, paginate: true })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith(expect.objectContaining({ date_from: '2026-09-28', date_to: date, paginate: true, signal: expect.any(AbortSignal) }))
     expect(getWorkersRequest).toHaveBeenCalledTimes(1)
     expect(getWorkersRequest).toHaveBeenCalledWith({ includePayrollProfiles: false })
     expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
@@ -51,8 +52,9 @@ describe('Worker Control Center bulk data loading', () => {
     expect(data.workers).toHaveLength(1)
   })
 
-  it('shares full history between hub, consecutive and weekly navigation without another attendance read', async () => {
+  it('keeps hub history-free and shares the consecutive history with later category navigation', async () => {
     await loadWorkerControlData({ date, category: null })
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
     const consecutive = await loadWorkerControlData({ date, category: 'consecutive-absence' })
     const weekly = await loadWorkerControlData({ date, category: 'weekly' })
     expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
@@ -65,10 +67,13 @@ describe('Worker Control Center bulk data loading', () => {
   })
 
   it('loads only the selected worker mappings and attendance on a direct detail visit', async () => {
-    await loadWorkerControlData({ date, category: 'worker-detail', workerId: 'one' })
-    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ worker_id: 'one', date_to: date, paginate: true })
+    getWorkerLastNonAbsentBeforeRequest.mockResolvedValueOnce({ data: { worker_id: 'one', attendance_date: '2026-08-30', status: 'present' } })
+    const detail = await loadWorkerControlData({ date, category: 'worker-detail', workerId: 'one' })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith(expect.objectContaining({ worker_id: 'one', date_from: '2026-09-01', date_to: date, paginate: true }))
+    expect(getWorkerLastNonAbsentBeforeRequest).toHaveBeenCalledWith(expect.objectContaining({ workerId: 'one', dateBefore: '2026-09-01' }))
     expect(getBiometricMappingsRequest).toHaveBeenCalledWith({ workerId: 'one' })
     expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
+    expect(detail.attendance).toContainEqual({ worker_id: 'one', attendance_date: '2026-08-30', status: 'present' })
   })
 
   it('does not read attendance for activity-only and activation-only lists', async () => {
@@ -105,13 +110,13 @@ describe('Worker Control Center bulk data loading', () => {
     await loadWorkerControlData({ date, category: 'worker-detail', workerId: 'one' })
     await loadWorkerControlData({ date, category: 'weekly' })
     expect(getWorkersRequest).toHaveBeenCalledTimes(1)
-    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(3)
     expect(getBiometricMappingsRequest).toHaveBeenCalledTimes(1)
     expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })).not.toBeNull()
-    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })?.attendance).toHaveLength(2)
+    expect(getWorkerControlDataSnapshot({ date, category: 'weekly' })?.attendance).toHaveLength(3)
   })
 
-  it('measures warm navigation at 45 seconds: no shared reads until detail mappings', async () => {
+  it('keeps the shared roster warm while each category reads only its own date scope', async () => {
     let now = 1_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
     await loadWorkerControlData({ date, category: null })
@@ -119,17 +124,17 @@ describe('Worker Control Center bulk data loading', () => {
     now += 45_000
     await loadWorkerControlData({ date, category: 'weekly' })
     expect(getWorkersRequest).not.toHaveBeenCalled()
-    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
     await loadWorkerControlData({ date, category: 'monthly' })
-    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
     await loadWorkerControlData({ date, category: 'weekly' })
-    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
     await loadWorkerControlData({ date, category: 'worker-detail', workerId: 'one' })
     expect(getBiometricMappingsRequest).toHaveBeenCalledTimes(1)
-    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(3)
     await loadWorkerControlData({ date, category: 'weekly' })
     expect(getWorkersRequest).not.toHaveBeenCalled()
-    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(3)
   })
 
   it('keeps a stale snapshot visible while attendance revalidates after its shorter TTL', async () => {
@@ -217,6 +222,21 @@ describe('Worker Control Center bulk data loading', () => {
     const recovered = await loadWorkerControlData({ date, category: 'weekly' })
     expect(recovered.attendance).toHaveLength(3)
     expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('aborts a timed-out one-worker history read without poisoning the warm hub cache', async () => {
+    vi.useFakeTimers()
+    await loadWorkerControlData({ date, category: null })
+    getAttendanceRowsRequest.mockImplementationOnce(() => new Promise(() => {}))
+    const first = loadWorkerControlHistoryRows({ workerId: 'one', dateFrom: '2026-08-01', dateTo: date })
+    const failure = expect(first).rejects.toThrow('Timed out loading worker attendance history')
+    await vi.advanceTimersByTimeAsync(WORKER_CONTROL_READ_TIMEOUT_MS)
+    await failure
+    expect(getAttendanceRowsRequest.mock.calls[0][0].signal.aborted).toBe(true)
+    expect(getWorkerControlDataSnapshot({ date, category: null })?.workers).toHaveLength(1)
+    await loadWorkerControlHistoryRows({ workerId: 'one', dateFrom: '2026-08-01', dateTo: date })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2)
+    expect(getWorkersRequest).toHaveBeenCalledTimes(1)
   })
 
   it('does not keep a failed stale refresh pending in the cache', async () => {

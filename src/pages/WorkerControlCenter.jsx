@@ -37,6 +37,7 @@ export default function WorkerControlCenter({ category = null }) {
   const authKey = useAuthStore((current) => current.user?.id || current.admin?.id || '')
   const [date, setDate] = useState(today())
   const [state, setState] = useState(() => getWorkerControlDataSnapshot({ date: today(), category, workerId, authKey }) || { workers: [], attendance: [], events: [], activated: [], mappings: [] })
+  const [basicWorker, setBasicWorker] = useState(null)
   const [reactivating, setReactivating] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -70,6 +71,7 @@ export default function WorkerControlCenter({ category = null }) {
     }
     setLoadError('')
     loadWorkerControlData({ date, category, workerId, authKey,
+      onRoster: (workers) => { if (current) setBasicWorker(workers.find((worker) => String(worker.id) === workerId) || null) },
       onCore: (data) => { if (current) { setState(data); setHasData(true); setLoading(false) } },
       onOptionalError: (error) => { if (current) setLoadError(error?.message || 'تعذر تحميل بعض بيانات المتابعة.') },
     }).then((data) => {
@@ -88,7 +90,11 @@ export default function WorkerControlCenter({ category = null }) {
   }, [category, hasWorkerSearch, authKey])
 
   const period = workerControlPeriods(date)
-  const pages = useMemo(() => buildWorkerControlPages({ ...state, today: date, weekStart: period.weekStart, monthStart: period.monthStart }), [state, date, period.weekStart, period.monthStart])
+  const pages = useMemo(() => category === null ? { rows: { teams: [] }, details: new Map() }
+    : buildWorkerControlPages({ ...state,
+      workers: category === 'worker-detail' ? state.workers.filter((worker) => String(worker.id) === workerId) : state.workers,
+      today: date, weekStart: period.weekStart, monthStart: period.monthStart,
+    }), [category, state, workerId, date, period.weekStart, period.monthStart])
   const selectedWorker = category === 'worker-detail' ? state.workers.find((worker) => String(worker.id) === workerId)
     || pages.rows['activated-today'].find((row) => String(row.worker.id) === workerId)?.worker : null
   const selectedDetail = selectedWorker && (pages.details.get(String(selectedWorker.id)) || buildWorkerControlDetail({ ...state, worker: selectedWorker, today: date, weekStart: period.weekStart, monthStart: period.monthStart }))
@@ -129,7 +135,7 @@ export default function WorkerControlCenter({ category = null }) {
 
   const config = workerControlCategories.find((item) => item.key === category)
   const team = pages.rows.teams.find((item) => String(item.id) === String(teamId))
-  const monthlyRows = [...pages.rows.monthly].filter((row) => {
+  const monthlyRows = [...(pages.rows.monthly || [])].filter((row) => {
     const query = search.trim().toLocaleLowerCase()
     return row.detail.monthCounts.absent >= minimumAbsences
       && (!teamFilter || String(row.worker.team_id) === teamFilter)
@@ -153,7 +159,7 @@ export default function WorkerControlCenter({ category = null }) {
   if (category === 'team-detail') columns = [workerName, workerCode, { label: 'حالة اليوم', render: (row) => dayStatus(pages.details.get(String(row.worker.id))?.today) }, { label: 'غياب الشهر', render: (row) => pages.details.get(String(row.worker.id))?.monthCounts.absent ?? 0 }, details]
   const displayedRows = category === 'team-detail' ? (team?.workers || []).map((worker) => ({ worker })) : rows
 
-  if (category === 'worker-detail') return <WorkerControlWorkerPage detail={selectedDetail} currentStreak={pages.rows['consecutive-absence'].find((row) => String(row.worker.id) === workerId)} loading={loading} loadError={loadError} backTo={location.state?.from?.startsWith(`${base}/`) && !location.state.from.startsWith(`${base}/worker/`) ? location.state.from : base} focusActions={location.state?.focusActions === true} onReactivate={reactivate} reactivating={reactivating} onRecovered={refreshAttendance} actionError={actionError} />
+  if (category === 'worker-detail') return <WorkerControlWorkerPage detail={hasData ? selectedDetail : null} basicWorker={basicWorker || selectedWorker} currentStreak={pages.rows['consecutive-absence'].find((row) => String(row.worker.id) === workerId)} loading={loading} loadError={loadError} backTo={location.state?.from?.startsWith(`${base}/`) && !location.state.from.startsWith(`${base}/worker/`) ? location.state.from : base} focusActions={location.state?.focusActions === true} onReactivate={reactivate} reactivating={reactivating} onRecovered={refreshAttendance} actionError={actionError} />
 
   return <section className="w-full pb-12" dir="rtl">
     <button type="button" className="btn-secondary mb-5 px-3 py-1" aria-label="تحديث بيانات المتابعة" disabled={refreshing} onClick={refreshAll}>{refreshing ? 'جارٍ التحديث...' : 'تحديث'}</button>
@@ -166,7 +172,7 @@ export default function WorkerControlCenter({ category = null }) {
       <div className="mb-7"><h2 className="text-3xl font-extrabold">مركز مراقبة العمال</h2><p className="mt-2 text-base text-(--muted)">ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.</p></div>
       {loadError ? <p className="alert alert--error mb-5">{loadError}</p> : null}
       <div className="mb-7 rounded-xl border border-(--border) bg-white p-5"><label htmlFor="worker-control-search" className="mb-2 block font-bold">بحث عن عامل</label><input id="worker-control-search" type="search" className="input-base w-full max-w-xl" value={workerSearch} onChange={(event) => setWorkerSearch(event.target.value)} placeholder="بحث عن عامل أو رقم البصمة" />{workerSearch.trim() ? <div className="mt-4"><p className="mb-3 text-sm text-(--muted)">{workerSearchRows.length} عامل</p>{searchError ? <p className="alert alert--error mb-3">{searchError}</p> : null}{workerSearchRows.length ? <ul className="max-h-80 space-y-2 overflow-y-auto">{workerSearchRows.map(({ worker, biometricIds }) => <li key={worker.id}><Link to={workerLink(worker).pathname} state={workerLink(worker).state} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-(--border) px-4 py-3 hover:border-(--primary) hover:bg-(--surface-subtle)"><b>{worker.full_name}</b><span>{worker.employee_code || '—'}</span><span>{worker.team?.name || worker.team_name || '—'}</span><span dir="ltr">{biometricIds.join(' · ') || '—'}</span><span className="text-sm text-(--muted)">{worker.is_active ? 'نشط' : 'غير نشط'}</span></Link></li>)}</ul> : <p className="text-(--muted)">لا يوجد عمال مطابقون.</p>}</div> : null}</div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-worker-control-hub>{workerControlCategories.map((item) => <Link key={item.key} to={item.path} className="surface-card flex min-h-36 flex-col justify-between p-5 transition hover:border-(--primary) hover:shadow-md"><div><h3 className="text-lg font-extrabold">{item.title}</h3><p className="mt-2 text-sm text-(--muted)">{item.description}</p></div><div className="mt-5 flex items-end justify-between"><b className="text-3xl">{loading ? '—' : pages.rows[item.key]?.length || 0}</b><span className="font-bold text-(--primary)">فتح ←</span></div></Link>)}</div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-worker-control-hub>{workerControlCategories.map((item) => <Link key={item.key} to={item.path} className="surface-card flex min-h-36 flex-col justify-between p-5 transition hover:border-(--primary) hover:shadow-md"><div><h3 className="text-lg font-extrabold">{item.title}</h3><p className="mt-2 text-sm text-(--muted)">{item.description}</p></div><div className="mt-5 flex items-end justify-end"><span className="font-bold text-(--primary)">فتح ←</span></div></Link>)}</div>
     </>}
     {actionError ? <p className="alert alert--error mt-5">{actionError}</p> : null}
     {visibleAbsenceDays && category === 'consecutive-absence' ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setVisibleAbsenceDays(null)}><div role="dialog" aria-modal="true" aria-label="أيام الغياب المتتالي" className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold">أيام الغياب المتتالي</h3><p className="mt-1 text-(--muted)">{visibleAbsenceDays.worker?.full_name}</p></div><button type="button" className="btn-secondary px-3 py-1" onClick={() => setVisibleAbsenceDays(null)}>إغلاق</button></div><ul className="mt-4 max-h-72 overflow-y-auto space-y-2">{[...visibleAbsenceDays.currentDates].reverse().map((day) => <li key={day} className="border-b border-(--border) py-1" dir="ltr">{dateText(day)}</li>)}</ul></div></div> : null}

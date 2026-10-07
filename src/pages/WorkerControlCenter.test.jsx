@@ -7,6 +7,7 @@ import WorkerControlCenter from './WorkerControlCenter'
 import { getAttendanceRowsRequest } from '../api/attendanceApi'
 import { clearWorkerControlDataCache } from '../api/workerControlData'
 import { workerControlPeriods } from '../utils/workerControlPeriods'
+import { workerHistoryRange } from '../utils/workerControlHistory'
 import { getWorkersRequest, reactivateWorkerRequest } from '../api/workersApi'
 import { getBiometricMappingsRequest, getInactiveWorkerBiometricActivityRequest, getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 
@@ -32,6 +33,7 @@ vi.mock('../api/attendanceApi', () => ({
     { worker_id: 'absent', attendance_date: prior, status: 'absent' },
     { worker_id: 'activated', attendance_date: day, status: 'present', check_in: '07:30:00' },
   ] })),
+  getWorkerLastNonAbsentBeforeRequest: vi.fn(async () => ({ data: null })),
 }))
 vi.mock('../api/biometricMappingApi', () => ({
   getBiometricMappingsRequest: vi.fn(async () => ({ data: [] })),
@@ -73,6 +75,7 @@ describe('Worker Control Center information architecture', () => {
   })
 
   it('finds a worker by name or confirmed biometric ID and opens the worker page', async () => {
+    getAttendanceRowsRequest.mockClear()
     open()
     await screen.findByText('ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.')
     fireEvent.change(screen.getByPlaceholderText('بحث عن عامل أو رقم البصمة'), { target: { value: 'Absent' } })
@@ -80,6 +83,7 @@ describe('Worker Control Center information architecture', () => {
     fireEvent.change(screen.getByPlaceholderText('بحث عن عامل أو رقم البصمة'), { target: { value: '021' } })
     expect(await screen.findByRole('link', { name: /Absent Worker/ })).toBeTruthy()
     expect(getWorkerBiometricSearchIndexRequest).toHaveBeenCalledTimes(1)
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('link', { name: /Absent Worker/ }))
     expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
     expect(screen.getByRole('link', { name: '← العودة' }).getAttribute('href')).toBe('/worker-control-center')
@@ -89,10 +93,11 @@ describe('Worker Control Center information architecture', () => {
     getWorkersRequest.mockClear()
     getAttendanceRowsRequest.mockClear()
     open()
-    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1))
+    await screen.findByText('ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.')
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('link', { name: /المراقبة الأسبوعية/ }))
-    expect(screen.queryByText('جارٍ تحميل بيانات المتابعة...')).toBeNull()
     await screen.findByRole('heading', { name: 'المراقبة الأسبوعية', level: 2 })
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1))
     expect(getWorkersRequest).toHaveBeenCalledTimes(1)
     expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('link', { name: /العودة إلى مركز مراقبة العمال/ }))
@@ -105,10 +110,10 @@ describe('Worker Control Center information architecture', () => {
     getWorkersRequest.mockClear()
     getAttendanceRowsRequest.mockClear()
     open()
-    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1))
+    await screen.findByText('ملخص تشغيلي سريع. افتح فئة لعرض بياناتها وتفاصيل العمال.')
     fireEvent.click(screen.getByRole('button', { name: 'تحديث بيانات المتابعة' }))
-    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2))
-    expect(getWorkersRequest).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(getWorkersRequest).toHaveBeenCalledTimes(2))
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
   })
 
   it('removes cold loading after a read fails and allows a successful retry', async () => {
@@ -122,11 +127,12 @@ describe('Worker Control Center information architecture', () => {
   })
 
   it('renders the hub when an optional activity request is still pending', async () => {
+    getAttendanceRowsRequest.mockClear()
     let release
     getInactiveWorkerBiometricActivityRequest.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
     open()
-    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalled())
-    await waitFor(() => expect(screen.getByRole('link', { name: /الغائبون اليوم/ }).textContent).not.toContain('—'))
+    await screen.findByRole('link', { name: /الغائبون اليوم/ })
+    expect(getAttendanceRowsRequest).not.toHaveBeenCalled()
     expect(screen.queryByText('جارٍ تحميل بيانات المتابعة...')).toBeNull()
     release({ data: [] })
   })
@@ -156,6 +162,17 @@ describe('Worker Control Center information architecture', () => {
     release({ data: [] })
   })
 
+  it('shows a worker identity while that worker\'s bounded attendance read is pending', async () => {
+    getAttendanceRowsRequest.mockClear()
+    let release
+    getAttendanceRowsRequest.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    open('/worker-control-center/worker/absent')
+    expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
+    expect(screen.queryByText('Temporary read failure')).toBeNull()
+    expect(getAttendanceRowsRequest.mock.calls[0][0]).toMatchObject({ worker_id: 'absent', date_from: workerControlPeriods(day).monthStart, date_to: day })
+    release({ data: [] })
+  })
+
   it('filters one-worker history without changing canonical attendance rows', async () => {
     open('/worker-control-center/worker/absent')
     const history = await screen.findByTestId('worker-attendance-history')
@@ -169,6 +186,18 @@ describe('Worker Control Center information architecture', () => {
     fireEvent.click(screen.getByRole('button', { name: 'فترة مخصصة' }))
     expect(screen.getByLabelText('من')).toBeTruthy()
     expect(screen.getByLabelText('إلى')).toBeTruthy()
+  })
+
+  it('requests only the selected worker and the newly selected two-month range', async () => {
+    getAttendanceRowsRequest.mockClear()
+    open('/worker-control-center/worker/absent')
+    await screen.findByTestId('worker-attendance-history')
+    fireEvent.click(screen.getByRole('button', { name: 'آخر شهرين' }))
+    const selected = workerHistoryRange('last-two-months', day)
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledWith(expect.objectContaining({
+      worker_id: 'absent', date_from: selected.dateFrom, date_to: selected.dateTo, paginate: true,
+    })))
+    expect(getAttendanceRowsRequest.mock.calls.every(([params]) => params.worker_id === 'absent' && params.date_from)).toBe(true)
   })
 
   it.each([
@@ -242,9 +271,9 @@ describe('Worker Control Center information architecture', () => {
     getAttendanceRowsRequest.mockClear()
     open('/worker-control-center/worker/absent')
     expect(await screen.findByRole('heading', { name: 'Absent Worker', level: 2 })).toBeTruthy()
-    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: 'استرجاع حضور الأسبوع' }))
-    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(getAttendanceRowsRequest).toHaveBeenCalledTimes(2))
   })
 
   it('keeps the existing inactive-worker activation action on the worker page', async () => {
@@ -282,19 +311,19 @@ describe('Worker Control Center information architecture', () => {
     getAttendanceRowsRequest.mockClear()
     const weekly = open('/worker-control-center/weekly')
     expect(await screen.findByText(/هذا الأسبوع:/)).toHaveProperty('textContent', `هذا الأسبوع: ${fullDate(period.weekStart)} → ${fullDate(period.weekEnd)}`)
-    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ date_from: period.weekStart, date_to: day, paginate: true })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith(expect.objectContaining({ date_from: period.weekStart, date_to: day, paginate: true }))
     weekly.unmount()
 
     getAttendanceRowsRequest.mockClear()
     const monthly = open('/worker-control-center/monthly')
     expect(await screen.findByText(/هذا الشهر:/)).toHaveProperty('textContent', `هذا الشهر: ${fullDate(period.monthStart)} → ${fullDate(day)}`)
-    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ date_from: period.monthStart, date_to: day, paginate: true })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith(expect.objectContaining({ date_from: period.monthStart, date_to: day, paginate: true }))
     monthly.unmount()
 
     getAttendanceRowsRequest.mockClear()
     open('/worker-control-center/consecutive-absence')
     await screen.findByText('Absent Worker')
-    expect(getAttendanceRowsRequest).toHaveBeenCalledWith({ date_to: day, paginate: true })
+    expect(getAttendanceRowsRequest).toHaveBeenCalledWith(expect.objectContaining({ date_to: day, paginate: true }))
   })
 
   it('monthly page has only monthly workers and its search/absence filters', async () => {
