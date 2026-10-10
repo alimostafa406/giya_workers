@@ -227,7 +227,25 @@ function Teams() {
     {
       key: 'name',
       header: t('teams.name'),
-      render: (row) => row.name,
+      render: (row) => (
+        <div className="min-w-72 space-y-2 whitespace-normal">
+          <div className="font-extrabold">{row.name}</div>
+          <div className="flex flex-wrap gap-2" aria-label={`${t('common.actions')}: ${row.name}`}>
+            <button type="button" onClick={() => handlePrintTeam(row)} disabled={loading || !printReady} className="btn-secondary px-3 py-1">
+              {t('teams.printWorkers')}
+            </button>
+            <button type="button" onClick={() => openDetails(row)} className="btn-secondary px-3 py-1">
+              {t('teams.viewMembers')}
+            </button>
+            <button type="button" onClick={() => openEdit(row)} className="btn-secondary px-3 py-1">
+              {t('common.edit')}
+            </button>
+            <button type="button" onClick={() => handleToggleActive(row)} className="btn-secondary px-3 py-1">
+              {getTeamIsActive(row) ? t('common.disable') : t('common.enable')}
+            </button>
+          </div>
+        </div>
+      ),
     },
     {
       key: 'supervisor_name',
@@ -243,38 +261,6 @@ function Teams() {
       key: 'status',
       header: t('common.status'),
       render: (row) => (getTeamIsActive(row) ? t('common.active') : t('common.inactive')),
-    },
-    {
-      key: 'actions',
-      header: t('common.actions'),
-      render: (row) => (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => openDetails(row)}
-            className="btn-secondary px-3 py-1"
-          >
-            {t('teams.viewMembers')}
-          </button>
-          <button type="button" onClick={() => handlePrintTeam(row)} disabled={loading || !printReady} className="btn-secondary px-3 py-1">
-            {t('teams.printWorkers')}
-          </button>
-          <button
-            type="button"
-            onClick={() => openEdit(row)}
-            className="btn-secondary px-3 py-1"
-          >
-            {t('common.edit')}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleToggleActive(row)}
-            className="btn-secondary px-3 py-1"
-          >
-            {getTeamIsActive(row) ? t('common.disable') : t('common.enable')}
-          </button>
-        </div>
-      ),
     },
   ]
 
