@@ -32,22 +32,26 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
-describe('Teams worker-list print actions', () => {
-  it('shows one localized print button per team and prints only the chosen team', async () => {
+describe('Teams all-team worker-list print action', () => {
+  it('shows one page-level button and prints every team even when the visible table is filtered', async () => {
     const printDocument = { write: vi.fn(), close: vi.fn() }
     const printWindow = { document: printDocument, focus: vi.fn(), print: vi.fn() }
     vi.spyOn(window, 'open').mockReturnValue(printWindow)
     render(<LanguageProvider><Teams /></LanguageProvider>)
-    const buttons = await screen.findAllByRole('button', { name: 'Print Team Workers' })
-    expect(buttons).toHaveLength(2)
-    await waitFor(() => expect(buttons[0].disabled).toBe(false))
-    fireEvent.click(buttons[0])
+    const button = await screen.findByRole('button', { name: 'Print All Teams' })
+    expect(screen.queryByRole('button', { name: 'Print Team Workers' })).toBeNull()
+    expect(button.closest('tr')).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText('Search by team or supervisor name'), { target: { value: 'Zarour' } })
+    await waitFor(() => expect(button.disabled).toBe(false))
+    fireEvent.click(button)
     const html = printDocument.write.mock.calls[0][0]
-    expect(html).toContain('<h1>Zarour</h1>')
+    expect(html).toContain('<h2>Zarour</h2>')
+    expect(html).toContain('<h2>Peinture Raghibe</h2>')
+    expect(html).toContain('Total teams: 2 · Total workers: 3')
     expect(html).toContain('JEREMIE')
     expect(html).toContain('ROBERT')
+    expect(html).toContain('MATAMATA')
     expect(html).toContain('>204</td>')
-    expect(html).not.toContain('MATAMATA')
     expect(printWindow.print).toHaveBeenCalledOnce()
   })
 
@@ -55,9 +59,9 @@ describe('Teams worker-list print actions', () => {
     mocks.workers.mockRejectedValueOnce(new Error('Unavailable'))
     const open = vi.spyOn(window, 'open')
     render(<LanguageProvider><Teams /></LanguageProvider>)
-    const buttons = await screen.findAllByRole('button', { name: 'Print Team Workers' })
+    const button = await screen.findByRole('button', { name: 'Print All Teams' })
     await screen.findByText('The worker list or biometric IDs could not be loaded for printing.')
-    expect(buttons.every((button) => button.disabled)).toBe(true)
+    expect(button.disabled).toBe(true)
     expect(open).not.toHaveBeenCalled()
   })
 })

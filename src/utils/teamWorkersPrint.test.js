@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { translations } from '../i18n/translations.js'
-import { buildTeamWorkersPrintHtml, printTeamWorkers, teamWorkersForPrint } from './teamWorkersPrint.js'
+import { buildAllTeamWorkersPrintHtml, printAllTeamWorkers, teamWorkersForPrint } from './teamWorkersPrint.js'
 
 const team = { id: 'zarour', name: 'Zarour' }
 const workers = [
@@ -16,17 +16,17 @@ const mappings = [
   { worker_id: 'other', device_employee_no: '55550008', is_active: true, mapping_review_state: 'confirmed' },
 ]
 const labels = {
-  companyTitle: 'Giya Workers', printWorkers: 'Print Team Workers', workerCount: 'Worker count',
+  printAllTitle: 'Workers by Team', totalTeams: 'Total teams', totalWorkers: 'Total workers', workerCount: 'Worker count',
   number: '#', worker: 'Worker name', employeeCode: 'Employee code', biometricId: 'Biometric ID',
   status: 'Status', active: 'Active', inactive: 'Inactive', noMembers: 'No workers',
 }
-const options = { team, workers, mappings, labels, language: 'en', direction: 'ltr' }
+const options = { teams: [team, { id: 'paint', name: 'Peinture Raghibe' }], workers, mappings, labels, language: 'en', direction: 'ltr' }
 
 describe('team worker-list printing', () => {
   it('includes only the selected team, including inactive workers, with confirmed active biometric IDs', () => {
     const beforeWorkers = structuredClone(workers)
     const beforeMappings = structuredClone(mappings)
-    expect(teamWorkersForPrint(options)).toEqual([
+    expect(teamWorkersForPrint({ ...options, team })).toEqual([
       { id: 'one', name: 'JEREMIE', employeeCode: '1', biometricIds: ['204'], isActive: true },
       { id: 'two', name: 'ROBERT', employeeCode: '79', biometricIds: ['79'], isActive: false },
     ])
@@ -34,26 +34,34 @@ describe('team worker-list printing', () => {
     expect(mappings).toEqual(beforeMappings)
   })
 
-  it('prints the team title, exact count and worker-only columns on A4 portrait', () => {
-    const html = buildTeamWorkersPrintHtml(options)
-    expect(html).toContain('<h1>Zarour</h1>')
-    expect(html).toContain('Worker count: 2')
-    expect(html).toContain('<th>#</th><th>Worker name</th><th>Employee code</th><th>Biometric ID</th><th>Status</th>')
-    expect(html).toContain('JEREMIE')
-    expect(html).toContain('ROBERT')
+  it('prints every team in page order with exact team/overall counts and worker-only columns', () => {
+    const html = buildAllTeamWorkersPrintHtml(options)
+    expect(html).toContain('<h1>Workers by Team</h1>')
+    expect(html).toContain('Total teams: 2 · Total workers: 3')
+    expect(html).toContain('<h2>Zarour</h2><p>Worker count: 2</p>')
+    expect(html).toContain('<h2>Peinture Raghibe</h2><p>Worker count: 1</p>')
+    expect(html.indexOf('<h2>Zarour</h2>')).toBeLessThan(html.indexOf('<h2>Peinture Raghibe</h2>'))
+    expect(html.match(/<th>#<\/th><th>Worker name<\/th><th>Employee code<\/th><th>Biometric ID<\/th><th>Status<\/th>/g)).toHaveLength(2)
+    const sections = html.match(/<section class="team-section">[\s\S]*?<\/section>/g)
+    expect(sections).toHaveLength(2)
+    expect(sections[0]).toContain('JEREMIE')
+    expect(sections[0]).toContain('ROBERT')
+    expect(sections[0]).not.toContain('MATAMATA')
+    expect(sections[1]).toContain('MATAMATA')
+    expect(sections[1]).not.toContain('JEREMIE')
+    expect(html.match(/<td>JEREMIE<\/td>/g)).toHaveLength(1)
     expect(html).toContain('>204</td>')
-    expect(html).toContain('>79</td>')
+    expect(html).toContain('>55550008</td>')
     expect(html).toContain('>Inactive</td>')
-    expect(html).not.toContain('MATAMATA')
-    expect(html).not.toContain('55550008')
     expect(html).not.toMatch(/payroll|wage|salary|overtime|attendance|transport|10000/i)
     expect(html).toMatch(/@page\{size:A4 portrait/)
+    expect(html).toMatch(/\.team-section \+ \.team-section\{break-before:page;page-break-before:always\}/)
     expect(html).toMatch(/thead\{display:table-header-group\}/)
     expect(html).toMatch(/tr\{break-inside:avoid/)
   })
 
   it('escapes worker-controlled names and shows a dash for missing biometric mapping', () => {
-    const html = buildTeamWorkersPrintHtml({ ...options, workers: [{ ...workers[0], full_name: '<script>alert(1)</script>' }], mappings: [] })
+    const html = buildAllTeamWorkersPrintHtml({ ...options, workers: [{ ...workers[0], full_name: '<script>alert(1)</script>' }], mappings: [] })
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).not.toContain('<script>')
     expect(html).toContain('>—</td>')
@@ -65,7 +73,7 @@ describe('team worker-list printing', () => {
     const originalWindow = globalThis.window
     globalThis.window = { open: vi.fn(() => printWindow) }
     try {
-      expect(printTeamWorkers(options)).toBe(true)
+      expect(printAllTeamWorkers(options)).toBe(true)
       expect(globalThis.window.open).toHaveBeenCalledOnce()
       expect(printDocument.write).toHaveBeenCalledOnce()
       expect(printWindow.print).toHaveBeenCalledOnce()
@@ -75,9 +83,10 @@ describe('team worker-list printing', () => {
   })
 
   it('localizes the team print button in all supported languages', () => {
-    expect(translations.ar.teams.printWorkers).toBe('طباعة عمال الفريق')
-    expect(translations.en.teams.printWorkers).toBe('Print Team Workers')
-    expect(translations.fr.teams.printWorkers).toBe('Imprimer les travailleurs de l’équipe')
+    expect(translations.ar.teams.printAllTeams).toBe('طباعة كل الفرق')
+    expect(translations.en.teams.printAllTeams).toBe('Print All Teams')
+    expect(translations.fr.teams.printAllTeams).toBe('Imprimer toutes les équipes')
+    expect(translations.ar.teams.printAllTitle).toBe('قائمة العمال حسب الفرق')
     expect(translations.en.teams.printBiometricId).toBe('Biometric ID')
   })
 })

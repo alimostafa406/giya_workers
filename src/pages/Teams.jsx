@@ -18,7 +18,7 @@ import {
   biometricCoverageLabel,
   buildBiometricCoverageByWorker,
 } from '../utils/biometricMappingCoverage'
-import { printTeamWorkers } from '../utils/teamWorkersPrint'
+import { printAllTeamWorkers } from '../utils/teamWorkersPrint'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -208,13 +208,14 @@ function Teams() {
     }
   }
 
-  const handlePrintTeam = (team) => {
+  const handlePrintAllTeams = () => {
     if (!printReady) return
-    const printed = printTeamWorkers({
-      team, workers: allWorkers, mappings: biometricMappings, language,
+    const printed = printAllTeamWorkers({
+      teams, workers: allWorkers, mappings: biometricMappings, language,
       direction: language === 'ar' ? 'rtl' : 'ltr',
       labels: {
-        companyTitle: t('app.name'), printWorkers: t('teams.printWorkers'), workerCount: t('teams.workerCount'),
+        printAllTitle: t('teams.printAllTitle'), totalTeams: t('teams.totalTeams'),
+        totalWorkers: t('teams.totalWorkers'), workerCount: t('teams.workerCount'),
         number: '#', worker: t('workers.name'), employeeCode: t('workers.employeeCode'),
         biometricId: t('teams.printBiometricId'), status: t('common.status'),
         active: t('common.active'), inactive: t('common.inactive'), noMembers: t('teams.noMembers'),
@@ -231,9 +232,6 @@ function Teams() {
         <div className="min-w-72 space-y-2 whitespace-normal">
           <div className="font-extrabold">{row.name}</div>
           <div className="flex flex-wrap gap-2" aria-label={`${t('common.actions')}: ${row.name}`}>
-            <button type="button" onClick={() => handlePrintTeam(row)} disabled={loading || !printReady} className="btn-secondary px-3 py-1">
-              {t('teams.printWorkers')}
-            </button>
             <button type="button" onClick={() => openDetails(row)} className="btn-secondary px-3 py-1">
               {t('teams.viewMembers')}
             </button>
@@ -268,9 +266,14 @@ function Teams() {
     <section>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-extrabold">{t('teams.title')}</h2>
-        <button type="button" className="btn-primary" onClick={openCreate}>
-          {t('teams.add')}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-secondary" onClick={handlePrintAllTeams} disabled={loading || !printReady || !teams.length}>
+            {t('teams.printAllTeams')}
+          </button>
+          <button type="button" className="btn-primary" onClick={openCreate}>
+            {t('teams.add')}
+          </button>
+        </div>
       </div>
 
       <div className="mb-4">

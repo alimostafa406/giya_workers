@@ -584,19 +584,28 @@ translations.fr.workerControlHistory = {
 }
 
 Object.assign(translations.ar.teams, {
-  printWorkers: 'طباعة عمال الفريق',
+  printAllTeams: 'طباعة كل الفرق',
+  printAllTitle: 'قائمة العمال حسب الفرق',
+  totalTeams: 'إجمالي الفرق',
+  totalWorkers: 'إجمالي العمال',
   printBiometricId: 'رقم البصمة',
   printBlocked: 'تعذر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة وحاول مجددًا.',
   printDataUnavailable: 'تعذر تحميل قائمة العمال أو أرقام البصمة للطباعة.',
 })
 Object.assign(translations.en.teams, {
-  printWorkers: 'Print Team Workers',
+  printAllTeams: 'Print All Teams',
+  printAllTitle: 'Workers by Team',
+  totalTeams: 'Total teams',
+  totalWorkers: 'Total workers',
   printBiometricId: 'Biometric ID',
   printBlocked: 'Could not open the print window. Allow pop-ups and try again.',
   printDataUnavailable: 'The worker list or biometric IDs could not be loaded for printing.',
 })
 Object.assign(translations.fr.teams, {
-  printWorkers: 'Imprimer les travailleurs de l’équipe',
+  printAllTeams: 'Imprimer toutes les équipes',
+  printAllTitle: 'Liste des travailleurs par équipe',
+  totalTeams: 'Nombre total d’équipes',
+  totalWorkers: 'Nombre total de travailleurs',
   printBiometricId: 'ID biométrique',
   printBlocked: 'Impossible d’ouvrir la fenêtre d’impression. Autorisez les fenêtres contextuelles et réessayez.',
   printDataUnavailable: 'La liste des travailleurs ou les identifiants biométriques n’ont pas pu être chargés pour l’impression.',
