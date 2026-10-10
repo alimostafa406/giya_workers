@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getErrorMessage } from '../api/axios'
 import { getBiometricMappingsRequest } from '../api/biometricMappingApi'
+import { getWorkersRequest } from '../api/workersApi'
 import { getSupervisorsRequest } from '../api/supervisorsApi'
 import {
   createTeamRequest,
@@ -17,6 +18,7 @@ import {
   biometricCoverageLabel,
   buildBiometricCoverageByWorker,
 } from '../utils/biometricMappingCoverage'
+import { printTeamWorkers } from '../utils/teamWorkersPrint'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -40,6 +42,8 @@ function Teams() {
   const [selectedTeam, setSelectedTeam] = useState(null)
   const [detailsTeam, setDetailsTeam] = useState(null)
   const [biometricMappings, setBiometricMappings] = useState([])
+  const [allWorkers, setAllWorkers] = useState([])
+  const [printReady, setPrintReady] = useState(false)
 
   const getTeamIsActive = (team) => {
     return Boolean(team?.is_active)
@@ -81,6 +85,7 @@ function Teams() {
 
   const loadTeams = async () => {
     setLoading(true)
+    setPrintReady(false)
     setError('')
     try {
       const [teamsRes, supervisorsRes] = await Promise.all([
@@ -89,13 +94,14 @@ function Teams() {
       ])
       setTeams(asArray(teamsRes.data))
       setSupervisors(asArray(supervisorsRes.data))
-      try {
-        const mappingsRes = await getBiometricMappingsRequest()
-        setBiometricMappings(asArray(mappingsRes.data).filter((mapping) => mapping.is_active !== false))
-      } catch {
-        // Teams remain usable before the biometric mapping migration is applied.
-        setBiometricMappings([])
-      }
+      const [mappingRead, workerRead] = await Promise.allSettled([
+        getBiometricMappingsRequest(),
+        getWorkersRequest({ includePayrollProfiles: false }),
+      ])
+      // An unavailable print roster must not hide otherwise available team mappings.
+      setBiometricMappings(mappingRead.status === 'fulfilled' ? asArray(mappingRead.value.data).filter((mapping) => mapping.is_active !== false) : [])
+      setAllWorkers(workerRead.status === 'fulfilled' ? asArray(workerRead.value.data) : [])
+      setPrintReady(mappingRead.status === 'fulfilled' && workerRead.status === 'fulfilled')
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -202,6 +208,21 @@ function Teams() {
     }
   }
 
+  const handlePrintTeam = (team) => {
+    if (!printReady) return
+    const printed = printTeamWorkers({
+      team, workers: allWorkers, mappings: biometricMappings, language,
+      direction: language === 'ar' ? 'rtl' : 'ltr',
+      labels: {
+        companyTitle: t('app.name'), printWorkers: t('teams.printWorkers'), workerCount: t('teams.workerCount'),
+        number: '#', worker: t('workers.name'), employeeCode: t('workers.employeeCode'),
+        biometricId: t('teams.printBiometricId'), status: t('common.status'),
+        active: t('common.active'), inactive: t('common.inactive'), noMembers: t('teams.noMembers'),
+      },
+    })
+    if (!printed) setError(t('teams.printBlocked'))
+  }
+
   const columns = [
     {
       key: 'name',
@@ -234,6 +255,9 @@ function Teams() {
             className="btn-secondary px-3 py-1"
           >
             {t('teams.viewMembers')}
+          </button>
+          <button type="button" onClick={() => handlePrintTeam(row)} disabled={loading || !printReady} className="btn-secondary px-3 py-1">
+            {t('teams.printWorkers')}
           </button>
           <button
             type="button"
@@ -278,6 +302,7 @@ function Teams() {
           {error}
         </p>
       ) : null}
+      {!loading && !printReady ? <p className="mb-4 text-sm text-(--muted)">{t('teams.printDataUnavailable')}</p> : null}
 
       <Table
         columns={columns}
