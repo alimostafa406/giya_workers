@@ -231,7 +231,7 @@ function Attendance() {
   return (
     <section>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-extrabold">{t('attendance.title')}</h2><Link className="btn-secondary" to="/attendance/absence-report">{t('absenceReport.title')}</Link></div>
+        <div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-extrabold">{t('attendance.title')}</h2><Link className="btn-secondary" to="/attendance/absence-report">{t('absenceReport.title')}</Link><Link className="btn-secondary" to="/attendance/supervisor-sheet">{t('supervisorSheet.title')}</Link></div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="btn-secondary" disabled={locked || loading} onClick={() => runOutput('print')}>{t('reports.print')}</button>
           <button type="button" className="btn-secondary" disabled={locked || loading} onClick={() => runOutput('excel')}>{t('reports.excel')}</button>

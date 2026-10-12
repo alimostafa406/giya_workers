@@ -12,6 +12,7 @@ import Layout from '../components/Layout/Layout'
 import Attendance from '../pages/Attendance'
 import BulkEmergencyOvertime from '../pages/BulkEmergencyOvertime'
 import AbsenceReport from '../pages/AbsenceReport'
+import SupervisorSheet from '../pages/SupervisorSheet'
 import SpecialStaffAttendance from '../pages/SpecialStaffAttendance'
 import BiometricMapping from '../pages/BiometricMapping'
 import Dashboard from '../pages/Dashboard'
@@ -142,6 +143,7 @@ function AppRouter() {
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/attendance/emergency-overtime" element={<BulkEmergencyOvertime />} />
             <Route path="/attendance/absence-report" element={<AbsenceReport />} />
+            <Route path="/attendance/supervisor-sheet" element={<SupervisorSheet />} />
             <Route path="/special-staff-attendance" element={<SpecialStaffAttendance />} />
             <Route path="/biometric-mapping" element={<BiometricMapping />} />
             <Route path="/missing-attendance" element={<MissingAttendance />} />

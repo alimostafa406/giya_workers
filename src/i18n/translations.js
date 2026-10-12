@@ -288,6 +288,25 @@ Object.assign(translations.fr, {
   },
 })
 
+Object.assign(translations.ar, { supervisorSheet: {
+  title: 'ورقة الحضور للمشرف', description: 'ورقة قابلة للطباعة لتسجيل نتيجة كل عامل مؤقتًا دون حفظها.',
+  allTeams: 'كل الفرق', workerCount: 'عدد العمال', result: 'النتيجة', printBlank: 'طباعة فارغة',
+  printResults: 'طباعة النتائج', clearResults: 'مسح النتائج', noWorkers: 'لا يوجد عمال للفريق المختار.',
+  A: 'غائب', P: 'حاضر', O: 'خارج الموقع', M: 'طبي',
+} })
+Object.assign(translations.en, { supervisorSheet: {
+  title: 'Supervisor Attendance Sheet', description: 'Printable sheet for temporary worker results; nothing is saved.',
+  allTeams: 'All Teams', workerCount: 'Worker count', result: 'Result', printBlank: 'Print Blank',
+  printResults: 'Print Results', clearResults: 'Clear Results', noWorkers: 'No workers in the selected team.',
+  A: 'Absent', P: 'Present', O: 'Outside', M: 'Medical',
+} })
+Object.assign(translations.fr, { supervisorSheet: {
+  title: 'Feuille de présence du superviseur', description: 'Feuille imprimable pour des résultats temporaires, sans enregistrement.',
+  allTeams: 'Toutes les équipes', workerCount: 'Nombre de travailleurs', result: 'Résultat', printBlank: 'Imprimer vierge',
+  printResults: 'Imprimer les résultats', clearResults: 'Effacer les résultats', noWorkers: 'Aucun travailleur dans cette équipe.',
+  A: 'Absent', P: 'Présent', O: 'À l’extérieur', M: 'Médical',
+} })
+
 Object.assign(translations.ar.reports, { workerSearchLabel: 'بحث عن عامل', workerSearchPlaceholder: 'بحث بالاسم أو رقم العامل...' })
 Object.assign(translations.en.reports, { workerSearchLabel: 'Search worker', workerSearchPlaceholder: 'Search worker by name or code...' })
 Object.assign(translations.fr.reports, { workerSearchLabel: 'Rechercher un travailleur', workerSearchPlaceholder: 'Rechercher un travailleur par nom ou code...' })

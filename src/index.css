@@ -225,6 +225,20 @@ textarea {
   @apply bg-slate-100;
 }
 
+.supervisor-sheet-choices {
+  @apply flex justify-center gap-1;
+}
+
+.supervisor-sheet-choice {
+  @apply min-w-8 rounded border border-slate-300 px-1.5 py-1 font-bold text-slate-600 hover:border-teal-700 hover:text-teal-800;
+}
+
+.supervisor-sheet-choice[aria-pressed="true"] {
+  @apply border-teal-800 bg-teal-800 text-white;
+}
+
+.supervisor-sheet-print-only { display: none; }
+
 .absence-state-absent {
   @apply font-extrabold text-red-700;
 }
@@ -322,6 +336,12 @@ textarea {
   .absence-week-table tr {
     break-inside: avoid;
   }
+
+  .supervisor-sheet-screen-only { display: none !important; }
+  .supervisor-sheet-print-only { display: inline !important; }
+  .supervisor-sheet-table { font-size: 10pt; }
+  .supervisor-sheet-table th, .supervisor-sheet-table td { padding: 2mm; }
+  .supervisor-sheet-table th:last-child, .supervisor-sheet-table td:last-child { min-width: 25mm; }
 
   .absence-today-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
