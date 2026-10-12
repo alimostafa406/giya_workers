@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { translations } from '../i18n/translations.js'
+import { activeWorkersOnly } from './activeWorkers.js'
 import { buildAllTeamWorkersPrintHtml, printAllTeamWorkers, teamWorkersForPrint } from './teamWorkersPrint.js'
 
 const team = { id: 'zarour', name: 'Zarour' }
@@ -23,12 +24,11 @@ const labels = {
 const options = { teams: [team, { id: 'paint', name: 'Peinture Raghibe' }], workers, mappings, labels, language: 'en', direction: 'ltr' }
 
 describe('team worker-list printing', () => {
-  it('includes only the selected team, including inactive workers, with confirmed active biometric IDs', () => {
+  it('includes only active workers in the selected team, with confirmed active biometric IDs', () => {
     const beforeWorkers = structuredClone(workers)
     const beforeMappings = structuredClone(mappings)
     expect(teamWorkersForPrint({ ...options, team })).toEqual([
       { id: 'one', name: 'JEREMIE', employeeCode: '1', biometricIds: ['204'], isActive: true },
-      { id: 'two', name: 'ROBERT', employeeCode: '79', biometricIds: ['79'], isActive: false },
     ])
     expect(workers).toEqual(beforeWorkers)
     expect(mappings).toEqual(beforeMappings)
@@ -37,27 +37,49 @@ describe('team worker-list printing', () => {
   it('prints every team in page order with exact team/overall counts and worker-only columns', () => {
     const html = buildAllTeamWorkersPrintHtml(options)
     expect(html).toContain('<h1>Workers by Team</h1>')
-    expect(html).toContain('Total teams: 2 · Total workers: 3')
-    expect(html).toContain('<h2>Zarour</h2><p>Worker count: 2</p>')
+    expect(html).toContain('Total teams: 2 · Total workers: 2')
+    expect(html).toContain('<h2>Zarour</h2><p>Worker count: 1</p>')
     expect(html).toContain('<h2>Peinture Raghibe</h2><p>Worker count: 1</p>')
     expect(html.indexOf('<h2>Zarour</h2>')).toBeLessThan(html.indexOf('<h2>Peinture Raghibe</h2>'))
     expect(html.match(/<th>#<\/th><th>Worker name<\/th><th>Employee code<\/th><th>Biometric ID<\/th><th>Status<\/th>/g)).toHaveLength(2)
     const sections = html.match(/<section class="team-section">[\s\S]*?<\/section>/g)
     expect(sections).toHaveLength(2)
     expect(sections[0]).toContain('JEREMIE')
-    expect(sections[0]).toContain('ROBERT')
+    expect(sections[0]).not.toContain('ROBERT')
     expect(sections[0]).not.toContain('MATAMATA')
     expect(sections[1]).toContain('MATAMATA')
     expect(sections[1]).not.toContain('JEREMIE')
     expect(html.match(/<td>JEREMIE<\/td>/g)).toHaveLength(1)
     expect(html).toContain('>204</td>')
     expect(html).toContain('>55550008</td>')
-    expect(html).toContain('>Inactive</td>')
+    expect(html).not.toContain('>Inactive</td>')
     expect(html).not.toMatch(/payroll|wage|salary|overtime|attendance|transport|10000/i)
     expect(html).toMatch(/@page\{size:A4 portrait/)
     expect(html).toMatch(/\.team-section \+ \.team-section\{break-before:page;page-break-before:always\}/)
     expect(html).toMatch(/thead\{display:table-header-group\}/)
     expect(html).toMatch(/tr\{break-inside:avoid/)
+  })
+
+  it('prints exactly the 57 active Peinture Raghibe workers with no inactive names or duplicate IDs', () => {
+    const paintTeam = { id: 'paint', name: 'Peinture Raghibe' }
+    const activePaintWorkers = Array.from({ length: 57 }, (_, index) => ({
+      id: `paint-${index + 1}`, team_id: 'paint', full_name: `ACTIVE ${index + 1}`, is_active: true,
+    }))
+    const inactivePaintWorkers = ['BAKA', 'BEN', 'DAVID1', 'gloire', 'MISAMU'].map((name, index) => ({
+      id: `inactive-${index + 1}`, team_id: 'paint', full_name: name, is_active: false,
+    }))
+    const allWorkers = [...activePaintWorkers, ...inactivePaintWorkers, workers[0]]
+    const countedWorkers = activeWorkersOnly(allWorkers).filter((worker) => worker.team_id === paintTeam.id)
+    const printedWorkers = teamWorkersForPrint({ team: paintTeam, workers: allWorkers })
+    expect(countedWorkers).toHaveLength(57)
+    expect(printedWorkers).toHaveLength(countedWorkers.length)
+    expect(new Set(printedWorkers.map((worker) => worker.id)).size).toBe(57)
+    expect(printedWorkers.every((worker) => worker.isActive)).toBe(true)
+    const html = buildAllTeamWorkersPrintHtml({ ...options, teams: [paintTeam], workers: allWorkers })
+    expect(html).toContain('<h2>Peinture Raghibe</h2><p>Worker count: 57</p>')
+    expect(html).toContain('Total teams: 1 · Total workers: 57')
+    for (const worker of inactivePaintWorkers) expect(html).not.toContain(`<td>${worker.full_name}</td>`)
+    expect(html.match(/<td>ACTIVE \d+<\/td>/g)).toHaveLength(57)
   })
 
   it('escapes worker-controlled names and shows a dash for missing biometric mapping', () => {

@@ -47,9 +47,9 @@ describe('Teams all-team worker-list print action', () => {
     const html = printDocument.write.mock.calls[0][0]
     expect(html).toContain('<h2>Zarour</h2>')
     expect(html).toContain('<h2>Peinture Raghibe</h2>')
-    expect(html).toContain('Total teams: 2 · Total workers: 3')
+    expect(html).toContain('Total teams: 2 · Total workers: 2')
     expect(html).toContain('JEREMIE')
-    expect(html).toContain('ROBERT')
+    expect(html).not.toContain('ROBERT')
     expect(html).toContain('MATAMATA')
     expect(html).toContain('>204</td>')
     expect(printWindow.print).toHaveBeenCalledOnce()

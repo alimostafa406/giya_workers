@@ -1,3 +1,5 @@
+import { activeWorkersOnly } from './activeWorkers.js'
+
 const escapeHtml = (value) => String(value ?? '—').replace(/[&<>"']/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]))
@@ -13,7 +15,7 @@ export const teamWorkersForPrint = ({ team, workers = [], mappings = [] } = {}) 
     if (!idsByWorker.has(workerId)) idsByWorker.set(workerId, new Set())
     idsByWorker.get(workerId).add(biometricId)
   })
-  return workers.filter((worker) => String(worker.team_id || '') === teamId)
+  return activeWorkersOnly(workers).filter((worker) => String(worker.team_id || '') === teamId)
     .map((worker) => ({
       id: worker.id,
       name: worker.full_name || '—',
