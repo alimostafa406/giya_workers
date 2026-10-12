@@ -620,6 +620,36 @@ Object.assign(translations.en.teams, {
   printBlocked: 'Could not open the print window. Allow pop-ups and try again.',
   printDataUnavailable: 'The worker list or biometric IDs could not be loaded for printing.',
 })
+Object.assign(translations.ar.supervisorSheet, {
+  description: 'مراجعة بصمة الصباح النهائية عند 11:00، ثم حفظ قرارات المشرف الرسمية.',
+  saveResults: 'حفظ نتيجة الحضور', saveConfirm: 'سيتم حفظ قرارات جميع العمال في القائمة النهائية كحضور رسمي محمي. هل تريد المتابعة؟',
+  missingSelections: 'عمال بلا نتيجة: {count}', saveSuccess: 'تم حفظ نتائج {count} عامل رسميًا.',
+  frozen: 'قائمة مراجعة الصباح النهائية ثابتة بعد فحص 11:00.',
+  finalChecking: 'يجري الفحص النهائي لقائمة الصباح عند 11:00...',
+  refreshingUntil11: 'تتحدث القائمة تلقائيًا حتى الفحص النهائي عند 11:00.',
+  retryFinalCheck: 'إعادة فحص القائمة النهائية',
+  working_outside: 'يعمل خارجًا', medical: 'مريض',
+})
+Object.assign(translations.en.supervisorSheet, {
+  description: 'Review the final morning list at 11:00, then save official supervisor decisions.',
+  saveResults: 'Save Attendance Results', saveConfirm: 'Save every final-list decision as protected official attendance?',
+  missingSelections: 'Workers without a result: {count}', saveSuccess: 'Saved official results for {count} workers.',
+  frozen: 'The final morning review list is frozen after the 11:00 check.',
+  finalChecking: 'Running the final 11:00 morning check...',
+  refreshingUntil11: 'The list refreshes until the final 11:00 check.',
+  retryFinalCheck: 'Retry Final Check',
+  working_outside: 'Working outside', medical: 'Medical',
+})
+Object.assign(translations.fr.supervisorSheet, {
+  description: 'Vérifiez la liste matinale finale à 11 h, puis enregistrez les décisions officielles.',
+  saveResults: 'Enregistrer les résultats', saveConfirm: 'Enregistrer toutes les décisions comme présence officielle protégée ?',
+  missingSelections: 'Travailleurs sans résultat : {count}', saveSuccess: 'Résultats officiels enregistrés pour {count} travailleurs.',
+  frozen: 'La liste matinale finale est figée après le contrôle de 11 h.',
+  finalChecking: 'Contrôle matinal final de 11 h en cours...',
+  refreshingUntil11: 'La liste se rafraîchit jusqu’au contrôle final de 11 h.',
+  retryFinalCheck: 'Réessayer le contrôle final',
+  working_outside: 'Travaille à l’extérieur', medical: 'Malade',
+})
 Object.assign(translations.fr.teams, {
   printAllTeams: 'Imprimer toutes les équipes',
   printAllTitle: 'Liste des travailleurs par équipe',

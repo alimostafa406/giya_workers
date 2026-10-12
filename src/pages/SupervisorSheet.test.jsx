@@ -2,17 +2,19 @@
 import React from 'react'
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import SupervisorSheet from './SupervisorSheet.jsx'
 import { LanguageProvider } from '../i18n/LanguageContext.jsx'
 
 globalThis.React = React
-const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn() }))
+const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), save: vi.fn() }))
 vi.mock('../api/workersApi', () => ({ getWorkersRequest: mocks.workers }))
 vi.mock('../api/teamsApi', () => ({ getTeamsRequest: mocks.teams }))
 vi.mock('../api/attendanceApi', () => ({ getAttendanceRequest: mocks.attendance }))
 vi.mock('../api/biometricMappingApi', () => ({ getWorkerBiometricSearchIndexRequest: mocks.mappings }))
+vi.mock('../api/supervisorMorningReviewApi', () => ({ saveSupervisorMorningReviewRequest: mocks.save }))
+vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ admin: { is_active: true } }) }))
 vi.mock('../utils/attendanceOperationalGate', async (importOriginal) => ({ ...await importOriginal(), isAttendancePageLocked: () => false }))
 
 beforeEach(() => {
@@ -32,10 +34,12 @@ beforeEach(() => {
     { worker_id: 'two', device_employee_no: '070', is_active: true, mapping_review_state: 'needs_review' },
   ] })
   mocks.attendance.mockImplementation(async ({ date }) => ({ data: [{ worker_id: 'two', attendance_date: date, check_in: '08:00:00' }] }))
+  mocks.save.mockResolvedValue({ applied: 2 })
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
   vi.spyOn(window, 'print').mockImplementation(() => {})
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => window.setTimeout(() => callback(0), 0))
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
 const showPaintTeam = async () => {
   const view = render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
@@ -45,6 +49,54 @@ const showPaintTeam = async () => {
 }
 
 describe('supervisor attendance sheet', () => {
+  it('refreshes before 11:00, performs one final check at 11:00, then stops', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-10-12T09:59:50Z'))
+    render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('ROBERT')
+    expect(mocks.attendance).toHaveBeenCalledTimes(1)
+    fireEvent.focus(window)
+    await waitFor(() => expect(mocks.attendance).toHaveBeenCalledTimes(2))
+    vi.setSystemTime(new Date('2026-10-12T10:00:00Z'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    await waitFor(() => expect(mocks.attendance).toHaveBeenCalledTimes(3), { timeout: 2500 })
+    expect(screen.getByText(/final morning review list is frozen/i)).toBeTruthy()
+    fireEvent.focus(window)
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+    expect(mocks.attendance).toHaveBeenCalledTimes(3)
+  })
+
+  it('opens after 11:00 with one final load and never re-fetches on focus or print', async () => {
+    render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('ROBERT')
+    expect(screen.getByText(/final morning review list is frozen/i)).toBeTruthy()
+    expect(mocks.attendance).toHaveBeenCalledTimes(1)
+    fireEvent.focus(window)
+    fireEvent(document, new Event('visibilitychange'))
+    fireEvent.click(screen.getByRole('button', { name: 'Print Results' }))
+    await waitFor(() => expect(window.print).toHaveBeenCalledTimes(1))
+    expect(mocks.attendance).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks partial save, then saves all frozen workers by ID without writing attendance directly', async () => {
+    await showPaintTeam()
+    fireEvent.click(within(screen.getByRole('group', { name: 'ROBERT Result' })).getByRole('button', { name: 'O' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Attendance Results' }))
+    expect(screen.getByRole('alert').textContent).toContain('Workers without a result: 1')
+    expect(mocks.save).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Team' }), { target: { value: '' } })
+    fireEvent.click(within(screen.getByRole('group', { name: 'AUGUSTINE Result' })).getByRole('button', { name: 'M' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Attendance Results' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1))
+    expect(mocks.save).toHaveBeenCalledWith({
+      date: expect.any(String), workerIds: ['other', 'one'], results: { other: 'M', one: 'O' },
+    })
+    expect(mocks.attendance).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Clear Results' }).disabled).toBe(true)
+    expect(screen.getByText('Present - Working outside')).toBeTruthy()
+    expect(screen.getByText('Absent - Medical')).toBeTruthy()
+  })
+
   it('counts only missing-morning workers in the page total and each team', async () => {
     const { container } = render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
     await screen.findByText('ROBERT')
