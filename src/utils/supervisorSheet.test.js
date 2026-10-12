@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { buildAbsenceReport } from './absenceReport.js'
 import { buildSupervisorSheet } from './supervisorSheet.js'
 
 const teams = [
@@ -21,24 +22,30 @@ const mappings = [
   { worker_id: 'one', device_employee_no: '999', is_active: false, mapping_review_state: 'confirmed' },
   { worker_id: 'two', device_employee_no: '070', is_active: true, mapping_review_state: 'needs_review' },
 ]
+const roster = workers.map((worker) => ({ ...worker, team_name: teams.find((team) => team.id === worker.team_id)?.name }))
+const attendance = [{ worker_id: 'two', attendance_date: '2026-10-12', check_in: '08:00:00' }]
+const missingIds = (groups) => groups.flatMap((group) => group.workers.map((worker) => worker.id))
 
 describe('supervisor sheet roster', () => {
-  it('uses the existing active normal operational scope and preserves exact confirmed biometric strings', () => {
-    const sheet = buildSupervisorSheet({ workers: [...workers, workers[0]], teams, mappings, date: '2026-10-12' })
-    expect(sheet.workerCount).toBe(3)
+  it('has exactly the same missing-morning worker IDs as the absence report, preserving confirmed biometric strings', () => {
+    const sheet = buildSupervisorSheet({ workers: [...roster, roster[0]], attendance, mappings, date: '2026-10-12' })
+    const report = buildAbsenceReport({ workers: [...roster, roster[0]], attendance, mappings, selectedDate: '2026-10-12' })
+    expect(missingIds(sheet.groups)).toEqual(missingIds(report.groups))
+    expect(sheet.workerCount).toBe(report.missingMorningWorkers)
+    expect(sheet.workerCount).toBe(2)
     expect(sheet.groups.map((group) => group.name)).toEqual(['Maison', 'Peinture Raghibe'])
     const paint = sheet.groups.find((group) => group.id === 'paint').workers
-    expect(paint.map((worker) => worker.id)).toEqual(['two', 'one'])
+    expect(paint.map((worker) => worker.id)).toEqual(['one'])
     expect(paint.find((worker) => worker.id === 'one')).toMatchObject({ name: 'ROBERT', employeeCode: '79', biometricId: '064 · 084' })
-    expect(paint.find((worker) => worker.id === 'two').biometricId).toBe('—')
-    const allIds = sheet.groups.flatMap((group) => group.workers.map((worker) => worker.id))
+    expect(missingIds(sheet.groups)).not.toContain('two')
+    const allIds = missingIds(sheet.groups)
     expect(new Set(allIds).size).toBe(sheet.workerCount)
   })
 
   it('selects one team without adding inactive, special, or not-yet-operational workers', () => {
-    const sheet = buildSupervisorSheet({ workers, teams, mappings, date: '2026-10-12', teamId: 'paint' })
+    const sheet = buildSupervisorSheet({ workers: roster, attendance, mappings, date: '2026-10-12', teamId: 'paint' })
     expect(sheet.groups).toHaveLength(1)
-    expect(sheet.workerCount).toBe(2)
-    expect(sheet.groups[0].workers.map((worker) => worker.id)).toEqual(['two', 'one'])
+    expect(sheet.workerCount).toBe(1)
+    expect(sheet.groups[0].workers.map((worker) => worker.id)).toEqual(['one'])
   })
 })
