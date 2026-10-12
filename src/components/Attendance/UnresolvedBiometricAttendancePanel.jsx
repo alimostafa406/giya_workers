@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { safeBiometricDisplayName } from '../../utils/biometricDisplayName'
 
 const labels = {
   ar: {
@@ -68,7 +69,7 @@ export default function UnresolvedBiometricAttendancePanel({ rows = [], unavaila
             <div key={row.event_id} className="grid gap-2 p-4 md:grid-cols-[9rem_1fr_1fr]">
               <div dir="ltr" className="font-bold">{localTime(row.event_timestamp)}</div>
               <div>
-                <p className="font-bold">{row.device_name || '—'} <span dir="ltr" className="text-sm text-(--muted)">#{row.device_employee_no}</span></p>
+                <p className="font-bold">{safeBiometricDisplayName(row.device_name) || '—'} <span dir="ltr" className="text-sm text-(--muted)">#{row.device_employee_no}</span></p>
                 <p className="text-xs text-(--muted)">{row.device_id}</p>
               </div>
               <div>

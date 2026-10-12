@@ -128,6 +128,32 @@ test('no mapping remains genuinely unmapped and can enter recent review', () => 
   assert.deepEqual(recentUnmappedIdentityUsers(users).map((user) => user.employeeNo), ['genuine-unmapped'])
 })
 
+test('office-main 84 remains distinct from confirmed 084, without matching niva by name', () => {
+  const users = buildRecentIdentityUsers({
+    activityIdentities: [{ employeeNo: '84', deviceId: 'office-main', name: 'niva', recent_event_count: 1 }],
+    inventoryUsers: [{ employeeNo: '84', deviceId: 'office-main', name: 'niva' }],
+    mappings: [
+      { worker_id: 'delphin', device_id: null, device_employee_no: '084', is_active: true, mapping_review_state: 'confirmed' },
+      { worker_id: 'niva', device_id: 'office-main', device_employee_no: '39', is_active: true, mapping_review_state: 'confirmed' },
+    ],
+    workers: [{ id: 'niva', full_name: 'niva', is_active: false }],
+  })
+  assert.equal(users[0].identityKey, 'office-main::84')
+  assert.equal(users[0].mapping, null)
+  assert.deepEqual(recentUnmappedIdentityUsers(users).map((user) => user.employeeNo), ['84'])
+})
+
+test('exact office-main 85 uses a clean structured inventory name, preserving two event observations', () => {
+  const users = buildRecentIdentityUsers({
+    activityIdentities: [{ employeeNo: '85', deviceId: 'office-main', name: 'bevindo chadrack1989", "doorRight": "1"', recent_event_count: 2 }],
+    inventoryUsers: [{ employeeNo: '85', deviceId: 'office-main', name: 'bevindo chadrack' }],
+    mappings: [],
+  })
+  assert.equal(users[0].name, 'bevindo chadrack')
+  assert.equal(users[0].recentEventCount, 2)
+  assert.equal(users[0].mapping, null)
+})
+
 test('mapping review is separate from dashboard and attendance roster totals', async () => {
   const mappingPage = await readFile(new URL('./src/pages/BiometricMapping.jsx', import.meta.url), 'utf8')
   const dashboard = await readFile(new URL('./src/pages/Dashboard.jsx', import.meta.url), 'utf8')

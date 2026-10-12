@@ -1,3 +1,5 @@
+import { safeBiometricDisplayName } from '../utils/biometricDisplayName.js'
+
 let locallySyncedUsers = null
 
 export const replaceHikvisionDeviceUsers = (users) => {
@@ -31,7 +33,7 @@ export const getHikvisionDeviceUsers = () => {
         employeeNo,
         deviceId,
         identityKey,
-        name: String(user.name || '').trim() || 'بدون اسم',
+        name: safeBiometricDisplayName(user.name) || 'بدون اسم',
         isDeviceUserActive: user.Valid?.enable !== false && user._local_sync?.is_currently_returned !== false,
         isCurrentlyReturned: user._local_sync?.is_currently_returned !== false,
         removedFromAllDevices: user._local_sync?.removed_from_all_devices === true,

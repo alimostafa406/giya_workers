@@ -1,4 +1,5 @@
 import { isActiveWorker } from './activeWorkers.js'
+import { safeBiometricDisplayName } from './biometricDisplayName.js'
 
 const normalizeEmployeeNo = (value) => String(value || '').trim()
 const normalizeDeviceId = (value) => String(value || '').trim()
@@ -46,7 +47,9 @@ export const buildRecentIdentityUsers = ({ activityIdentities, inventoryUsers, m
       employeeNo,
       deviceId,
       identityKey,
-      name: activity.name || inventoryUser.name || '',
+      // Prefer the current structured device inventory for this exact device+ID.
+      // Persisted event names are historical display metadata, not identity proof.
+      name: safeBiometricDisplayName(inventoryUser.name) || safeBiometricDisplayName(activity.name),
       devices: activity.devices_seen || inventoryUser.devices || [],
       mapping,
       hasActiveMapping: mapping?.is_active === true,
