@@ -5,10 +5,19 @@ const normalizeEmployeeNo = (value) => String(value || '').trim()
 const normalizeDeviceId = (value) => String(value || '').trim()
 export const biometricDeviceIdentityKey = (deviceId, employeeNo) => `${normalizeDeviceId(deviceId)}::${normalizeEmployeeNo(employeeNo)}`
 
-export const buildRecentIdentityUsers = ({ activityIdentities, inventoryUsers, mappings, workers, ignoredEmployeeNos, ignoredIdentities }) => {
+// Current structured UserInfo names are display metadata, never mapping evidence.
+export const currentBiometricNamesByIdentity = (identities = []) => new Map(identities
+  .filter((identity) => identity?.is_current === true)
+  .map((identity) => [
+    biometricDeviceIdentityKey(identity.device_id, identity.device_employee_no),
+    safeBiometricDisplayName(identity.device_name),
+  ]))
+
+export const buildRecentIdentityUsers = ({ activityIdentities, inventoryUsers, currentIdentityNames, mappings, workers, ignoredEmployeeNos, ignoredIdentities }) => {
   const inventoryByDeviceIdentity = new Map((inventoryUsers || []).map((user) => [
     biometricDeviceIdentityKey(user.deviceId, user.employeeNo), user,
   ]))
+  const currentNamesByIdentity = currentBiometricNamesByIdentity(currentIdentityNames)
   const mappingsByDeviceIdentity = new Map()
   const legacyMappingsByEmployeeNo = new Map()
   for (const mapping of mappings || []) {
@@ -47,9 +56,9 @@ export const buildRecentIdentityUsers = ({ activityIdentities, inventoryUsers, m
       employeeNo,
       deviceId,
       identityKey,
-      // Prefer the current structured device inventory for this exact device+ID.
+      // Prefer the current structured device name for this exact device+ID.
       // Persisted event names are historical display metadata, not identity proof.
-      name: safeBiometricDisplayName(inventoryUser.name) || safeBiometricDisplayName(activity.name),
+      name: currentNamesByIdentity.get(identityKey) || safeBiometricDisplayName(inventoryUser.name) || safeBiometricDisplayName(activity.name),
       devices: activity.devices_seen || inventoryUser.devices || [],
       mapping,
       hasActiveMapping: mapping?.is_active === true,

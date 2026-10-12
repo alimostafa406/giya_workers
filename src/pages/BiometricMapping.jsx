@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { createWorkerAndConfirmBiometricMappingRequest, getBiometricMappingWorkspaceRequest, getRecentUnmappedBiometricIdentitiesRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
+import { createWorkerAndConfirmBiometricMappingRequest, getBiometricMappingWorkspaceRequest, getCurrentBiometricIdentityNamesRequest, getRecentUnmappedBiometricIdentitiesRequest, saveBiometricMappingRequest, setBiometricMappingReviewStateRequest, setDeviceIdentityIgnoredRequest, unlinkBiometricMappingRequest } from '../api/biometricMappingApi'
 import { normalizePersonName, replaceHikvisionDeviceUsers } from '../data/hikvisionRawData'
 import { useTranslation } from '../i18n/LanguageContext'
 import { isActiveWorker } from '../utils/activeWorkers'
@@ -51,6 +51,7 @@ export default function BiometricMapping() {
   const [syncing, setSyncing] = useState(false)
   const [syncTarget, setSyncTarget] = useState('all')
   const [recentActivity, setRecentActivity] = useState(null)
+  const [currentIdentityNames, setCurrentIdentityNames] = useState([])
   const [recentActivityLoading, setRecentActivityLoading] = useState(false)
   const [recentActivityError, setRecentActivityError] = useState(false)
   const [inventoryRefreshError, setInventoryRefreshError] = useState(false)
@@ -82,9 +83,12 @@ export default function BiometricMapping() {
       const result = await getRecentUnmappedBiometricIdentitiesRequest({ days: 7 })
       if (result.unavailable) {
         setRecentActivity(null)
+        setCurrentIdentityNames([])
         setRecentActivityError(true)
         return false
       }
+      const names = await getCurrentBiometricIdentityNamesRequest(result.data).catch(() => ({ data: [] }))
+      setCurrentIdentityNames(names.data)
       const end = new Date(`${result.endDate}T12:00:00Z`)
       end.setUTCDate(end.getUTCDate() - (result.days - 1))
       setRecentActivity({
@@ -102,6 +106,7 @@ export default function BiometricMapping() {
       return true
     } catch {
       setRecentActivity(null)
+      setCurrentIdentityNames([])
       setRecentActivityError(true)
       return false
     } finally {
@@ -113,10 +118,11 @@ export default function BiometricMapping() {
   const recentActivityUsers = useMemo(() => buildRecentIdentityUsers({
     activityIdentities: recentActivity?.identities,
     inventoryUsers: data?.deviceUsers,
+    currentIdentityNames,
     mappings: data?.mappings,
     workers: data?.workers,
     ignoredIdentities: data?.ignoredIdentities,
-  }), [data, recentActivity])
+  }), [currentIdentityNames, data, recentActivity])
   const availableWorkers = useMemo(() => (data?.workers || [])
     .filter(isActiveWorker), [data])
   const recentUnmappedUsers = useMemo(() => (data

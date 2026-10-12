@@ -154,6 +154,36 @@ test('exact office-main 85 uses a clean structured inventory name, preserving tw
   assert.equal(users[0].mapping, null)
 })
 
+test('mapping review uses current exact-device names without losing leading zeros or changing unmapped ownership', () => {
+  const identities = [
+    ['office-main', '85', 'bevindo chadrack'],
+    ['office-main', '84', 'niva'],
+    ['office-main', '064', 'IVENS'],
+    ['office-main', '070', 'SEBA'],
+    ['office-main', '55550034', 'MUNIANGA'],
+  ]
+  const users = buildRecentIdentityUsers({
+    activityIdentities: identities.map(([deviceId, employeeNo]) => ({
+      deviceId, employeeNo, name: 'bad {historical event}', recent_event_count: 1,
+    })),
+    currentIdentityNames: [
+      ...identities.map(([device_id, device_employee_no, device_name]) => ({
+        device_id, device_employee_no, device_name, is_current: true,
+      })),
+      { device_id: 'office-secondary', device_employee_no: '85', device_name: 'wrong device', is_current: true },
+      { device_id: 'office-main', device_employee_no: '64', device_name: 'wrong 064', is_current: true },
+      { device_id: 'office-main', device_employee_no: '70', device_name: 'wrong 070', is_current: true },
+    ],
+    mappings: [],
+    workers: [{ id: 'niva-worker', full_name: 'niva', is_active: true }],
+  })
+  assert.deepEqual(users.map(({ identityKey, name }) => [identityKey, name]), identities.map(
+    ([deviceId, employeeNo, name]) => [`${deviceId}::${employeeNo}`, name],
+  ))
+  assert.ok(users.every((user) => user.mapping === null && user.hasActiveMapping === false))
+  assert.equal(recentUnmappedIdentityUsers(users).length, identities.length)
+})
+
 test('mapping review is separate from dashboard and attendance roster totals', async () => {
   const mappingPage = await readFile(new URL('./src/pages/BiometricMapping.jsx', import.meta.url), 'utf8')
   const dashboard = await readFile(new URL('./src/pages/Dashboard.jsx', import.meta.url), 'utf8')

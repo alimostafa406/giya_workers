@@ -50,7 +50,10 @@ export const getUnresolvedBiometricAttendanceRequest = async ({ attendanceDate =
 
 // Display names only: current structured UserInfo, never biometric ownership.
 export const getCurrentBiometricIdentityNamesRequest = async (issueRows = []) => {
-  const deviceIds = [...new Set(issueRows.map((row) => String(row?.device_id || '').trim()).filter(Boolean))]
+  const deviceIds = [...new Set(issueRows.flatMap((row) => row?.device_id
+    ? [row.device_id]
+    : Array.isArray(row?.devices_seen) ? row.devices_seen : [])
+    .map((deviceId) => String(deviceId || '').trim()).filter(Boolean))]
   const employeeNos = [...new Set(issueRows.map((row) => String(row?.device_employee_no || '').trim()).filter(Boolean))]
   if (!deviceIds.length || !employeeNos.length) return { data: [] }
   const { data, error } = await getSupabaseClient()

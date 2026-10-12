@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { safeBiometricDisplayName } from '../../utils/biometricDisplayName'
+import { biometricDeviceIdentityKey, currentBiometricNamesByIdentity } from '../../utils/recentUnmappedIdentities'
 
 const labels = {
   ar: {
@@ -49,14 +50,9 @@ const localTime = (value) => value
 
 export default function UnresolvedBiometricAttendancePanel({ rows = [], currentIdentityNames = [], unavailable = false, loading = false, language = 'en' }) {
   const text = labels[language] || labels.en
-  const currentNameByIdentity = new Map(currentIdentityNames
-    .filter((identity) => identity?.is_current === true)
-    .map((identity) => [
-      `${String(identity.device_id || '').trim()}::${String(identity.device_employee_no || '').trim()}`,
-      safeBiometricDisplayName(identity.device_name),
-    ]))
+  const currentNameByIdentity = currentBiometricNamesByIdentity(currentIdentityNames)
   const displayName = (row) => row.resolution_reason === 'unmapped'
-    ? currentNameByIdentity.get(`${String(row.device_id || '').trim()}::${String(row.device_employee_no || '').trim()}`) || '—'
+    ? currentNameByIdentity.get(biometricDeviceIdentityKey(row.device_id, row.device_employee_no)) || '—'
     : safeBiometricDisplayName(row.device_name) || '—'
   return (
     <section className="surface-card mb-5 overflow-hidden border-2 border-red-200">
