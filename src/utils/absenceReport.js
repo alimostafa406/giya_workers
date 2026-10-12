@@ -1,4 +1,5 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
+import { biometricIdsByWorker } from './dailyOperationalReports.js'
 import { reportWorkerMatchesSearch } from './reportWorkerSearch.js'
 
 const BUSINESS_TIME_ZONE = 'Africa/Kinshasa'
@@ -48,8 +49,9 @@ const stateFor = (hasCheckIn, date, currentBusinessDate) => {
   return hasCheckIn ? 'morning_recorded' : 'morning_missing'
 }
 
-export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'today', selectedDate, businessDate = selectedDate, teamId = '', search = '' }) => {
+export const buildAbsenceReport = ({ workers = [], attendance = [], mappings = [], mode = 'today', selectedDate, businessDate = selectedDate, teamId = '', search = '' }) => {
   const dates = mode === 'week' ? absenceWeekDates(selectedDate) : [selectedDate]
+  const biometricIds = biometricIdsByWorker(mappings)
   const workersById = new Map()
   workers.forEach((worker) => {
     if (worker?.id && !workersById.has(String(worker.id))) workersById.set(String(worker.id), worker)
@@ -76,7 +78,7 @@ export const buildAbsenceReport = ({ workers = [], attendance = [], mode = 'toda
     const team = worker.team || null
     const key = String(worker.team_id || 'unassigned')
     const group = groups.get(key) || { id: key, name: worker.team_name || team?.name || '—', workers: [] }
-    group.workers.push({ id: worker.id, name: worker.full_name || '—', employeeCode: worker.employee_code || null, states, missingMorningDays })
+    group.workers.push({ id: worker.id, name: worker.full_name || '—', employeeCode: worker.employee_code || null, biometricId: biometricIds.get(String(worker.id)) || '—', states, missingMorningDays })
     groups.set(key, group)
   })
 

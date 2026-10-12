@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAttendanceRequest } from '../api/attendanceApi'
+import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
@@ -26,7 +27,7 @@ export default function AbsenceReport() {
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate)
   const [teamId, setTeamId] = useState('')
   const [search, setSearch] = useState('')
-  const [snapshot, setSnapshot] = useState({ key: '', workers: [], teams: [], attendance: [], fetchedAt: null })
+  const [snapshot, setSnapshot] = useState({ key: '', workers: [], teams: [], attendance: [], mappings: [], fetchedAt: null })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [now, setNow] = useState(() => new Date())
@@ -57,16 +58,18 @@ export default function AbsenceReport() {
     if (mountedRef.current) { setLoading(true); setError('') }
     try {
       return await refreshCoordinatorRef.current(key, async () => {
-        const [workersResult, teamsResult, attendanceResult] = await Promise.all([
+        const [workersResult, teamsResult, attendanceResult, mappingsResult] = await Promise.all([
           getWorkersRequest(),
           getTeamsRequest(),
           getAttendanceRequest(attendanceParams),
+          getWorkerBiometricSearchIndexRequest(),
         ])
         const nextSnapshot = {
           key,
           workers: asArray(workersResult.data),
           teams: asArray(teamsResult.data).filter((team) => team.is_active !== false),
           attendance: asArray(attendanceResult.data),
+          mappings: asArray(mappingsResult.data),
           fetchedAt: new Date(),
         }
         if (mountedRef.current && requestKeyFor(requestRef.current) === key) setSnapshot(nextSnapshot)
@@ -119,6 +122,7 @@ export default function AbsenceReport() {
   const report = useMemo(() => buildAbsenceReport({
     workers: snapshot.key === requestKey ? snapshot.workers : [],
     attendance: snapshot.key === requestKey ? snapshot.attendance : [],
+    mappings: snapshot.key === requestKey ? snapshot.mappings : [],
     mode,
     selectedDate,
     businessDate,
@@ -179,7 +183,7 @@ export default function AbsenceReport() {
       </div>
       {reportLoading ? <p className="py-8 text-center">{t('common.loading')}</p> : report.groups.length === 0 ? <p className="absence-report-empty">{search.trim() ? t('common.noResults') : t('absenceReport.empty')}</p> : report.groups.map((group) => <section key={group.id} className={`absence-team-block ${group.workers.length <= 4 ? 'absence-team-block--small' : ''}`}>
         <div className="absence-team-heading"><h2>{group.name}</h2><p>{t('absenceReport.missingMorningCount')}: {group.workers.length}</p></div>
-        {mode === 'today' ? <div className="absence-today-list">{group.workers.map((worker) => <div key={worker.id} className="absence-worker-card"><strong>{worker.name}</strong>{worker.employeeCode ? <span>{worker.employeeCode}</span> : null}</div>)}</div> : <div className="absence-week-table-wrap"><table className="absence-week-table"><thead><tr><th>{t('attendance.worker')}</th><th>{t('workers.employeeCode')}</th>{dates.map((date) => <th key={date}>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</th>)}<th>{t('absenceReport.missingMorningTotal')}</th></tr></thead><tbody>{group.workers.map((worker) => <tr key={worker.id}><td>{worker.name}</td><td>{worker.employeeCode || '—'}</td>{worker.states.map((day) => <td key={day.date} className={`absence-state absence-state--${day.state}`}>{statusLabel(day.state)}</td>)}<td className="absence-total-cell">{worker.missingMorningDays}</td></tr>)}</tbody></table></div>}
+        {mode === 'today' ? <div className="absence-today-list">{group.workers.map((worker) => <div key={worker.id} className="absence-worker-card flex-wrap gap-2"><strong>{worker.name}</strong>{worker.employeeCode ? <span>{worker.employeeCode}</span> : null}<span>{t('reports.biometricId')}: <b dir="ltr">{worker.biometricId}</b></span></div>)}</div> : <div className="absence-week-table-wrap"><table className="absence-week-table"><thead><tr><th>{t('attendance.worker')}</th><th>{t('workers.employeeCode')}</th><th>{t('reports.biometricId')}</th>{dates.map((date) => <th key={date}>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</th>)}<th>{t('absenceReport.missingMorningTotal')}</th></tr></thead><tbody>{group.workers.map((worker) => <tr key={worker.id}><td>{worker.name}</td><td>{worker.employeeCode || '—'}</td><td dir="ltr">{worker.biometricId}</td>{worker.states.map((day) => <td key={day.date} className={`absence-state absence-state--${day.state}`}>{statusLabel(day.state)}</td>)}<td className="absence-total-cell">{worker.missingMorningDays}</td></tr>)}</tbody></table></div>}
       </section>)}
     </article>}
   </section>

@@ -58,6 +58,25 @@ test('active normal worker with no check-in is missing', () => {
   assert.equal(report.groups[0].workers[0].id, 'w1')
 })
 
+test('absence report displays confirmed active biometric IDs by worker without changing absence counts', () => {
+  const baseline = reportFor([], { workers: workers.slice(0, 2) })
+  const report = reportFor([], {
+    workers: workers.slice(0, 2),
+    mappings: [
+      { worker_id: 'w1', device_employee_no: '064', is_active: true, mapping_review_state: 'confirmed' },
+      { worker_id: 'w1', device_employee_no: '070', is_active: true, mapping_review_state: 'confirmed' },
+      { worker_id: 'w1', device_employee_no: '84', is_active: false, mapping_review_state: 'confirmed' },
+      { worker_id: 'w2', device_employee_no: '084', is_active: true, mapping_review_state: 'needs_review' },
+    ],
+  })
+  const rows = report.groups[0].workers
+  assert.equal(rows.find((worker) => worker.id === 'w1').biometricId, '064 · 070')
+  assert.equal(rows.find((worker) => worker.id === 'w2').biometricId, '—')
+  assert.equal(report.missingMorningWorkers, baseline.missingMorningWorkers)
+  assert.equal(report.missingMorningDays, baseline.missingMorningDays)
+  assert.deepEqual(report.groups.map((group) => group.workers.map((worker) => worker.id)), baseline.groups.map((group) => group.workers.map((worker) => worker.id)))
+})
+
 test('inactive and special-staff workers are excluded', () => {
   const report = reportFor([], { workers: workers.slice(3) })
   assert.equal(report.missingMorningWorkers, 0)
@@ -167,6 +186,11 @@ test('page uses coordinated current attendance freshness and no biometric event 
   assert.match(page, /window\.addEventListener\('focus', refreshAfterFocus\)/)
   assert.match(page, /document\.addEventListener\('visibilitychange', refreshAfterFocus\)/)
   assert.match(page, /prepareAttendanceOutput/)
+  assert.match(page, /getWorkerBiometricSearchIndexRequest\(\)/)
+  assert.match(page, /mappings: asArray\(mappingsResult\.data\)/)
+  assert.match(page, /<span>\{t\('reports\.biometricId'\)\}: <b dir="ltr">\{worker\.biometricId\}<\/b><\/span>/)
+  assert.match(page, /<th>\{t\('reports\.biometricId'\)\}<\/th>/)
+  assert.match(page, /<td dir="ltr">\{worker\.biometricId\}<\/td>/)
   assert.match(page, /refresh: \(\) => refreshSnapshot\(requested\)/)
   assert.doesNotMatch(page, /getCompanyMappedBiometricEventsRequest|biometricEvents|07:00|09:00/)
   assert.doesNotMatch(page, /saveAttendance|updateAttendance|insert|upsert|delete/)
@@ -178,5 +202,6 @@ test('print CSS still flows teams and supports portrait today and landscape week
   assert.match(page, /size: A4 \$\{mode === 'week' \? 'landscape' : 'portrait'\}/)
   assert.match(css, /\.absence-team-block--small\s*\{\s*break-inside: avoid;/)
   assert.match(css, /\.absence-week-table thead\s*\{\s*display: table-header-group;/)
-  assert.doesNotMatch(css, /page-break-before:\s*always|break-before:\s*page/)
+  const absenceTeamBlocks = css.match(/\.absence-team-block(?:--small)?\s*\{[^}]*\}/g)?.join('\n') || ''
+  assert.doesNotMatch(absenceTeamBlocks, /page-break-before:\s*always|break-before:\s*page/)
 })
