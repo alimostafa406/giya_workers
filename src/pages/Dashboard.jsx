@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
-import { getBiometricMappingsRequest, getRecentUnmappedBiometricIdentitiesRequest, getUnresolvedBiometricAttendanceRequest } from '../api/biometricMappingApi'
+import { getBiometricMappingsRequest, getCurrentBiometricIdentityNamesRequest, getRecentUnmappedBiometricIdentitiesRequest, getUnresolvedBiometricAttendanceRequest } from '../api/biometricMappingApi'
 import { getCurrentAttendanceEvidenceRequest } from '../api/currentAttendanceEvidenceApi'
 import { getWorkersRequest } from '../api/workersApi'
 import AttendanceAgentStatus from '../components/Attendance/AttendanceAgentStatus'
@@ -38,6 +38,7 @@ function Dashboard() {
   const [biometricMappings, setBiometricMappings] = useState([])
   const [recentUnmappedCount, setRecentUnmappedCount] = useState(null)
   const [unresolvedBiometric, setUnresolvedBiometric] = useState([])
+  const [currentBiometricIdentityNames, setCurrentBiometricIdentityNames] = useState([])
   const [unresolvedBiometricUnavailable, setUnresolvedBiometricUnavailable] = useState(false)
 
   useEffect(() => {
@@ -60,7 +61,12 @@ function Dashboard() {
         setBiometricEvidence(asArray(biometricEvidenceRes.data))
         setBiometricMappings(asArray(mappingsRes.data))
         setRecentUnmappedCount(recentUnmappedRes.unavailable ? null : asArray(recentUnmappedRes.data).length)
-        setUnresolvedBiometric(asArray(unresolvedRes.data))
+        const unresolvedRows = asArray(unresolvedRes.data)
+        setUnresolvedBiometric(unresolvedRows)
+        const currentNames = await getCurrentBiometricIdentityNamesRequest(
+          unresolvedRows.filter((row) => row?.resolution_reason === 'unmapped'),
+        ).catch(() => ({ data: [] }))
+        setCurrentBiometricIdentityNames(asArray(currentNames.data))
         setUnresolvedBiometricUnavailable(Boolean(unresolvedRes.unavailable))
       } catch (err) {
         setError(getErrorMessage(err))
@@ -182,6 +188,7 @@ function Dashboard() {
 
       <UnresolvedBiometricAttendancePanel
         rows={urgentBiometric}
+        currentIdentityNames={currentBiometricIdentityNames}
         unavailable={unresolvedBiometricUnavailable}
         loading={loading}
         language={language}

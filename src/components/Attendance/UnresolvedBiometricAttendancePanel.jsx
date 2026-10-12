@@ -47,8 +47,17 @@ const localTime = (value) => value
   ? new Date(value).toLocaleTimeString([], { timeZone: 'Africa/Kinshasa', hour: '2-digit', minute: '2-digit', second: '2-digit' })
   : '—'
 
-export default function UnresolvedBiometricAttendancePanel({ rows = [], unavailable = false, loading = false, language = 'en' }) {
+export default function UnresolvedBiometricAttendancePanel({ rows = [], currentIdentityNames = [], unavailable = false, loading = false, language = 'en' }) {
   const text = labels[language] || labels.en
+  const currentNameByIdentity = new Map(currentIdentityNames
+    .filter((identity) => identity?.is_current === true)
+    .map((identity) => [
+      `${String(identity.device_id || '').trim()}::${String(identity.device_employee_no || '').trim()}`,
+      safeBiometricDisplayName(identity.device_name),
+    ]))
+  const displayName = (row) => row.resolution_reason === 'unmapped'
+    ? currentNameByIdentity.get(`${String(row.device_id || '').trim()}::${String(row.device_employee_no || '').trim()}`) || '—'
+    : safeBiometricDisplayName(row.device_name) || '—'
   return (
     <section className="surface-card mb-5 overflow-hidden border-2 border-red-200">
       <div className="flex flex-wrap items-center justify-between gap-3 bg-red-50 p-4">
@@ -69,7 +78,7 @@ export default function UnresolvedBiometricAttendancePanel({ rows = [], unavaila
             <div key={row.event_id} className="grid gap-2 p-4 md:grid-cols-[9rem_1fr_1fr]">
               <div dir="ltr" className="font-bold">{localTime(row.event_timestamp)}</div>
               <div>
-                <p className="font-bold">{safeBiometricDisplayName(row.device_name) || '—'} <span dir="ltr" className="text-sm text-(--muted)">#{row.device_employee_no}</span></p>
+                <p className="font-bold">{displayName(row)} <span dir="ltr" className="text-sm text-(--muted)">#{row.device_employee_no}</span></p>
                 <p className="text-xs text-(--muted)">{row.device_id}</p>
               </div>
               <div>

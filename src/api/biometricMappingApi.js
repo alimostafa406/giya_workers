@@ -48,6 +48,21 @@ export const getUnresolvedBiometricAttendanceRequest = async ({ attendanceDate =
   return { data: toArray(data), unavailable: false, attendanceDate }
 }
 
+// Display names only: current structured UserInfo, never biometric ownership.
+export const getCurrentBiometricIdentityNamesRequest = async (issueRows = []) => {
+  const deviceIds = [...new Set(issueRows.map((row) => String(row?.device_id || '').trim()).filter(Boolean))]
+  const employeeNos = [...new Set(issueRows.map((row) => String(row?.device_employee_no || '').trim()).filter(Boolean))]
+  if (!deviceIds.length || !employeeNos.length) return { data: [] }
+  const { data, error } = await getSupabaseClient()
+    .from('biometric_device_identity_presence')
+    .select('device_id,device_employee_no,device_name,is_current')
+    .eq('is_current', true)
+    .in('device_id', deviceIds)
+    .in('device_employee_no', employeeNos)
+  if (error) throw error
+  return { data: toArray(data) }
+}
+
 export const getInactiveWorkerBiometricActivityRequest = async ({ attendanceDate = currentBusinessDate() } = {}) => {
   const { data, error } = await getSupabaseClient().rpc('get_inactive_worker_biometric_activity', {
     p_attendance_date: attendanceDate,
