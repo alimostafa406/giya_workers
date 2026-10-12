@@ -33,12 +33,28 @@ describe('absence-report Biometric ID display', () => {
     const { container } = render(<MemoryRouter><LanguageProvider><AbsenceReport /></LanguageProvider></MemoryRouter>)
     fireEvent.change(container.querySelector('input[type="date"]'), { target: { value: '2026-09-03' } })
     const article = container.querySelector('.absence-report-print-root')
-    await waitFor(() => expect(within(article).getAllByText('Biometric ID:')).toHaveLength(2))
+    await waitFor(() => expect(within(article).getByText('#064')).toBeTruthy())
     const cards = [...article.querySelectorAll('.absence-worker-card')]
     expect(cards).toHaveLength(2)
-    expect(cards.find((card) => card.textContent.includes('NIVA')).textContent).toContain('064')
+    expect(cards.find((card) => card.textContent.includes('NIVA')).textContent).toContain('211#064')
     expect(cards.find((card) => card.textContent.includes('JOHN')).textContent).toContain('—')
+    expect(article.textContent).not.toContain('Biometric ID:')
     expect(article.textContent).toContain('Workers missing a morning punch')
+  })
+
+  it('renders compact #14, #070, and #084 without numeric conversion', async () => {
+    mocks.workers.mockResolvedValue({ data: ['14', '070', '084'].map((id) => ({
+      id, full_name: `WORKER ${id}`, employee_code: id, team_id: 'team', team_name: 'Cleaner',
+      team: { id: 'team', name: 'Cleaner' }, is_active: true, staff_classification: 'normal',
+    })) })
+    mocks.mappings.mockResolvedValue({ data: ['14', '070', '084'].map((id) => ({
+      worker_id: id, device_employee_no: id, is_active: true, mapping_review_state: 'confirmed',
+    })) })
+    const { container } = render(<MemoryRouter><LanguageProvider><AbsenceReport /></LanguageProvider></MemoryRouter>)
+    fireEvent.change(container.querySelector('input[type="date"]'), { target: { value: '2026-09-03' } })
+    await waitFor(() => expect(container.querySelectorAll('.absence-worker-card')).toHaveLength(3))
+    const article = container.querySelector('.absence-report-print-root')
+    for (const id of ['14', '070', '084']) expect(within(article).getByText(`#${id}`)).toBeTruthy()
   })
 
   it('places Biometric ID immediately after Employee Code in the printable week table', async () => {
