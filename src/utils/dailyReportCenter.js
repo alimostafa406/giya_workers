@@ -24,7 +24,7 @@ export const filterDailyMonitoringRows = (rows, filter = 'all') => filter === 'a
 
 export const dailyReportData = ({ date, businessDate = date, workers = [], attendance = [], mappings = [], evidence = [], overtimeTeamIds = [] }) => {
   const dayAttendance = attendance.filter((row) => (row.attendance_date || row.date) === date)
-  const exceptions = buildDailyAttendanceExceptions({ date, workers, attendance: dayAttendance, mappings, evidence })
+  const exceptions = buildDailyAttendanceExceptions({ date, businessDate, workers, attendance: dayAttendance, mappings, evidence })
   const overtime = buildDailyOvertimeReport({ date, attendance: dayAttendance, mappings, overtimeTeamIds })
   const roster = mergeAttendanceRoster({ workers, attendance: dayAttendance, biometricEvidence: evidence, date, businessDate })
   const biometricIds = biometricIdsByWorker(mappings)
@@ -48,7 +48,7 @@ export const dailyReportData = ({ date, businessDate = date, workers = [], atten
       exceptions: exceptions.length,
       absent: exceptions.filter((row) => row.status === 'absent').length,
       halfDay: exceptions.filter((row) => row.status === 'half_day').length,
-      notRecorded: exceptions.filter((row) => row.isVirtual).length,
+      notRecorded: exceptions.filter((row) => row.status === 'not_recorded').length,
       overtimeWorkers: overtime.length,
       overtimeMinutes: overtime.reduce((total, row) => total + row.overtimeMinutes, 0),
     },

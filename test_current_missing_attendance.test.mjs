@@ -13,6 +13,8 @@ const normalWorker = (id, overrides = {}) => ({
   employee_code: id,
   is_active: true,
   staff_classification: 'normal',
+  team_id: 'operational-team',
+  team: { id: 'operational-team', name: 'Zarour' },
   ...overrides,
 })
 const categoryFor = ({ worker = normalWorker('worker'), attendance = [], biometricEvidence = [] } = {}) => {

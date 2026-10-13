@@ -1,6 +1,7 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
 import { isOvertimeReportEligible } from './overtimeReportEligibility.js'
+import { finalAttendanceStatus, isFinalAttendanceRuleDate } from './finalAttendanceStatus.js'
 
 const normalActiveWorker = (row, date = '') => (
   isOperationalAttendanceWorkerOnDate(row?.worker, date, row?.team || row?.team_name)
@@ -8,12 +9,13 @@ const normalActiveWorker = (row, date = '') => (
 )
 
 export const attendanceStatusKey = (row = {}) => {
-  const status = String(row.status || '').trim()
+  const status = String(finalAttendanceStatus(row) || '').trim()
   return status || 'not_recorded'
 }
 
 const exceptionStatus = (row = {}) => {
   const status = attendanceStatusKey(row)
+  if (isFinalAttendanceRuleDate(row.attendance_date || row.date)) return status
   // A canonical full-day present row is authoritative even when its valid
   // attendance model does not require checkout (for example Chauffeur).
   // Retain the defensive one-punch exception only for legacy/partial rows
@@ -45,6 +47,9 @@ const boundedActiveNormalRows = (attendance = [], date = '') => (Array.isArray(a
   .filter((row) => normalActiveWorker(row, date))
 
 const workerKey = (value) => String(value || '')
+const currentKinshasaDate = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Africa/Kinshasa', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date())
 
 const clockValue = (timestamp) => {
   const instant = new Date(timestamp)
@@ -97,7 +102,7 @@ const isLaterAttendanceRow = (candidate, current) => {
   return String(candidate.id || '') > String(current.id || '')
 }
 
-const rosterAttendanceRows = ({ workers = [], attendance = [], date } = {}) => {
+const rosterAttendanceRows = ({ workers = [], attendance = [], date, businessDate = date } = {}) => {
   const attendanceByWorkerId = new Map()
   ;(Array.isArray(attendance) ? attendance : []).forEach((row) => {
     if (date && (row.attendance_date || row.date) !== date) return
@@ -139,19 +144,20 @@ const rosterAttendanceRows = ({ workers = [], attendance = [], date } = {}) => {
         worker_name: worker.full_name,
         team: worker.team || null,
         team_name: worker.team_name || worker.team?.name,
-        status: 'absent',
+        status: date < businessDate ? 'absent' : null,
         check_in: null,
         check_out: null,
         note: null,
         is_virtual: true,
+        roster_state: date < businessDate ? 'confirmed_absent' : 'not_recorded',
       }
     })
 }
 
-export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], evidence = [], mappings = [], date } = {}) => {
+export const buildDailyAttendanceExceptions = ({ workers = [], attendance = [], evidence = [], mappings = [], date, businessDate = currentKinshasaDate() } = {}) => {
   const biometricIds = biometricIdsByWorker(mappings)
   const latestPunches = latestPunchesByWorker(evidence, date)
-  return rosterAttendanceRows({ workers, attendance, date })
+  return rosterAttendanceRows({ workers, attendance, date, businessDate })
     .filter(isAttendanceException)
     .map((row) => {
       const checkInSeconds = clockSeconds(row.check_in)

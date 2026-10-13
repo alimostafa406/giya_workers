@@ -1,3 +1,5 @@
+import { isFinalAttendanceRuleDate } from './finalAttendanceStatus.js'
+
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const BUSINESS_TIME_ZONE = 'Africa/Kinshasa'
 
@@ -75,7 +77,11 @@ export const classifyWeeklyReportDay = ({ date, status, checkOut, businessDate }
 
   if (date > businessDate) return 'future'
   const normalizedStatus = normalizeWeeklyAttendanceStatus(status)
-  const reportStatus = normalizedStatus === 'late' ? (checkOut ? 'present' : 'half_day') : normalizedStatus
+  const finalRule = isFinalAttendanceRuleDate(date)
+  const reportStatus = finalRule
+    ? ['half_day', 'late'].includes(normalizedStatus) ? 'present'
+      : normalizedStatus === 'unresolved' && date < businessDate ? 'absent' : normalizedStatus
+    : normalizedStatus === 'late' ? (checkOut ? 'present' : 'half_day') : normalizedStatus
 
   // Sunday is not part of this Monday-Saturday operational report.
   if (parsedDate.getUTCDay() === 0) {
@@ -104,6 +110,7 @@ export const summarizeWeeklyAttendanceDays = ({ dates, getStatus = () => undefin
     const status = classifyWeeklyReportDay({ date, status: sourceStatus, checkOut: attendance?.check_out, businessDate })
     const workedFraction = date > businessDate || status.startsWith('sunday')
       ? 0
+      : isFinalAttendanceRuleDate(date) && status === 'present' ? 1
       : normalizedStatus === 'late'
         ? lateWorkedFraction(attendance || {})
         : status === 'present'

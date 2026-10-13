@@ -18,6 +18,7 @@ import {
 } from '../utils/attendanceOperationalGate'
 import { attendanceRosterCategory, mergeAttendanceRoster, operationalAttendanceStatus, summarizeAttendanceRoster } from '../utils/attendanceRoster'
 import { activeWorkersOnly } from '../utils/activeWorkers'
+import { isFinalAttendanceRuleDate } from '../utils/finalAttendanceStatus'
 
 const asArray = (value) => {
   if (Array.isArray(value)) return value
@@ -34,6 +35,7 @@ const renderAttendanceStatus = (row, t) => {
   const checkoutOnly = getCheckoutOnlyInfo(row)
   const labels = { present: t('attendance.present'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), pending: t('attendance.pending'), in_progress: t('attendance.inProgress') }
   const status = operationalAttendanceStatus(row)
+  if (checkoutOnly && status === 'present' && isFinalAttendanceRuleDate(row.attendance_date)) return labels.present
   if (!checkoutOnly) return labels[status] || status || '-'
   return <div><span className="status-badge status-badge--warning">{t('attendance.checkoutOnly')}</span>{checkoutOnly.eveningPunchTime ? <p className="mt-1 text-xs text-(--muted)">{t('attendance.eveningPunch')}: {checkoutOnly.eveningPunchTime}</p> : null}</div>
 }

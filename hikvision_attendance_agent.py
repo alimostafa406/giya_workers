@@ -155,7 +155,7 @@ def late_tail_reconciliation_plans(
     return [
         plan for plan in plans
         if str(plan.get('worker_id') or '') in impacted_worker_ids
-        and plan.get('check_in')
+        and (plan.get('check_in') or (plan.get('checkout_only') and plan.get('proposed_status') == 'present'))
         and plan.get('check_out')
         and plan.get('check_out_next_day') is True
     ]

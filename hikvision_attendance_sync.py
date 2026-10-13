@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time as time_module
+from pathlib import Path
 from urllib.parse import urlparse
 from collections import Counter, defaultdict
 from datetime import date as date_type
@@ -36,6 +37,9 @@ from early_morning_attendance_review import is_early_morning_review_time
 
 
 ON_TIME_CHECKIN_END = OFFICIAL_START
+FINAL_DAILY_RULE_START_DATE = date_type.fromisoformat(json.loads(
+    Path(__file__).with_name('attendance_final_status_policy.json').read_text(encoding='utf-8')
+)['effective_date'])
 HIKVISION_EVENT_BATCH_SIZE = 30
 HIKVISION_SUCCESSFUL_PAGE_DELAY_SECONDS = 0.2
 HIKVISION_EVENT_WINDOWS = (
@@ -1150,6 +1154,9 @@ def proposed_status(target_date: date_type, check_in: datetime | None, check_out
     schedule = workday_schedule(target_date)
     if schedule is None:
         return 'non_working_day', None
+    if target_date >= FINAL_DAILY_RULE_START_DATE and (check_in or check_out):
+        # One safely mapped real punch is enough; missing times stay missing.
+        return 'present', 1.0
     if check_in:
         if check_out:
             return 'present', 1.0
@@ -1374,7 +1381,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             'classification': resolution['classifications'].get(worker_id, 'normal'),
             'team_id': worker.get('team_id'),
             'check_in': attendance_time_value(check_in),
-            'check_out': attendance_time_value(checkout_time) if check_in else None,
+            'check_out': attendance_time_value(checkout_time) if check_in or target_date >= FINAL_DAILY_RULE_START_DATE else None,
             'proposed_status': status,
             'day_fraction': fraction,
             'saturday_morning_full_day': saturday_morning_full_day,
@@ -1396,8 +1403,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             ),
             'sync_key': f'hikvision:{worker_id}:{target_date.isoformat()}',
             'existing_attendance_protection': existing_protection,
-            # A future write stage may upgrade its own half_day row to present when
-            # a later valid checkout is discovered; it never changes manual rows.
+            # Later real checkout evidence may extend a biometric row; manual rows stay protected.
             'late_checkout_recovery_eligible': bool(
                 check_in and checkout_time and not is_manual_protected(existing)
             ),
@@ -1481,7 +1487,9 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
     if metadata is None and existing:
         metadata = normalized_metadata(existing.get('biometric_sync_metadata'))
 
-    if status in {'present', 'late', 'half_day'} and check_in:
+    if status in {'present', 'late', 'half_day'} and check_in and (
+        date_type.fromisoformat(plan['sync_key'].rsplit(':', 1)[-1]) < FINAL_DAILY_RULE_START_DATE
+    ):
         # Normalize legacy automatic late rows without changing their real
         # timestamps: checkout means present; otherwise the day is half day.
         status = 'present' if (

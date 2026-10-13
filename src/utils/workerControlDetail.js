@@ -1,5 +1,6 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
+import { finalAttendanceStatus } from './finalAttendanceStatus.js'
 
 const key = (value) => String(value || '')
 const dateOf = (row) => row?.attendance_date || row?.date || ''
@@ -72,7 +73,7 @@ export const buildWorkerControlDetail = ({ worker, attendance = [], events = [],
     // their existing not-recorded classification and no attendance is written.
     return {
       date, row, eligible, future,
-      status: future ? 'future' : !eligible && worker.is_active ? 'not_applicable' : row ? (row.status || 'no_record') : eligible ? (deriveMissingAbsence ? 'absent' : 'no_record') : 'not_applicable',
+      status: future ? 'future' : !eligible && worker.is_active ? 'not_applicable' : row ? (finalAttendanceStatus(row, date, today) || 'no_record') : eligible ? (deriveMissingAbsence ? 'absent' : 'no_record') : 'not_applicable',
       checkIn: row?.check_in || null,
       checkOut: row?.check_out || null,
       overtimeMinutes: row && !future ? weeklyPayrollOvertimeForDetail({ date, row, worker, status: row.status }).eveningOvertimeMinutes : 0,

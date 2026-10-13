@@ -175,6 +175,7 @@ function Dashboard() {
       ) : null}
 
       {loading ? <p className="mb-5">{t('common.loading')}</p> : <DailyAttendanceSummary
+        date={today}
         rows={summaryRows}
         counts={dailyCounts}
         t={t}

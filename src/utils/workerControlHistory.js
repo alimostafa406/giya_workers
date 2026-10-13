@@ -1,5 +1,6 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
+import { finalAttendanceStatus } from './finalAttendanceStatus.js'
 
 const iso = (date) => date.toISOString().slice(0, 10)
 const addMonths = (value, count) => {
@@ -34,7 +35,7 @@ export const buildWorkerHistory = ({ worker, attendance = [], dateFrom, dateTo }
     if (date.getUTCDay() === 0 || !isOperationalAttendanceWorkerOnDate(worker, workday)) continue
     const row = rows.get(workday) || null
     days.push({
-      date: workday, status: row ? (row.status || 'no_record') : 'absent', checkIn: row?.check_in || null, checkOut: row?.check_out || null,
+      date: workday, status: row ? (finalAttendanceStatus(row, workday, dateTo) || 'no_record') : 'absent', checkIn: row?.check_in || null, checkOut: row?.check_out || null,
       overtimeMinutes: row ? weeklyPayrollOvertimeForDetail({ date: workday, row, worker, status: row.status }).eveningOvertimeMinutes : 0,
       note: row?.note || null, source: row?.attendance_source || null,
     })

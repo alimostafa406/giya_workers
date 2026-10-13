@@ -2,15 +2,17 @@ import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { filterDailyMonitoringRows } from '../../utils/dailyReportCenter.js'
 import { morningLateness } from '../../utils/morningLateness.js'
+import { operationalAttendanceStatus } from '../../utils/attendanceRoster.js'
+import { isFinalAttendanceRuleDate } from '../../utils/finalAttendanceStatus.js'
 
 const time = (value) => value && value !== '—' ? String(value).slice(0, 5) : '—'
 const statusKeys = { present: 'present', half_day: 'halfDay', absent: 'absent', late: 'late', pending: 'pending', in_progress: 'inProgress', not_recorded: 'notRecorded' }
 
-export default function DailyAttendanceSummary({ rows, counts, labels, t }) {
+export default function DailyAttendanceSummary({ rows, counts, labels, t, date }) {
   const [filter, setFilter] = useState(null)
   const cards = [
     ['present', 'dashboard.presentToday', counts.present],
-    ['half_day', 'dashboard.halfDay', counts.half_day],
+    ...(!isFinalAttendanceRuleDate(date) ? [['half_day', 'dashboard.halfDay', counts.half_day]] : []),
     ['absent', 'dashboard.absentToday', counts.absent],
     ['not_recorded', 'dashboard.notRecorded', counts.not_recorded],
     ['all', 'dashboard.totalWorkers', counts.total],
@@ -18,7 +20,7 @@ export default function DailyAttendanceSummary({ rows, counts, labels, t }) {
   const selectedRows = filter ? filterDailyMonitoringRows(rows, filter) : []
   const canonicalStatusLabel = (row) => row.roster_state === 'biometric_pending'
     ? t('attendance.pending')
-    : row.status ? (statusKeys[row.status] ? t(`attendance.${statusKeys[row.status]}`) : String(row.status)) : t('attendance.notRecorded')
+    : operationalAttendanceStatus(row) ? (statusKeys[operationalAttendanceStatus(row)] ? t(`attendance.${statusKeys[operationalAttendanceStatus(row)]}`) : String(operationalAttendanceStatus(row))) : t('attendance.notRecorded')
 
   const statusLabel = (row) => <>{canonicalStatusLabel(row)}{morningLateness(row, t) !== '—' && <small className="block text-(--muted)">{t('attendance.morningLateness')}: {morningLateness(row, t)}</small>}</>
 

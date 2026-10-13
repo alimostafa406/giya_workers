@@ -1,4 +1,5 @@
 import { isChauffeurNormalOvertimeExcluded } from './weeklyPayrollOvertime.js'
+import { finalAttendanceStatus } from './finalAttendanceStatus.js'
 
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const atNoon = (value) => new Date(`${value}T12:00:00`)
@@ -116,7 +117,8 @@ export const calculatePayrollLine = ({ worker, term, attendanceByDate, dates, ru
     // A future day is not an attendance fact yet. Ignore even an accidental
     // future row so it cannot become payable, deductible, or manually editable.
     const row = isFuture ? null : attendanceRow
-    const status = isFuture ? 'future' : isCurrentDayUnrecorded ? 'not_recorded' : row?.status || 'absent'
+    const status = isFuture ? 'future' : isCurrentDayUnrecorded ? 'not_recorded'
+      : finalAttendanceStatus(row, date, businessDate) || (date === businessDate ? 'not_recorded' : 'absent')
     const lateFactor = status === 'late'
       ? (Number(row?.attendance_day_fraction) === 1 || row?.check_out ? 1 : halfMultiplier)
       : 0

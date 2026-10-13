@@ -33,6 +33,17 @@ const setup = () => render(<MemoryRouter><DailyAttendanceSummary rows={data.moni
 const click = (label) => fireEvent.click(screen.getByRole('button', { name: new RegExp(label) }))
 const listedWorkers = () => [...screen.getByRole('table').querySelectorAll('tbody tr')].map((row) => row.cells[0].textContent)
 
+test('new-rule day has only present/absent final cards and lists a one-punch worker as present', () => {
+  const date = '2026-10-13'
+  const normal = { id: 'one', full_name: 'ONE PUNCH', employee_code: '21', is_active: true, staff_classification: 'normal', team_id: 'maison', team: { id: 'maison', name: 'Maison' } }
+  const result = dailyReportData({ date, businessDate: date, workers: [normal], attendance: [{ id: 'a', worker_id: 'one', attendance_date: date, status: 'half_day', check_in: '08:10:00', check_out: null, attendance_source: 'biometric', manual_override: false }] })
+  render(<MemoryRouter><DailyAttendanceSummary date={date} rows={result.monitoringRows} counts={result.monitoringCounts} labels={labels} t={t} /></MemoryRouter>)
+  expect(screen.queryByRole('button', { name: /Half day/ })).toBeNull()
+  click('Present')
+  expect(listedWorkers()).toEqual(['ONE PUNCH'])
+  expect(screen.getByRole('table').textContent).toContain('attendance.present')
+})
+
 test('Half-day card shows exactly the half-day worker and its selected state', () => {
   setup(); click('Half day')
   expect(listedWorkers()).toEqual(['IGNACE'])

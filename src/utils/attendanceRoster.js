@@ -1,4 +1,5 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
+import { finalAttendanceStatus } from './finalAttendanceStatus.js'
 
 const workerKey = (value) => String(value || '')
 
@@ -76,13 +77,16 @@ export const attendanceRosterCategory = (row) => {
   if (row.roster_state === 'not_recorded') return 'not_recorded'
   if (row.roster_state === 'biometric_pending') return 'review'
   if (row.roster_state === 'not_applicable') return 'not_applicable'
-  if (row.status === 'pending' || row.status === 'in_progress') return 'review'
-  if (row.status === 'present' || row.status === 'late' || row.status === 'half_day') return 'present'
-  if (row.status === 'absent') return 'absent'
+  const status = operationalAttendanceStatus(row)
+  if (status === 'pending' || status === 'in_progress') return 'review'
+  if (status === 'present' || status === 'late' || status === 'half_day') return 'present'
+  if (status === 'absent') return 'absent'
   return 'not_applicable'
 }
 
 export const operationalAttendanceStatus = (row = {}) => {
+  const final = finalAttendanceStatus(row)
+  if (final !== row.status) return final
   if (row.status !== 'late') return row.status
   return row.check_out ? 'present' : 'half_day'
 }

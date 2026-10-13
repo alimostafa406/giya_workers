@@ -3,6 +3,7 @@ import { buildWorkerControlAlerts } from './workerControlCenter.js'
 import { buildWorkerControlSectionMetrics } from './workerControlSectionMetrics.js'
 import { buildWorkerControlDetail } from './workerControlDetail.js'
 import { currentConsecutiveAbsenceDates } from './workerControlPeriods.js'
+import { finalAttendanceStatus } from './finalAttendanceStatus.js'
 
 const base = '/worker-control-center'
 
@@ -22,6 +23,7 @@ const byWorker = (rows) => [...new Map(rows.filter((row) => row?.worker?.id).map
 const eventTime = (event) => String(event?.event_timestamp || '')
 
 export const buildWorkerControlPages = ({ workers = [], attendance = [], events = [], activated = [], mappings = [], today, weekStart, monthStart } = {}) => {
+  attendance = attendance.map((row) => ({ ...row, status: finalAttendanceStatus(row, row.attendance_date || row.date, today) }))
   const monthAttendance = attendance.filter((row) => (row.attendance_date || row.date || '') >= monthStart && (row.attendance_date || row.date || '') <= today)
   const source = { workers, attendance: monthAttendance, events, activated, mappings, today, weekStart, monthStart }
   const alerts = buildWorkerControlAlerts(source)
