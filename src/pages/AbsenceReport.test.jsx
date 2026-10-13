@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import AbsenceReport from './AbsenceReport.jsx'
 import { LanguageProvider } from '../i18n/LanguageContext.jsx'
@@ -26,7 +26,42 @@ beforeEach(() => {
     { worker_id: 'unmapped', device_employee_no: '084', is_active: true, mapping_review_state: 'needs_review' },
   ] })
 })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks() })
+
+describe('absence-report 11:00 Kinshasa freeze', () => {
+  it('polls and refreshes on focus before 11:00, performs one final load, then stops', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-10-12T09:58:30Z'))
+    const { container } = render(<MemoryRouter><LanguageProvider><AbsenceReport /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('NIVA')
+    expect(mocks.attendance).toHaveBeenCalledTimes(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(mocks.attendance).toHaveBeenCalledTimes(2)
+    fireEvent.focus(window)
+    await waitFor(() => expect(mocks.attendance).toHaveBeenCalledTimes(3))
+    const workerCount = container.querySelectorAll('.absence-worker-card').length
+    vi.setSystemTime(new Date('2026-10-12T10:00:00Z'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    await waitFor(() => expect(mocks.attendance).toHaveBeenCalledTimes(4))
+    fireEvent.focus(window)
+    fireEvent(document, new Event('visibilitychange'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+    expect(mocks.attendance).toHaveBeenCalledTimes(4)
+    expect(container.querySelectorAll('.absence-worker-card')).toHaveLength(workerCount)
+  })
+
+  it('opens after 11:00 with one load and ignores later focus, visibility, and polling', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-10-12T10:15:00Z'))
+    render(<MemoryRouter><LanguageProvider><AbsenceReport /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('NIVA')
+    expect(mocks.attendance).toHaveBeenCalledTimes(1)
+    fireEvent.focus(window)
+    fireEvent(document, new Event('visibilitychange'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+    expect(mocks.attendance).toHaveBeenCalledTimes(1)
+  })
+})
 
 describe('absence-report Biometric ID display', () => {
   it('shows confirmed IDs and fallback in the same printable today layout without changing counts', async () => {

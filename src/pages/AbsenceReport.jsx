@@ -15,6 +15,7 @@ import {
 } from '../utils/attendanceOperationalGate'
 import { absenceWeekDates, buildAbsenceReport, createAbsenceReportRefreshCoordinator } from '../utils/absenceReport'
 import { isOperationalAttendanceTeam } from '../utils/activeWorkers'
+import { isSupervisorFinalWindow } from '../utils/supervisorMorningReview'
 
 const asArray = (value) => Array.isArray(value) ? value : Array.isArray(value?.data) ? value.data : []
 const currentBusinessDate = () => kinshasaClock().date
@@ -35,6 +36,8 @@ export default function AbsenceReport() {
   const requestRef = useRef({ mode, selectedDate })
   const refreshCoordinatorRef = useRef(null)
   const mountedRef = useRef(true)
+  const frozenSnapshotRef = useRef(null)
+  const latestSnapshotRef = useRef(null)
 
   requestRef.current = { mode, selectedDate }
   if (!refreshCoordinatorRef.current) refreshCoordinatorRef.current = createAbsenceReportRefreshCoordinator()
@@ -43,10 +46,17 @@ export default function AbsenceReport() {
   const dates = useMemo(() => datesFor({ mode, selectedDate }), [mode, selectedDate])
   const isTodayView = mode === 'today' && selectedDate === businessDate
   const locked = mode === 'today' && isAttendancePageLocked({ selectedDate, now })
+  const finalWindow = isTodayView && isSupervisorFinalWindow(selectedDate, now)
+  const frozen = frozenSnapshotRef.current?.key === requestKey
   const locale = language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : 'en-GB'
 
-  const refreshSnapshot = useCallback(async (requested = requestRef.current) => {
+  const refreshSnapshot = useCallback(async (requested = requestRef.current, { final = false } = {}) => {
     const key = requestKeyFor(requested)
+    if (frozenSnapshotRef.current?.key === key) return frozenSnapshotRef.current
+    if (requested.mode === 'today' && requested.selectedDate === currentBusinessDate()
+      && isSupervisorFinalWindow(requested.selectedDate, new Date()) && !final) {
+      return latestSnapshotRef.current
+    }
     if (requested.mode === 'today' && isAttendancePageLocked({ selectedDate: requested.selectedDate, now: new Date() })) {
       const lockError = new Error('attendance_locked')
       lockError.code = 'attendance_locked'
@@ -58,7 +68,7 @@ export default function AbsenceReport() {
       : { date: requested.selectedDate, staff_classification: 'normal' }
     if (mountedRef.current) { setLoading(true); setError('') }
     try {
-      return await refreshCoordinatorRef.current(key, async () => {
+      return await refreshCoordinatorRef.current(`${key}:${final ? 'final' : 'live'}`, async () => {
         const [workersResult, teamsResult, attendanceResult, mappingsResult] = await Promise.all([
           getWorkersRequest(),
           getTeamsRequest(),
@@ -73,7 +83,11 @@ export default function AbsenceReport() {
           mappings: asArray(mappingsResult.data),
           fetchedAt: new Date(),
         }
-        if (mountedRef.current && requestKeyFor(requestRef.current) === key) setSnapshot(nextSnapshot)
+        if (mountedRef.current && requestKeyFor(requestRef.current) === key) {
+          latestSnapshotRef.current = nextSnapshot
+          setSnapshot(nextSnapshot)
+          if (final) frozenSnapshotRef.current = nextSnapshot
+        }
         return nextSnapshot
       })
     } catch (requestError) {
@@ -93,14 +107,21 @@ export default function AbsenceReport() {
 
   useEffect(() => {
     if (locked) return
-    refreshSnapshot(requestRef.current).catch(() => {})
-  }, [locked, mode, refreshSnapshot, selectedDate])
+    if (frozen) {
+      setSnapshot(frozenSnapshotRef.current)
+      return
+    }
+    refreshSnapshot(requestRef.current, { final: finalWindow }).catch(() => {})
+  }, [locked, mode, refreshSnapshot, selectedDate, finalWindow, frozen])
 
   useEffect(() => {
-    if (!isTodayView || locked) return undefined
-    const timer = window.setInterval(() => refreshSnapshot(requestRef.current).catch(() => {}), ATTENDANCE_REFRESH_INTERVAL_MS)
+    if (!isTodayView || locked || finalWindow || frozen) return undefined
+    const timer = window.setInterval(() => {
+      const requested = requestRef.current
+      if (!isSupervisorFinalWindow(requested.selectedDate, new Date())) refreshSnapshot(requested).catch(() => {})
+    }, ATTENDANCE_REFRESH_INTERVAL_MS)
     return () => window.clearInterval(timer)
-  }, [isTodayView, locked, refreshSnapshot])
+  }, [isTodayView, locked, finalWindow, frozen, refreshSnapshot])
 
   useEffect(() => {
     const refreshAfterFocus = () => {
@@ -108,6 +129,7 @@ export default function AbsenceReport() {
       if (document.visibilityState !== 'hidden'
         && requested.mode === 'today'
         && requested.selectedDate === currentBusinessDate()
+        && !isSupervisorFinalWindow(requested.selectedDate, new Date())
         && !isAttendancePageLocked({ selectedDate: requested.selectedDate, now: new Date() })) {
         refreshSnapshot(requested).catch(() => {})
       }
