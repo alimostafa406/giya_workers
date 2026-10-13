@@ -32,6 +32,7 @@ import AdvancedSettings from '../pages/AdvancedSettings'
 import AttendanceOvertimeSettings from '../pages/AttendanceOvertimeSettings'
 import Payroll from '../pages/Payroll'
 import PayrollPublication from '../pages/PayrollPublication'
+import OutsideWork from '../pages/OutsideWork'
 import ForeignAttendance from '../pages/ForeignAttendance'
 import { useAuthStore } from '../store/authStore'
 
@@ -125,6 +126,7 @@ function AppRouter() {
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/teams" element={<Teams />} />
+            <Route path="/outside-work" element={<OutsideWork />} />
             <Route path="/supervisors" element={<Supervisors />} />
             <Route path="/workers" element={<Workers />} />
             <Route path="/inactive-workers" element={<InactiveWorkers />} />

@@ -21,7 +21,7 @@ function NavIcon({ name }) {
 }
 
 function Sidebar({ isOpen, onClose }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const mainLinks = [
     { to: '/', label: t('navigation.dashboard'), icon: 'dashboard' },
@@ -31,6 +31,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/inactive-workers', label: t('navigation.inactiveWorkers'), icon: 'inactiveWorkers' },
     { to: '/worker-control-center', label: 'مركز مراقبة العمال', icon: 'alert' },
     { to: '/teams', label: t('navigation.teams'), icon: 'teams' },
+    { to: '/outside-work', label: { ar: 'العمل الخارجي', en: 'Outside Work', fr: 'Travail extérieur' }[language], icon: 'teams' },
     { to: '/special-staff-attendance', label: t('navigation.specialStaff'), icon: 'specialStaff' },
     { to: '/reports/weekly-attendance', label: t('navigation.reports'), icon: 'report' },
     { to: '/reports/daily', label: t('navigation.dailyCenter'), icon: 'report' },
