@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { outsideWorkEligibleWorkers, outsideWorkForemen, searchOutsideWorkPeople } from './outsideWorkRoster'
+import { outsideWorkEligibleWorkers, outsideWorkForemen, outsideWorkOtherWorkers, outsideWorkTeamWorkers, searchOutsideWorkPeople } from './outsideWorkRoster'
 
 const staff = [
   { id: 'foreign', full_name: 'FOREIGN LEADER', employee_code: '900', is_active: true, staff_classification: 'special_staff' },
@@ -22,5 +22,13 @@ describe('outside-work roster sources', () => {
     expect(searchOutsideWorkPeople(staff, '')).toEqual([])
     expect(searchOutsideWorkPeople(outsideWorkForemen(staff), '900').map((worker) => worker.id)).toEqual(['foreign'])
     expect(searchOutsideWorkPeople(outsideWorkEligibleWorkers(staff, '2026-10-14'), 'rob').map((worker) => worker.id)).toEqual(['local'])
+  })
+  it('returns no team workers before selection, and never mixes teams', () => {
+    const all = [...staff, { id: 'other', full_name: 'JEREMIE', employee_code: '100', is_active: true, staff_classification: 'normal', team_id: 'montage', team_name: 'Montage' }]
+    expect(outsideWorkTeamWorkers(all, '2026-10-14', '')).toEqual([])
+    expect(outsideWorkTeamWorkers(all, '2026-10-14', 'montage').map((worker) => worker.id)).toEqual(['other'])
+    expect(outsideWorkOtherWorkers(all, '2026-10-14', 'paint', '', new Map())).toEqual([])
+    expect(outsideWorkOtherWorkers(all, '2026-10-14', 'paint', '064', new Map([['other', '064']])).map((worker) => worker.id)).toEqual(['other'])
+    expect(all.find((worker) => worker.id === 'other').team_id).toBe('montage')
   })
 })

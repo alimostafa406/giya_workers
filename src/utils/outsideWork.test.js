@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { durationMinutes, foremanKey, formatClock, formatDuration, weekDays, weeklyForemanReport } from './outsideWork'
+import { durationMinutes, foremanKey, formatClock, formatDuration, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from './outsideWork'
 
 describe('outside-work foreman report', () => {
   const days = weekDays('2026-10-14')
@@ -20,5 +20,22 @@ describe('outside-work foreman report', () => {
     expect(report).toMatchObject({ dayCount: 2, movementCount: 3, totalMinutes: 1425, averageMinutes: 712.5 })
     expect(formatDuration(630)).toBe('10.5 h')
     expect(formatClock('20:00:00')).toBe('8:00 PM')
+  })
+  it('excludes all drafts while preserving legacy finalized rows', () => {
+    const report = weeklyForemanReport([...rows, { ...rows[0], id: 'draft', status: 'draft', end_time: '23:00' }], 'worker:f1', days)
+    expect(report.totalMinutes).toBe(1425)
+    expect(report.rows.map((row) => row.id)).not.toContain('draft')
+  })
+  it('hydrates incomplete drafts without inventing times and validates only final saves', () => {
+    const form = outsideWorkForm({ status: 'draft', missing_worker_note: 'WhatsApp person',
+      entry_state: { otherSearch: 'missing' }, outside_work_movement_workers: [{ worker_id: 'local', worker_name: 'LOCAL', start_time: null, end_time: null }] })
+    expect(form.work_date).toBe('')
+    expect(form.workers[0].start_time).toBe('')
+    expect(form.entry_state.otherSearch).toBe('missing')
+    expect(outsideWorkFinalError(form)).toBe('required')
+    const complete = { ...form, work_date: '2026-10-14', team_id: 'team', foreman_name: 'LEADER',
+      start_time: '08:00', end_time: '17:00', workers: [{ worker_id: 'local', start_time: '08:00', end_time: '17:00' }] }
+    expect(outsideWorkFinalError(complete)).toBe('unresolved')
+    expect(outsideWorkFinalError({ ...complete, missing_worker_note: '' })).toBe('')
   })
 })
