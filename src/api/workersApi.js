@@ -1,5 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
-import { validateWorkerTeamAssignment } from '../utils/workerTeamEligibility'
+import { isSpecialStaffWorker, validateWorkerTeamAssignment } from '../utils/workerTeamEligibility'
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
 
@@ -8,7 +8,7 @@ const buildWorkerPayload = (payload) => {
 		full_name: payload.full_name,
 		employee_code: payload.employee_code,
 		phone: payload.phone,
-		team_id: payload.team_id || null,
+		...(!isSpecialStaffWorker(payload) ? { team_id: payload.team_id || null } : {}),
 		is_active: Boolean(payload.is_active),
 	}
 
@@ -150,7 +150,7 @@ export const createWorkerRequest = async (payload) => {
 		throw error
 	}
 
-	await saveWorkerPayrollProfileRequest(data.id, {
+	if (!isSpecialStaffWorker(payload)) await saveWorkerPayrollProfileRequest(data.id, {
 		payment_type: payload.payment_type || 'weekly',
 		monthly_salary: payload.monthly_salary,
 	})
@@ -175,7 +175,7 @@ export const updateWorkerRequest = async (id, payload) => {
 		throw error
 	}
 
-	if (payload.payment_type) {
+	if (!isSpecialStaffWorker(payload) && payload.payment_type) {
 		await saveWorkerPayrollProfileRequest(id, payload)
 	}
 	if (payload.staff_classification) {

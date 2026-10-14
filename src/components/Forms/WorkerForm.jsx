@@ -34,11 +34,9 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
       full_name: fullName,
       employee_code: employeeCode,
       phone,
-      team_id: teamId || null,
+      ...(teamRequired ? { team_id: teamId || null, payment_type: paymentType, monthly_salary: monthlySalary } : {}),
       is_active: isActive,
       staff_classification: staffClassification,
-      payment_type: paymentType,
-      monthly_salary: monthlySalary,
     })
   }
 
@@ -82,18 +80,18 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
           <option value="special_staff">{t('biometricMapping.specialWorker')}</option>
         </select>
       </div>
-      <div>
+      {teamRequired && <div>
         <label className="mb-1 block text-sm font-semibold">{t('payroll.paymentType')}</label>
         <select value={paymentType} onChange={(e) => setPaymentType(e.target.value)} className="input-base">
           <option value="weekly">{t('payroll.weekly')}</option>
           <option value="monthly">{t('payroll.monthly')}</option>
         </select>
-      </div>
-      {paymentType === 'monthly' ? <div>
+      </div>}
+      {teamRequired && paymentType === 'monthly' ? <div>
         <label className="mb-1 block text-sm font-semibold">{t('payroll.monthlySalary')}</label>
         <input type="number" min="0" step="any" value={monthlySalary} onChange={(e) => setMonthlySalary(e.target.value)} className="input-base" />
       </div> : null}
-      <div>
+      {teamRequired && <div>
         <label className="mb-1 block text-sm font-semibold">{t('attendance.team')}</label>
         <select
           value={teamId}
@@ -109,7 +107,7 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
           ))}
         </select>
         {!teamRequired ? <p className="mt-1 text-xs text-(--muted)">{t('workers.noTeamAllowed')}</p> : null}
-      </div>
+      </div>}
 
       <label className="flex items-center gap-2 rounded-xl border border-(--border) bg-white px-3 py-2 text-sm font-semibold">
         <input
