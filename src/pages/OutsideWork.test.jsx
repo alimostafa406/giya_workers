@@ -70,6 +70,28 @@ const chooseForeman = (form) => {
 }
 
 describe('outside-work separate movement ranges', () => {
+  it('expands weekly workers while print always includes names without actions', async () => {
+    const { container } = open()
+    await screen.findByText('FOREMAN', { selector: 'strong' })
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly foreman report' }))
+    fireEvent.change(screen.getByLabelText('Select a foreman'), { target: { value: 'worker:foreman' } })
+    expect(screen.queryByRole('cell', { name: 'ROBERT' })).toBeNull()
+    const print = container.querySelector('.outside-work-print')
+    for (const text of ['ROBERT', 'Peinture', 'FOREMAN', 'Weekly foreman report', '2026-10-12 → 2026-10-18']) expect(print.textContent).toContain(text)
+    expect(print.querySelector('button,select,input')).toBeNull()
+    expect(container.querySelector('style').textContent).toContain('.outside-work-print, .outside-work-print * { visibility: visible !important; }')
+    fireEvent.click(screen.getByRole('button', { name: 'Show workers (1)' }))
+    expect(screen.getByRole('cell', { name: 'ROBERT' })).toBeTruthy()
+    expect(screen.getByRole('cell', { name: 'Peinture' })).toBeTruthy()
+    const details = screen.getAllByRole('table')[1]
+    expect(details.querySelectorAll(':scope > tbody > tr')).toHaveLength(1)
+    expect(details.querySelectorAll('th')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Hide workers (1)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Print Weekly Foreman Report' }))
+    expect(window.print).toHaveBeenCalledOnce()
+    expect(print.textContent).toContain('ROBERT')
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it('isolates Arabic overtime and week ranges and shares three compact summary cards with print', async () => {
     localStorage.setItem('workers_app_language', 'ar')
     persisted[0].end_time = '17:00:00'
@@ -91,7 +113,7 @@ describe('outside-work separate movement ranges', () => {
         expect(range.dir).toBe('ltr')
       }
     }
-    for (const overtime of container.querySelectorAll('td bdi')) {
+    for (const overtime of container.querySelectorAll('td bdi.whitespace-nowrap')) {
       expect(overtime.textContent).toBe('0 h')
       expect(overtime.dir).toBe('ltr')
     }
@@ -289,7 +311,7 @@ describe('outside-work separate movement ranges', () => {
     expect(print.textContent).not.toMatch(/Total hours|Daily average/)
     const reportTable = screen.getByRole('table')
     expect(within(reportTable).getByRole('cell', { name: '3 h' })).toBeTruthy()
-    expect(within(reportTable).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Day', 'Date', 'Foreman Start', 'Foreman End', 'Overtime', 'Worker count'])
+    expect(within(reportTable).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Day', 'Date', 'Foreman Start', 'Foreman End', 'Overtime', 'Worker count', 'Show workers'])
     expect(print.querySelectorAll('th')[4].textContent).toBe('Overtime')
     fireEvent.click(screen.getByRole('button', { name: 'Print Weekly Foreman Report' }))
     expect(window.print).toHaveBeenCalledOnce()

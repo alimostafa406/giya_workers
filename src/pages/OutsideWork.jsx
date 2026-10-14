@@ -7,6 +7,7 @@ import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
 import { durationMinutes, foremanKey, formatClock, formatDuration, hasOutsideWorkForeman, isFinalOutsideWorkMovement, newOutsideWorkForm, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from '../utils/outsideWork'
 import OutsideWorkEntryForm from '../components/OutsideWork/OutsideWorkEntryForm'
+import WeeklyForemanRows from '../components/OutsideWork/WeeklyForemanRows'
 import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 import { biometricIdsByWorker } from '../utils/dailyOperationalReports'
 
@@ -208,7 +209,8 @@ export default function OutsideWork() {
     <style>{`@media print { @page { size: A4 portrait; margin: 14mm; }
       .app-sidebar, main > header, .outside-work-page > :not(.outside-work-print) { display: none !important; }
       main, main > div, .outside-work-page { max-width: none !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
-      .outside-work-print { display: block !important; width: 100%; color: #111; }
+      .outside-work-print { display: block !important; position: absolute; inset: 0; width: 100%; color: #111; }
+      .outside-work-print, .outside-work-print * { visibility: visible !important; }
       .outside-work-print tr { break-inside: avoid; } .outside-work-print thead { display: table-header-group; }
       .outside-work-print .foreman-report-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); break-inside: avoid; } }`}</style>
     <header className="flex flex-wrap items-center justify-between gap-4">
@@ -256,11 +258,11 @@ export default function OutsideWork() {
     {tab === 'report' && <section className="surface-card space-y-4 p-5"><h2 className="text-xl font-extrabold">{l.report}</h2>
       <div className="flex flex-wrap gap-3"><label>{l.foreman} <select aria-label={l.chooseReport} value={reportForeman} onChange={(event) => setReportForeman(event.target.value)} className="ms-2 rounded-lg border p-2"><option value="">{l.chooseReport}</option>{foremen.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
         <button type="button" disabled={!report.rows.length} className="btn-secondary" onClick={() => window.print()}>{l.print}</button></div>
-      {reportForeman && <><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="p-2 text-start">{item}</th>)}</tr></thead><tbody>{report.rows.map((row) => <tr key={row.id} className="border-t"><td className="p-2">{dateLabel(row.work_date).split(' ')[0]}</td><td className="p-2">{row.work_date}</td><td className="p-2" dir="ltr">{formatClock(row.start_time)}</td><td className="p-2" dir="ltr">{formatClock(row.end_time)}</td><td className="p-2"><bdi dir="ltr" className="inline-block whitespace-nowrap">{formatDuration(row.foremanOvertimeMinutes)}</bdi></td><td className="p-2">{row.outside_work_movement_workers?.length || 0}</td></tr>)}</tbody></table></div>
+      {reportForeman && <><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count, l.show].map((item) => <th key={item} className="p-2 text-start">{item}</th>)}</tr></thead><tbody><WeeklyForemanRows rows={report.rows} labels={l} dateLabel={dateLabel} workersById={workersById} expanded={expanded} onToggle={(id) => setExpanded((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} /></tbody></table></div>
         <ForemanReportSummary report={report} labels={l} /></>}
     </section>}
     <section className="outside-work-print hidden" aria-hidden="true"><h1>{l.report}</h1><h2>{reportName}</h2><p><bdi dir="ltr" className="inline-block whitespace-nowrap">{days[0]} → {days[6]}</bdi></p>
-      <table className="w-full border-collapse text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="border p-2 text-start">{item}</th>)}</tr></thead><tbody>{report.rows.map((row) => <tr key={row.id}><td className="border p-2">{dateLabel(row.work_date).split(' ')[0]}</td><td className="border p-2">{row.work_date}</td><td className="border p-2">{formatClock(row.start_time)}</td><td className="border p-2">{formatClock(row.end_time)}</td><td className="border p-2"><bdi dir="ltr" className="inline-block whitespace-nowrap">{formatDuration(row.foremanOvertimeMinutes)}</bdi></td><td className="border p-2">{row.outside_work_movement_workers?.length || 0}</td></tr>)}</tbody></table>
+      <table className="w-full border-collapse text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="border p-2 text-start">{item}</th>)}</tr></thead><tbody><WeeklyForemanRows rows={report.rows} labels={l} dateLabel={dateLabel} workersById={workersById} print /></tbody></table>
       <ForemanReportSummary report={report} labels={l} />
     </section>
 
