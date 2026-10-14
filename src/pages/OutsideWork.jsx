@@ -65,7 +65,7 @@ const flowLabels = {
     saveDraft: 'حفظ كمسودة', saveFinal: 'حفظ', movements: 'الحركات', drafts: 'المسودات',
     continue: 'متابعة', updated: 'آخر تحديث', noDrafts: 'لا توجد مسودات', saved: 'تم الحفظ',
     required: 'التاريخ والفريق مطلوبان للحفظ النهائي.', unresolved: 'أكمل العامل غير الموجود أو امسح الملاحظة قبل الحفظ النهائي.',
-    selectWorkers: 'اختر عاملاً حقيقياً واحداً على الأقل.' },
+    selectWorkers: 'اختر عاملاً حقيقياً واحداً على الأقل.', historyTimes: 'أوقات العمال المحفوظة مختلفة؛ ستبقى كما هي إلى أن تعدّل وقت العمال المشترك.' },
   en: { team: 'Team', chooseTeam: 'Select team', teamWorkers: 'Team workers', selectAll: 'Select all team workers',
     deselectAll: 'Deselect team workers', selected: 'Selected', of: 'of', teamSearch: 'Search within team',
     otherSearch: 'Add worker from another team', otherPlaceholder: 'Worker name / employee code / biometric ID',
@@ -74,7 +74,7 @@ const flowLabels = {
     saveDraft: 'Save as draft', saveFinal: 'Save', movements: 'Movements', drafts: 'Drafts',
     continue: 'Continue', updated: 'Last updated', noDrafts: 'No drafts', saved: 'Saved',
     required: 'Date and team are required for final save.', unresolved: 'Resolve or clear the missing-worker note before final save.',
-    selectWorkers: 'Select at least one real worker.' },
+    selectWorkers: 'Select at least one real worker.', historyTimes: 'Saved worker times differ; they remain unchanged until you edit the shared worker times.' },
   fr: { team: 'Équipe', chooseTeam: 'Choisir une équipe', teamWorkers: 'Travailleurs de l’équipe',
     selectAll: 'Sélectionner toute l’équipe', deselectAll: 'Désélectionner l’équipe', selected: 'Sélectionnés', of: 'sur',
     teamSearch: 'Rechercher dans l’équipe', otherSearch: 'Ajouter un travailleur d’une autre équipe',
@@ -85,7 +85,7 @@ const flowLabels = {
     drafts: 'Brouillons', continue: 'Continuer', updated: 'Dernière modification', noDrafts: 'Aucun brouillon',
     saved: 'Enregistré', required: 'La date et l’équipe sont requises.',
     unresolved: 'Résoudre ou effacer la note du travailleur introuvable avant l’enregistrement final.',
-    selectWorkers: 'Sélectionner au moins un travailleur.' },
+    selectWorkers: 'Sélectionner au moins un travailleur.', historyTimes: 'Les horaires enregistrés diffèrent ; ils restent inchangés jusqu’à modification des horaires communs.' },
 }
 
 export default function OutsideWork() {

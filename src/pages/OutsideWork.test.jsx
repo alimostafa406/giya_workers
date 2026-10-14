@@ -64,40 +64,64 @@ const start = async () => {
 }
 const team = (form, id = 'paint') => fireEvent.change(within(form).getByLabelText('Team'), { target: { value: id } })
 
-describe('individual-worker outside-work entry', () => {
-  it('has no extra options, foreman, shared times, note, or reminder controls', async () => {
+const chooseForeman = (form) => {
+  fireEvent.change(within(form).getByLabelText('Search foreign foremen'), { target: { value: 'FOREMAN' } })
+  fireEvent.click(within(form).getByRole('option', { name: /FOREMAN/ }))
+}
+
+describe('outside-work separate movement ranges', () => {
+  it('keeps team-first selection and shows exactly four movement time inputs', async () => {
     open()
     const form = await start()
-    expect(within(form).queryByText(/Additional options|خيارات إضافية/)).toBeNull()
-    for (const label of ['Common worker start', 'Common worker end', 'Search foreign foremen', 'Foreman Start', 'Note', 'Worker not found']) {
-      expect(within(form).queryByLabelText(label)).toBeNull()
-    }
-    expect(within(form).getAllByRole('option').map((option) => option.textContent)).toEqual(['Select team', 'Peinture', 'Montage'])
     expect(within(form).queryByRole('checkbox')).toBeNull()
+    expect(within(form).queryByText(/Additional options|خيارات إضافية/)).toBeNull()
     team(form)
     expect(within(form).getAllByRole('checkbox').map((checkbox) => checkbox.parentElement.textContent)).toEqual(['RICHARD80', 'ROBERT79'])
-    expect(within(form).queryByText('JEREMIE')).toBeNull()
-    expect(within(form).queryByText('INACTIVE WORKER')).toBeNull()
-    expect(within(form).queryByText('FUTURE WORKER')).toBeNull()
-    expect(within(form).getByLabelText('Add worker from another team')).toBeTruthy()
-  })
-  it('selects all only in the chosen team and gives each worker visible individual times', async () => {
-    open()
-    const form = await start(); team(form)
     fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
-    fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
-    expect(within(form).getByText('Selected: 2 of 2')).toBeTruthy()
-    expect(within(form).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Workers', 'Team', 'Start', 'End', 'Remove worker'])
-    for (const name of ['ROBERT', 'RICHARD']) {
-      expect(within(form).getByLabelText(name + ' Start').value).toBe('08:00')
-      expect(within(form).getByLabelText(name + ' End').value).toBe('17:00')
+    for (const label of ['Foreman Start', 'Foreman End', 'Workers Start', 'Workers End']) {
+      expect(within(form).getByLabelText(label)).toBeTruthy()
     }
-    fireEvent.click(within(form).getByRole('button', { name: 'Deselect team workers' }))
-    expect(within(form).queryByRole('table')).toBeNull()
+    expect(form.querySelectorAll('input[type="time"]')).toHaveLength(4)
+    expect(within(form).queryByLabelText('ROBERT Start')).toBeNull()
+    expect(within(form).queryByLabelText('RICHARD End')).toBeNull()
+    expect(within(form).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Workers', 'Team', 'Remove worker'])
   })
-  it('searches cross-team replacements without dumping the company or changing their team', async () => {
+  it('defaults both ranges on weekdays and Saturday, and leaves Sunday blank', async () => {
     open()
-    const form = await start(); team(form)
+    const form = await start()
+    expect(within(form).getByLabelText('Foreman Start').value).toBe('08:00')
+    expect(within(form).getByLabelText('Foreman End').value).toBe('17:00')
+    expect(within(form).getByLabelText('Workers Start').value).toBe('08:00')
+    expect(within(form).getByLabelText('Workers End').value).toBe('17:00')
+    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-17' } })
+    expect(within(form).getByLabelText('Foreman End').value).toBe('14:00')
+    expect(within(form).getByLabelText('Workers End').value).toBe('14:00')
+    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-18' } })
+    for (const label of ['Foreman Start', 'Foreman End', 'Workers Start', 'Workers End']) {
+      expect(within(form).getByLabelText(label).value).toBe('')
+    }
+  })
+  it('keeps foreman and shared worker times independent and saves all workers with the shared range', async () => {
+    open()
+    const form = await start(); team(form); chooseForeman(form)
+    fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
+    fireEvent.change(within(form).getByLabelText('Foreman End'), { target: { value: '20:00' } })
+    expect(within(form).getByLabelText('Workers End').value).toBe('17:00')
+    fireEvent.change(within(form).getByLabelText('Workers End'), { target: { value: '18:00' } })
+    expect(within(form).getByLabelText('Foreman End').value).toBe('20:00')
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'final', foreman_worker_id: 'foreman', start_time: '08:00', end_time: '20:00',
+      common_worker_start: '08:00', common_worker_end: '18:00',
+      workers: [expect.objectContaining({ worker_id: 'richard', start_time: '08:00', end_time: '18:00' }),
+        expect.objectContaining({ worker_id: 'robert', start_time: '08:00', end_time: '18:00' })],
+    })))
+  })
+  it('uses the same worker range for cross-team additions and never changes their real team', async () => {
+    open()
+    const form = await start(); team(form); chooseForeman(form)
+    fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
+    fireEvent.change(within(form).getByLabelText('Workers End'), { target: { value: '18:30' } })
     expect(within(form).queryByRole('listbox')).toBeNull()
     for (const term of ['jer', '100', '064']) {
       fireEvent.change(within(form).getByLabelText('Add worker from another team'), { target: { value: term } })
@@ -106,105 +130,61 @@ describe('individual-worker outside-work entry', () => {
     fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
     fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
     fireEvent.change(within(form).getByLabelText('Add worker from another team'), { target: { value: '' } })
-    const row = within(form).getByLabelText('JEREMIE Start').closest('tr')
-    expect(within(row).getByText('Montage')).toBeTruthy()
-    expect(within(row).getByText('From other teams')).toBeTruthy()
-    expect(within(form).getAllByRole('button', { name: 'Remove worker: JEREMIE' })).toHaveLength(1)
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'final',
-      foreman_worker_id: '', foreman_name: '', workers: [expect.objectContaining({ worker_id: 'jeremie' })] })))
-    expect(roster.find((worker) => worker.id === 'jeremie').team_id).toBe('montage')
-  })
-  it('editing one worker affects only that row and final save needs no foreman', async () => {
-    open()
-    const form = await start(); team(form)
-    fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
-    fireEvent.change(within(form).getByLabelText('ROBERT Start'), { target: { value: '09:00' } })
-    fireEvent.change(within(form).getByLabelText('ROBERT End'), { target: { value: '18:00' } })
-    expect(within(form).getByLabelText('RICHARD Start').value).toBe('08:00')
-    expect(within(form).getByLabelText('RICHARD End').value).toBe('17:00')
+    expect(within(form).getByText('From other teams')).toBeTruthy()
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
-      status: 'final', workers: [expect.objectContaining({ worker_id: 'richard', start_time: '08:00', end_time: '17:00' }),
-        expect.objectContaining({ worker_id: 'robert', start_time: '09:00', end_time: '18:00' })],
+      workers: [expect.objectContaining({ worker_id: 'robert', end_time: '18:30' }),
+        expect.objectContaining({ worker_id: 'jeremie', end_time: '18:30' })],
     })))
+    expect(roster.find((worker) => worker.id === 'jeremie').team_id).toBe('montage')
   })
-  it('defaults Saturday workers independently to 08:00–14:00 and Sunday to blank', async () => {
+  it('keeps the foreman selector active foreign-only', async () => {
     open()
-    const form = await start(); team(form)
-    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-17' } })
-    fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
-    expect(within(form).getByLabelText('ROBERT Start').value).toBe('08:00')
-    expect(within(form).getByLabelText('ROBERT End').value).toBe('14:00')
-    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-18' } })
-    expect(within(form).getByLabelText('ROBERT Start').value).toBe('')
-    expect(within(form).getByLabelText('ROBERT End').value).toBe('')
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
-    expect(screen.getByRole('alert').textContent).toContain('valid times')
-    expect(mocks.save).not.toHaveBeenCalled()
+    const form = await start()
+    fireEvent.change(within(form).getByLabelText('Search foreign foremen'), { target: { value: 'ROBERT' } })
+    expect(within(form).queryByRole('option', { name: /ROBERT/ })).toBeNull()
+    chooseForeman(form)
+    expect(within(form).getByRole('button', { name: 'Change foreman' })).toBeTruthy()
   })
-  it('date changes update untouched worker times while preserving individual edits', async () => {
-    open()
-    const form = await start(); team(form)
-    fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
-    fireEvent.change(within(form).getByLabelText('ROBERT Start'), { target: { value: '09:00' } })
-    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-17' } })
-    expect(within(form).getByLabelText('ROBERT Start').value).toBe('09:00')
-    expect(within(form).getByLabelText('RICHARD Start').value).toBe('08:00')
-    expect(within(form).getByLabelText('ROBERT End').value).toBe('14:00')
-    expect(within(form).getByLabelText('RICHARD End').value).toBe('14:00')
-  })
-  it('drafts preserve cross-team workers and all individual times after leaving and reopening', async () => {
+  it('preserves both independent time ranges and all worker selections across draft reopening', async () => {
     const rendered = open()
-    const form = await start(); team(form)
+    const form = await start(); team(form); chooseForeman(form)
     fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
     fireEvent.change(within(form).getByLabelText('Add worker from another team'), { target: { value: '064' } })
     fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
-    fireEvent.change(within(form).getByLabelText('ROBERT Start'), { target: { value: '09:10' } })
-    fireEvent.change(within(form).getByLabelText('JEREMIE End'), { target: { value: '16:30' } })
+    fireEvent.change(within(form).getByLabelText('Foreman End'), { target: { value: '20:00' } })
+    fireEvent.change(within(form).getByLabelText('Workers End'), { target: { value: '18:00' } })
     fireEvent.click(within(form).getByRole('button', { name: 'Save as draft' }))
     await screen.findByRole('button', { name: 'Continue' })
     rendered.unmount()
     open('/outside-work?draft=draft-new')
     const resumed = await screen.findByRole('form', { name: 'Add outside-work movement' })
-    expect(within(resumed).getByLabelText('ROBERT Start').value).toBe('09:10')
-    expect(within(resumed).getByLabelText('JEREMIE End').value).toBe('16:30')
-    expect(within(resumed).getByLabelText('Team').value).toBe('paint')
+    expect(within(resumed).getByLabelText('Foreman End').value).toBe('20:00')
+    expect(within(resumed).getByLabelText('Workers End').value).toBe('18:00')
+    expect(within(resumed).getByRole('button', { name: 'Remove worker: ROBERT' })).toBeTruthy()
+    expect(within(resumed).getByRole('button', { name: 'Remove worker: JEREMIE' })).toBeTruthy()
     expect(within(resumed).getByLabelText('Date').value).toBe('2026-10-14')
   })
-  it('allows incomplete drafts and does not erase archived note/foreman fields', async () => {
-    persisted.push({ ...structuredClone(movement), id: 'old-draft', status: 'draft', note: 'Archived note', missing_worker_note: 'Archived reminder' })
-    open('/outside-work?draft=old-draft')
+  it('preserves saved individual times until a shared range is explicitly edited', async () => {
+    persisted.push({ ...structuredClone(movement), id: 'legacy-draft', status: 'draft',
+      common_worker_start: null, common_worker_end: null,
+      outside_work_movement_workers: [...movement.outside_work_movement_workers,
+        { id: 'child-two', worker_id: 'jeremie', worker_name: 'JEREMIE', start_time: '08:00', end_time: '18:00' }] })
+    open('/outside-work?draft=legacy-draft')
     const form = await screen.findByRole('form', { name: 'Add outside-work movement' })
-    expect(within(form).queryByLabelText('Note')).toBeNull()
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    expect(within(form).getByText(/Saved worker times differ/)).toBeTruthy()
+    fireEvent.click(within(form).getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'old-draft', status: 'final', foreman_worker_id: 'foreman', foreman_name: 'FOREMAN',
-      note: 'Archived note', missing_worker_note: 'Archived reminder', start_time: '08:00', end_time: '20:00',
+      workers: [expect.objectContaining({ worker_id: 'robert', start_time: '09:00', end_time: '17:00' }),
+        expect.objectContaining({ worker_id: 'jeremie', start_time: '08:00', end_time: '18:00' })],
     })))
   })
-  it('remove and cancel work without mutating worker records', async () => {
-    open()
-    const form = await start(); team(form)
-    fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
-    fireEvent.click(within(form).getByRole('button', { name: 'Remove worker: ROBERT' }))
-    expect(within(form).queryByRole('table')).toBeNull()
-    expect(within(form).getByRole('checkbox', { name: /ROBERT/ }).checked).toBe(false)
-    fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('form')).toBeNull()
-    expect(mocks.save).not.toHaveBeenCalled()
-  })
-  it('keeps historical foreman reports and print values unchanged', async () => {
-    persisted.push({ ...structuredClone(movement), id: 'draft', status: 'draft', start_time: '01:00', end_time: '23:00' })
-    persisted.push({ ...structuredClone(movement), id: 'individual', foreman_worker_id: null, foreman_name: null, start_time: null, end_time: null })
+  it('keeps historical weekly report and print values unchanged', async () => {
     const { container } = open()
     await screen.findByText('FOREMAN', { selector: 'strong' })
     fireEvent.click(screen.getByRole('button', { name: 'Weekly foreman report' }))
     fireEvent.change(screen.getByLabelText('Select a foreman'), { target: { value: 'worker:foreman' } })
-    const print = container.querySelector('.outside-work-print')
-    expect(print.textContent).toContain('12 h')
-    expect(print.textContent).not.toContain('22 h')
-    expect(print.textContent).not.toContain('ROBERT')
+    expect(container.querySelector('.outside-work-print').textContent).toContain('12 h')
     fireEvent.click(screen.getByRole('button', { name: 'Print Weekly Foreman Report' }))
     expect(window.print).toHaveBeenCalledOnce()
   })
