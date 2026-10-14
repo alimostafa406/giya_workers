@@ -23,4 +23,3 @@ begin
     is distinct from first_result->'workers' then raise exception 'Snapshot changed'; end if;
 end $$;
 rollback;
-
