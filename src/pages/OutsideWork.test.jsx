@@ -76,7 +76,11 @@ describe('outside-work separate movement ranges', () => {
     expect(within(form).queryByRole('checkbox')).toBeNull()
     expect(within(form).queryByText(/Additional options|خيارات إضافية/)).toBeNull()
     team(form)
-    expect(within(form).getAllByRole('checkbox').map((checkbox) => checkbox.parentElement.textContent)).toEqual(['RICHARD80', 'ROBERT79'])
+    expect(within(form).getAllByRole('checkbox').map((checkbox) => checkbox.parentElement.textContent)).toEqual(['RICHARD #80', 'ROBERT #79'])
+    expect(within(form).getByRole('combobox', { name: 'Team' }).multiple).toBe(false)
+    expect(within(form).getAllByRole('heading', { name: 'Foreman', exact: true })).toHaveLength(1)
+    expect(form.querySelectorAll('.outside-work-worker-list > li')).toHaveLength(2)
+    expect(within(form).queryByRole('listbox')).toBeNull()
     fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
     for (const label of ['Foreman Start', 'Foreman End', 'Workers Start', 'Workers End']) {
       expect(within(form).getByLabelText(label)).toBeTruthy()

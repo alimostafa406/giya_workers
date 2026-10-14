@@ -1,0 +1,75 @@
+.outside-work-entry .outside-work-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.outside-work-entry .outside-work-entry-fields,
+.outside-work-entry .outside-work-time-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.outside-work-entry .outside-work-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.outside-work-entry select {
+  display: block;
+  appearance: auto;
+  width: 100%;
+  min-height: 2.5rem;
+}
+
+.outside-work-entry .outside-work-worker-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.375rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outside-work-entry .outside-work-worker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  background: var(--surface-subtle);
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.outside-work-entry .outside-work-worker-row input { flex: 0 0 auto; }
+.outside-work-entry .outside-work-worker-name { min-width: 0; overflow-wrap: anywhere; }
+.outside-work-entry .outside-work-worker-code { flex: 0 0 auto; white-space: nowrap; color: var(--muted); }
+.outside-work-entry .outside-work-small-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.outside-work-entry .outside-work-small-actions button { padding: 0.375rem 0.625rem; font-size: 0.75rem; }
+.outside-work-entry .outside-work-ranges { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.outside-work-entry .outside-work-range { display: flex; min-width: 0; flex-direction: column; gap: 0.75rem; }
+.outside-work-entry .outside-work-range h3 { margin: 0; font-size: 0.875rem; font-weight: 800; }
+.outside-work-entry .outside-work-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.outside-work-entry .outside-work-time-fields input { direction: ltr; min-width: 0; }
+
+@media (min-width: 640px) {
+  .outside-work-entry .outside-work-entry-body { padding: 1.25rem; }
+  .outside-work-entry .outside-work-entry-fields,
+  .outside-work-entry .outside-work-time-fields,
+  .outside-work-entry .outside-work-worker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1100px) {
+  .outside-work-entry .outside-work-worker-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
