@@ -88,6 +88,16 @@ const flowLabels = {
     selectWorkers: 'Sélectionner au moins un travailleur.', historyTimes: 'Les horaires enregistrés diffèrent ; ils restent inchangés jusqu’à modification des horaires communs.' },
 }
 
+function ForemanReportSummary({ report, labels }) {
+  return <div className="foreman-report-summary mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+    {[[labels.dayCount, report.dayCount], [labels.totalOvertime, formatDuration(report.totalOvertimeMinutes)], [labels.movementCount, report.movementCount]].map(([label, value]) =>
+      <div key={label} className="rounded-lg border border-(--border) p-3">
+        <p className="text-sm text-(--muted)">{label}</p>
+        <p className="mt-1 text-lg font-bold"><bdi dir="ltr" className="inline-block whitespace-nowrap">{value}</bdi></p>
+      </div>)}
+  </div>
+}
+
 export default function OutsideWork() {
   const { language } = useTranslation()
   const reportLabels = {
@@ -199,9 +209,10 @@ export default function OutsideWork() {
       .app-sidebar, main > header, .outside-work-page > :not(.outside-work-print) { display: none !important; }
       main, main > div, .outside-work-page { max-width: none !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
       .outside-work-print { display: block !important; width: 100%; color: #111; }
-      .outside-work-print tr { break-inside: avoid; } .outside-work-print thead { display: table-header-group; } }`}</style>
+      .outside-work-print tr { break-inside: avoid; } .outside-work-print thead { display: table-header-group; }
+      .outside-work-print .foreman-report-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); break-inside: avoid; } }`}</style>
     <header className="flex flex-wrap items-center justify-between gap-4">
-      <div><h1 className="text-2xl font-extrabold">{l.title}</h1><p className="text-sm text-(--muted)">{days[0]} → {days[6]}</p></div>
+      <div><h1 className="text-2xl font-extrabold">{l.title}</h1><p className="text-sm text-(--muted)"><bdi dir="ltr" className="inline-block whitespace-nowrap">{days[0]} → {days[6]}</bdi></p></div>
       <div className="flex flex-wrap gap-3"><label className="text-sm font-semibold">{l.week} <input aria-label={l.week} type="date" value={anchor} onChange={(event) => setAnchor(event.target.value)} className="input-base ms-2" /></label>
         <button type="button" disabled={loading || busy} className="btn-primary" onClick={() => { setForm(newOutsideWorkForm(days.includes(kinshasaClock().date) ? kinshasaClock().date : days[0])); setSuccess('') }}>{l.formTitle}</button></div>
     </header>
@@ -245,12 +256,12 @@ export default function OutsideWork() {
     {tab === 'report' && <section className="surface-card space-y-4 p-5"><h2 className="text-xl font-extrabold">{l.report}</h2>
       <div className="flex flex-wrap gap-3"><label>{l.foreman} <select aria-label={l.chooseReport} value={reportForeman} onChange={(event) => setReportForeman(event.target.value)} className="ms-2 rounded-lg border p-2"><option value="">{l.chooseReport}</option>{foremen.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
         <button type="button" disabled={!report.rows.length} className="btn-secondary" onClick={() => window.print()}>{l.print}</button></div>
-      {reportForeman && <><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="p-2 text-start">{item}</th>)}</tr></thead><tbody>{report.rows.map((row) => <tr key={row.id} className="border-t"><td className="p-2">{dateLabel(row.work_date).split(' ')[0]}</td><td className="p-2">{row.work_date}</td><td className="p-2" dir="ltr">{formatClock(row.start_time)}</td><td className="p-2" dir="ltr">{formatClock(row.end_time)}</td><td className="p-2">{formatDuration(row.foremanOvertimeMinutes)}</td><td className="p-2">{row.outside_work_movement_workers?.length || 0}</td></tr>)}</tbody></table></div>
-        <div className="flex flex-wrap gap-5 text-sm font-bold"><span>{l.dayCount}: {report.dayCount}</span><span>{l.totalOvertime}: {formatDuration(report.totalOvertimeMinutes)}</span><span>{l.movementCount}: {report.movementCount}</span></div></>}
+      {reportForeman && <><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="p-2 text-start">{item}</th>)}</tr></thead><tbody>{report.rows.map((row) => <tr key={row.id} className="border-t"><td className="p-2">{dateLabel(row.work_date).split(' ')[0]}</td><td className="p-2">{row.work_date}</td><td className="p-2" dir="ltr">{formatClock(row.start_time)}</td><td className="p-2" dir="ltr">{formatClock(row.end_time)}</td><td className="p-2"><bdi dir="ltr" className="inline-block whitespace-nowrap">{formatDuration(row.foremanOvertimeMinutes)}</bdi></td><td className="p-2">{row.outside_work_movement_workers?.length || 0}</td></tr>)}</tbody></table></div>
+        <ForemanReportSummary report={report} labels={l} /></>}
     </section>}
-    <section className="outside-work-print hidden" aria-hidden="true"><h1>{l.report}</h1><h2>{reportName}</h2><p>{days[0]} → {days[6]}</p>
-      <table className="w-full border-collapse text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="border p-2 text-start">{item}</th>)}</tr></thead><tbody>{report.rows.map((row) => <tr key={row.id}><td className="border p-2">{dateLabel(row.work_date).split(' ')[0]}</td><td className="border p-2">{row.work_date}</td><td className="border p-2">{formatClock(row.start_time)}</td><td className="border p-2">{formatClock(row.end_time)}</td><td className="border p-2">{formatDuration(row.foremanOvertimeMinutes)}</td><td className="border p-2">{row.outside_work_movement_workers?.length || 0}</td></tr>)}</tbody></table>
-      <p className="mt-4">{l.dayCount}: {report.dayCount} · {l.totalOvertime}: {formatDuration(report.totalOvertimeMinutes)} · {l.movementCount}: {report.movementCount}</p>
+    <section className="outside-work-print hidden" aria-hidden="true"><h1>{l.report}</h1><h2>{reportName}</h2><p><bdi dir="ltr" className="inline-block whitespace-nowrap">{days[0]} → {days[6]}</bdi></p>
+      <table className="w-full border-collapse text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="border p-2 text-start">{item}</th>)}</tr></thead><tbody>{report.rows.map((row) => <tr key={row.id}><td className="border p-2">{dateLabel(row.work_date).split(' ')[0]}</td><td className="border p-2">{row.work_date}</td><td className="border p-2">{formatClock(row.start_time)}</td><td className="border p-2">{formatClock(row.end_time)}</td><td className="border p-2"><bdi dir="ltr" className="inline-block whitespace-nowrap">{formatDuration(row.foremanOvertimeMinutes)}</bdi></td><td className="border p-2">{row.outside_work_movement_workers?.length || 0}</td></tr>)}</tbody></table>
+      <ForemanReportSummary report={report} labels={l} />
     </section>
 
   </div>

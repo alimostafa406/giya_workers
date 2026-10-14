@@ -70,6 +70,34 @@ const chooseForeman = (form) => {
 }
 
 describe('outside-work separate movement ranges', () => {
+  it('isolates Arabic overtime and week ranges and shares three compact summary cards with print', async () => {
+    localStorage.setItem('workers_app_language', 'ar')
+    persisted[0].end_time = '17:00:00'
+    const { container } = open()
+    await screen.findByText('FOREMAN', { selector: 'strong' })
+    fireEvent.click(screen.getByRole('button', { name: 'تقرير المعلم الأسبوعي' }))
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'worker:foreman' } })
+    const summaries = container.querySelectorAll('.foreman-report-summary')
+    expect(summaries).toHaveLength(2)
+    for (const summary of summaries) {
+      expect(summary.children).toHaveLength(3)
+      expect([...summary.querySelectorAll('bdi')].map((value) => value.textContent)).toEqual(['1', '0 h', '1'])
+      expect(summary.querySelectorAll('bdi[dir="ltr"]')).toHaveLength(3)
+      expect(summary.className).toContain('sm:grid-cols-3')
+    }
+    for (const range of container.querySelectorAll('bdi')) {
+      if (range.textContent.includes('→')) {
+        expect(range.textContent).toBe('2026-10-12 → 2026-10-18')
+        expect(range.dir).toBe('ltr')
+      }
+    }
+    for (const overtime of container.querySelectorAll('td bdi')) {
+      expect(overtime.textContent).toBe('0 h')
+      expect(overtime.dir).toBe('ltr')
+    }
+    expect(container.querySelector('.outside-work-print p bdi').textContent).toBe('2026-10-12 → 2026-10-18')
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it('separates foreman and shared worker ranges and omits redundant worker time columns', async () => {
     open()
     const show = await screen.findByRole('button', { name: 'Show workers (1)' })
@@ -257,7 +285,7 @@ describe('outside-work separate movement ranges', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Weekly foreman report' }))
     fireEvent.change(screen.getByLabelText('Select a foreman'), { target: { value: 'worker:foreman' } })
     const print = container.querySelector('.outside-work-print')
-    expect(print.textContent).toContain('Total foreman overtime: 3 h')
+    expect(print.querySelector('.foreman-report-summary').textContent).toContain('Total foreman overtime3 h')
     expect(print.textContent).not.toMatch(/Total hours|Daily average/)
     const reportTable = screen.getByRole('table')
     expect(within(reportTable).getByRole('cell', { name: '3 h' })).toBeTruthy()
