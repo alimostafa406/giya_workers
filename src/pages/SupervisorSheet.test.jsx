@@ -8,12 +8,12 @@ import SupervisorSheet from './SupervisorSheet.jsx'
 import { LanguageProvider } from '../i18n/LanguageContext.jsx'
 
 globalThis.React = React
-const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), save: vi.fn() }))
+const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), save: vi.fn(), history: vi.fn() }))
 vi.mock('../api/workersApi', () => ({ getWorkersRequest: mocks.workers }))
 vi.mock('../api/teamsApi', () => ({ getTeamsRequest: mocks.teams }))
 vi.mock('../api/attendanceApi', () => ({ getAttendanceRequest: mocks.attendance }))
 vi.mock('../api/biometricMappingApi', () => ({ getWorkerBiometricSearchIndexRequest: mocks.mappings }))
-vi.mock('../api/supervisorMorningReviewApi', () => ({ saveSupervisorMorningReviewRequest: mocks.save }))
+vi.mock('../api/supervisorMorningReviewApi', () => ({ saveSupervisorMorningReviewRequest: mocks.save, getHistoricalSupervisorReviewRequest: mocks.history }))
 vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ admin: { is_active: true } }) }))
 vi.mock('../utils/attendanceOperationalGate', async (importOriginal) => ({ ...await importOriginal(), isAttendancePageLocked: () => false }))
 
@@ -35,6 +35,9 @@ beforeEach(() => {
   ] })
   mocks.attendance.mockImplementation(async ({ date }) => ({ data: [{ worker_id: 'two', attendance_date: date, check_in: '08:00:00' }] }))
   mocks.save.mockResolvedValue({ applied: 2 })
+  mocks.history.mockImplementation(async (date) => ({ available: true, read_only: false,
+    workers: (await mocks.workers()).data, teams: (await mocks.teams()).data,
+    attendance: (await mocks.attendance({ date })).data }))
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   vi.spyOn(window, 'print').mockImplementation(() => {})
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => window.setTimeout(() => callback(0), 0))
@@ -49,6 +52,61 @@ const showPaintTeam = async () => {
 }
 
 describe('supervisor attendance sheet', () => {
+  it('shows historical payroll locks read-only without sending a save', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
+    mocks.history.mockResolvedValue({ available: true, read_only: true, teams: [{ id: 'paint', name: 'Peinture' }],
+      workers: [{ id: 'one', full_name: 'ROBERT', is_active: true, team_id: 'paint', team_name: 'Peinture', staff_classification: 'normal' }], attendance: [] })
+    render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('ROBERT')
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-13' } })
+    await screen.findByText(/Read-only: historical roster unavailable or payroll finalized\/paid/)
+    expect(screen.getByRole('button', { name: 'Save Attendance Results' }).disabled).toBe(true)
+    expect(within(screen.getByRole('group', { name: 'ROBERT Result' })).getByRole('button', { name: 'P' }).disabled).toBe(true)
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('has a real date picker, loads October 13 once, prints that date, and restores today freeze', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
+    const { container } = render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('ROBERT')
+    const date = screen.getByLabelText('Date')
+    expect(date.type).toBe('date'); expect(date.max).toBe('2026-10-14')
+    fireEvent.change(date, { target: { value: '2026-10-15' } })
+    expect(date.value).toBe('2026-10-14')
+    fireEvent.change(date, { target: { value: '2026-10-13' } })
+    await screen.findByText('Historical date review', { exact: false })
+    await screen.findByText('ROBERT')
+    expect(mocks.history).toHaveBeenLastCalledWith('2026-10-13')
+    expect(container.querySelector('.absence-report-header').textContent).toContain('13/10/2026')
+    expect(vi.getTimerCount()).toBe(0)
+    fireEvent.focus(window); fireEvent(document, new Event('visibilitychange'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+    expect(mocks.history).toHaveBeenCalledTimes(1)
+    window.requestAnimationFrame.mockImplementation((callback) => { callback(0); return 0 })
+    expect(screen.getByRole('button', { name: 'Print Results' }).disabled).toBe(false)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Print Results' })) })
+    expect(window.print).toHaveBeenCalledOnce()
+    expect(container.querySelector('.absence-report-header').textContent).toContain('13/10/2026')
+    fireEvent.change(date, { target: { value: '2026-10-14' } })
+    await screen.findByText(/final morning review list is frozen/i)
+    expect(mocks.attendance).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-10-14' }))
+  })
+  it.each(['P', 'O', 'A', 'M'])('preloads only supervisor-origin %s and allows editing the saved choice', async (choice) => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
+    mocks.history.mockResolvedValue({ available: true, read_only: false, teams: [{ id: 'paint', name: 'Peinture' }],
+      workers: [{ id: 'one', full_name: 'ROBERT', is_active: true, team_id: 'paint', team_name: 'Peinture', staff_classification: 'normal' }],
+      attendance: [{ worker_id: 'one', attendance_date: '2026-10-13', check_in: choice === 'P' ? '08:00' : null, manual_override: true,
+        biometric_sync_metadata: { supervisor_morning_review: { source: 'supervisor_sheet', choice } } }] })
+    render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('ROBERT')
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-13' } })
+    await screen.findByText('ROBERT')
+    const group = screen.getByRole('group', { name: 'ROBERT Result' })
+    expect(within(group).getByRole('button', { name: choice }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(within(group).getByRole('button', { name: 'O' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Attendance Results' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ date: '2026-10-13', workerIds: ['one'], results: { one: 'O' } }))
+  })
   it('refreshes before 11:00, performs one final check at 11:00, then stops', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     vi.setSystemTime(new Date('2026-10-12T09:59:50Z'))
@@ -92,7 +150,7 @@ describe('supervisor attendance sheet', () => {
       date: expect.any(String), workerIds: ['other', 'one'], results: { other: 'M', one: 'O' },
     })
     expect(mocks.attendance).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Clear Results' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Clear Results' }).disabled).toBe(false)
     expect(screen.getByText('Present - Working outside')).toBeTruthy()
     expect(screen.getByText('Absent - Medical')).toBeTruthy()
   })

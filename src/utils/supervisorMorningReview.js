@@ -3,6 +3,12 @@ import { kinshasaClock } from './attendanceOperationalGate.js'
 export const SUPERVISOR_FINAL_CHECK_MINUTES = 11 * 60
 export const SUPERVISOR_CHOICES = ['A', 'P', 'O', 'M']
 
+export const savedSupervisorResults = (attendance = [], date) => Object.fromEntries(attendance
+  .filter((row) => row.attendance_date === date && row.manual_override === true
+    && row.biometric_sync_metadata?.supervisor_morning_review?.source === 'supervisor_sheet'
+    && SUPERVISOR_CHOICES.includes(row.biometric_sync_metadata.supervisor_morning_review.choice))
+  .map((row) => [String(row.worker_id), row.biometric_sync_metadata.supervisor_morning_review.choice]))
+
 export const isSupervisorFinalWindow = (date, now = new Date()) => {
   const clock = kinshasaClock(now)
   return date < clock.date || (date === clock.date
