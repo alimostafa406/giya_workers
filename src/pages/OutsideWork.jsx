@@ -5,7 +5,7 @@ import { deleteOutsideWorkMovement, getOutsideWorkMovements, getOutsideWorkTeams
 import { getErrorMessage } from '../api/axios'
 import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
-import { durationMinutes, foremanKey, formatClock, formatDuration, isFinalOutsideWorkMovement, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from '../utils/outsideWork'
+import { durationMinutes, foremanKey, formatClock, formatDuration, isFinalOutsideWorkMovement, newOutsideWorkForm, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from '../utils/outsideWork'
 import OutsideWorkEntryForm from '../components/OutsideWork/OutsideWorkEntryForm'
 import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 import { biometricIdsByWorker } from '../utils/dailyOperationalReports'
@@ -62,7 +62,7 @@ const flowLabels = {
     otherSearch: 'إضافة عامل من فريق آخر', otherPlaceholder: 'اسم العامل / كود العامل / رقم البصمة',
     otherTeams: 'من فرق أخرى', missingWorker: 'عامل غير موجود', openWorkers: 'فتح صفحة العمال',
     savedBeforeWorkers: 'سيتم حفظ المسودة قبل فتح صفحة العمال. عند العودة يمكنك إكمالها.',
-    saveDraft: 'حفظ كمسودة', saveFinal: 'حفظ نهائي', movements: 'الحركات', drafts: 'المسودات',
+    saveDraft: 'حفظ كمسودة', saveFinal: 'حفظ', advanced: 'خيارات إضافية', movements: 'الحركات', drafts: 'المسودات',
     continue: 'متابعة', updated: 'آخر تحديث', noDrafts: 'لا توجد مسودات', saved: 'تم الحفظ',
     required: 'التاريخ والفريق مطلوبان للحفظ النهائي.', unresolved: 'أكمل العامل غير الموجود أو امسح الملاحظة قبل الحفظ النهائي.',
     selectWorkers: 'اختر عاملاً حقيقياً واحداً على الأقل.' },
@@ -71,7 +71,7 @@ const flowLabels = {
     otherSearch: 'Add worker from another team', otherPlaceholder: 'Worker name / employee code / biometric ID',
     otherTeams: 'From other teams', missingWorker: 'Worker not found', openWorkers: 'Open Workers page',
     savedBeforeWorkers: 'Your draft is saved before opening Workers. Return to continue it.',
-    saveDraft: 'Save as draft', saveFinal: 'Save final', movements: 'Movements', drafts: 'Drafts',
+    saveDraft: 'Save as draft', saveFinal: 'Save', advanced: 'Additional options', movements: 'Movements', drafts: 'Drafts',
     continue: 'Continue', updated: 'Last updated', noDrafts: 'No drafts', saved: 'Saved',
     required: 'Date and team are required for final save.', unresolved: 'Resolve or clear the missing-worker note before final save.',
     selectWorkers: 'Select at least one real worker.' },
@@ -81,7 +81,7 @@ const flowLabels = {
     otherPlaceholder: 'Nom / code employé / ID biométrique', otherTeams: 'Autres équipes',
     missingWorker: 'Travailleur introuvable', openWorkers: 'Ouvrir la page Travailleurs',
     savedBeforeWorkers: 'Le brouillon sera enregistré avant l’ouverture. Revenez pour le compléter.',
-    saveDraft: 'Enregistrer le brouillon', saveFinal: 'Enregistrer définitivement', movements: 'Déplacements',
+    saveDraft: 'Enregistrer le brouillon', saveFinal: 'Enregistrer', advanced: 'Options supplémentaires', movements: 'Déplacements',
     drafts: 'Brouillons', continue: 'Continuer', updated: 'Dernière modification', noDrafts: 'Aucun brouillon',
     saved: 'Enregistré', required: 'La date et l’équipe sont requises.',
     unresolved: 'Résoudre ou effacer la note du travailleur introuvable avant l’enregistrement final.',
@@ -199,12 +199,12 @@ export default function OutsideWork() {
     <header className="flex flex-wrap items-center justify-between gap-4">
       <div><h1 className="text-2xl font-extrabold">{l.title}</h1><p className="text-sm text-(--muted)">{days[0]} → {days[6]}</p></div>
       <div className="flex flex-wrap gap-3"><label className="text-sm font-semibold">{l.week} <input aria-label={l.week} type="date" value={anchor} onChange={(event) => setAnchor(event.target.value)} className="input-base ms-2" /></label>
-        <button type="button" disabled={loading || busy} className="btn-primary" onClick={() => { setForm(outsideWorkForm({}, days.includes(kinshasaClock().date) ? kinshasaClock().date : days[0])); setSuccess('') }}>{l.formTitle}</button></div>
+        <button type="button" disabled={loading || busy} className="btn-primary" onClick={() => { setForm(newOutsideWorkForm(days.includes(kinshasaClock().date) ? kinshasaClock().date : days[0])); setSuccess('') }}>{l.formTitle}</button></div>
     </header>
     <nav className="flex flex-wrap gap-2" aria-label={l.title}>{[['movements', l.movements, finals.length], ['drafts', l.drafts, drafts.length], ['report', l.report, null]].map(([key, title, count]) => <button key={key} type="button" aria-pressed={tab === key} className={tab === key ? 'btn-primary' : 'btn-secondary'} onClick={() => setTab(key)}>{title}{count != null ? ` (${count})` : ''}</button>)}</nav>
     {error && <p role="alert" className="alert alert--error">{error}</p>}
     {success && <p role="status" className="text-sm font-bold text-emerald-700">{success}</p>}
-    {form && <OutsideWorkEntryForm value={form} onChange={setForm} workers={workers} teams={teams} biometricIds={biometricIds} labels={l} busy={busy}
+    {form && <OutsideWorkEntryForm key={form.id || 'new'} value={form} onChange={setForm} workers={workers} teams={teams} biometricIds={biometricIds} labels={l} busy={busy}
       onSave={save} onOpenWorkers={() => save('draft', true)} onCancel={() => { setForm(null); setParams({}, { replace: true }) }} />}
     {loading && <p>{l.loading}</p>}
     {!loading && tab === 'drafts' && <section className="space-y-3" aria-label={l.drafts}>

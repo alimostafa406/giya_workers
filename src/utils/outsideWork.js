@@ -68,3 +68,44 @@ export const outsideWorkFinalError = (form) => {
     || form.workers.some((row) => durationMinutes(row.start_time, row.end_time) == null)) return 'invalid'
   return ''
 }
+
+export const outsideWorkDefaultTimes = (date) => {
+  const day = new Date(`${date}T12:00:00Z`).getUTCDay()
+  return Number.isNaN(day) || day === 0 ? { start: '', end: '' }
+    : { start: '08:00', end: day === 6 ? '14:00' : '17:00' }
+}
+
+const timeFields = ['start_time', 'end_time', 'common_worker_start', 'common_worker_end']
+const timeWasEdited = (form, field) => form.entry_state?.manual_times?.[field]
+  ?? Boolean(form.id && form[field])
+
+export const newOutsideWorkForm = (date) => {
+  const defaults = outsideWorkDefaultTimes(date)
+  return { ...outsideWorkForm({}, date), start_time: defaults.start, end_time: defaults.end,
+    common_worker_start: defaults.start, common_worker_end: defaults.end,
+    entry_state: { manual_times: Object.fromEntries(timeFields.map((field) => [field, false])) } }
+}
+
+const applyCommonTime = (form, field, next) => ({ ...form, [field]: next,
+  workers: form.workers.map((row) => {
+    const key = field === 'common_worker_start' ? 'start_time' : 'end_time'
+    const override = form.entry_state?.overrides?.[row.worker_id]?.[key]
+      || (row[key] && row[key] !== form[field])
+    return override ? row : { ...row, [key]: next }
+  }) })
+
+export const editOutsideWorkTime = (form, field, next) => ({
+  ...(field.startsWith('common_worker_') ? applyCommonTime(form, field, next) : { ...form, [field]: next }),
+  entry_state: { ...form.entry_state, manual_times: { ...form.entry_state?.manual_times, [field]: true } },
+})
+
+export const changeOutsideWorkDate = (form, date) => {
+  const defaults = outsideWorkDefaultTimes(date)
+  let next = { ...form, work_date: date }
+  for (const field of timeFields) {
+    if (timeWasEdited(form, field)) continue
+    const value = field === 'start_time' || field === 'common_worker_start' ? defaults.start : defaults.end
+    next = field.startsWith('common_worker_') ? applyCommonTime(next, field, value) : { ...next, [field]: value }
+  }
+  return next
+}

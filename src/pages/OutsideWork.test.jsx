@@ -63,7 +63,16 @@ const start = async () => {
   return screen.getByRole('form', { name: 'Add outside-work movement' })
 }
 const team = (form, id = 'paint') => fireEvent.change(within(form).getByLabelText('Team'), { target: { value: id } })
+const showAdvanced = (form) => {
+  const button = within(form).getByRole('button', { name: /^Additional options/ })
+  if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button)
+}
+const showSelected = (form) => {
+  const button = within(form).getByRole('button', { name: /^Selected workers/ })
+  if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button)
+}
 const completeTimesAndForeman = (form) => {
+  showAdvanced(form)
   fireEvent.change(within(form).getByLabelText('Search foreign foremen'), { target: { value: 'foreman' } })
   fireEvent.click(within(form).getByRole('option', { name: /FOREMAN/ }))
   for (const [label, value] of [['Foreman Start', '08:00'], ['Foreman End', '17:00'], ['Common worker start', '08:00'], ['Common worker end', '17:00']]) {
@@ -72,6 +81,38 @@ const completeTimesAndForeman = (form) => {
 }
 
 describe('team-first outside-work workflow', () => {
+  it('shows compact primary fields, defaults, and no advanced controls until opened', async () => {
+    open()
+    const form = await start()
+    expect(within(form).getByLabelText('Common worker start').value).toBe('08:00')
+    expect(within(form).getByLabelText('Common worker end').value).toBe('17:00')
+    for (const label of ['Search foreign foremen', 'Foreman Start', 'Foreman End', 'Note', 'Worker not found']) {
+      expect(within(form).queryByLabelText(label)).toBeNull()
+    }
+    team(form)
+    fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
+    expect(within(form).queryByLabelText('ROBERT Start')).toBeNull()
+    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-17' } })
+    expect(within(form).getByLabelText('Common worker end').value).toBe('14:00')
+    fireEvent.click(within(form).getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'draft', common_worker_start: '08:00', common_worker_end: '14:00',
+      workers: [expect.objectContaining({ worker_id: 'robert', start_time: '08:00', end_time: '14:00' })],
+    })))
+  })
+  it('keeps manually edited times when changing dates and shows foreman options when required', async () => {
+    open()
+    const form = await start(); team(form)
+    fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
+    fireEvent.change(within(form).getByLabelText('Common worker start'), { target: { value: '09:00' } })
+    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-17' } })
+    expect(within(form).getByLabelText('Common worker start').value).toBe('09:00')
+    expect(within(form).getByLabelText('Common worker end').value).toBe('14:00')
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    expect(within(form).getByRole('button', { name: /^Additional options/ }).getAttribute('aria-expanded')).toBe('true')
+    expect(within(form).getByLabelText('Search foreign foremen')).toBeTruthy()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it('shows canonical teams and no worker list before team selection', async () => {
     open()
     const form = await start()
@@ -90,6 +131,7 @@ describe('team-first outside-work workflow', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
     fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
     expect(within(form).getByText('Selected: 2 of 2')).toBeTruthy()
+    showSelected(form)
     expect(within(form).getAllByRole('button', { name: /Remove worker:/ })).toHaveLength(2)
     fireEvent.click(within(form).getByRole('button', { name: 'Deselect team workers' }))
     expect(within(form).getByText('Selected: 0 of 2')).toBeTruthy()
@@ -105,6 +147,7 @@ describe('team-first outside-work workflow', () => {
     fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
     fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
     fireEvent.change(within(form).getByLabelText('Add worker from another team'), { target: { value: '' } })
+    showSelected(form)
     expect(within(form).getByText('From other teams')).toBeTruthy()
     expect(within(form).getAllByRole('button', { name: 'Remove worker: JEREMIE' })).toHaveLength(1)
     expect(roster.find((worker) => worker.id === 'jeremie').team_id).toBe('montage')
@@ -114,6 +157,7 @@ describe('team-first outside-work workflow', () => {
   it('keeps foreman selection foreign-only and worker overrides collapsed', async () => {
     open()
     const form = await start(); team(form)
+    showAdvanced(form)
     fireEvent.change(within(form).getByLabelText('Search foreign foremen'), { target: { value: 'ROBERT' } })
     expect(within(form).queryByRole('option', { name: /ROBERT/ })).toBeNull()
     fireEvent.change(within(form).getByLabelText('Search foreign foremen'), { target: { value: 'FOREMAN' } })
@@ -130,6 +174,7 @@ describe('team-first outside-work workflow', () => {
     const form = await start(); team(form)
     fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
     fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '' } })
+    showAdvanced(form)
     fireEvent.change(within(form).getByLabelText('Worker not found'), { target: { value: 'WhatsApp unknown worker' } })
     fireEvent.click(within(form).getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
@@ -139,6 +184,8 @@ describe('team-first outside-work workflow', () => {
     await screen.findByRole('button', { name: 'Continue' })
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     const reopened = screen.getByRole('form', { name: 'Add outside-work movement' })
+    showAdvanced(reopened)
+    showSelected(reopened)
     expect(within(reopened).getByLabelText('Worker not found').value).toBe('WhatsApp unknown worker')
     expect(within(reopened).getByLabelText('Date').value).toBe('')
     expect(within(reopened).getByRole('button', { name: 'Remove worker: ROBERT' })).toBeTruthy()
@@ -147,12 +194,15 @@ describe('team-first outside-work workflow', () => {
     open()
     const form = await start(); team(form)
     fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
+    showAdvanced(form)
     fireEvent.change(within(form).getByLabelText('Worker not found'), { target: { value: 'Find this person' } })
     fireEvent.click(within(form).getByRole('button', { name: 'Open Workers page' }))
     await screen.findByRole('heading', { name: 'Workers page' })
     expect(persisted.find((row) => row.id === 'draft-new').missing_worker_note).toBe('Find this person')
     fireEvent.click(screen.getByRole('button', { name: 'Return to outside work' }))
     const resumed = await screen.findByRole('form', { name: 'Add outside-work movement' })
+    showAdvanced(resumed)
+    showSelected(resumed)
     expect(within(resumed).getByLabelText('Worker not found').value).toBe('Find this person')
     expect(within(resumed).getByRole('button', { name: 'Remove worker: ROBERT' })).toBeTruthy()
   })
@@ -160,11 +210,12 @@ describe('team-first outside-work workflow', () => {
     persisted.push({ ...structuredClone(movement), id: 'existing-draft', status: 'draft', missing_worker_note: 'Unknown name' })
     open('/outside-work?draft=existing-draft')
     const form = await screen.findByRole('form', { name: 'Add outside-work movement' })
-    fireEvent.click(within(form).getByRole('button', { name: 'Save final' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
     expect(screen.getByRole('alert').textContent).toContain('Resolve or clear')
     expect(mocks.save).not.toHaveBeenCalled()
+    showAdvanced(form)
     fireEvent.change(within(form).getByLabelText('Worker not found'), { target: { value: '' } })
-    fireEvent.click(within(form).getByRole('button', { name: 'Save final' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
       id: 'existing-draft', status: 'final', workers: [expect.objectContaining({ worker_id: 'robert' })],
     })))
@@ -173,14 +224,14 @@ describe('team-first outside-work workflow', () => {
   it('requires a team, real workers, foreman, and valid times for final save', async () => {
     open()
     const form = await start()
-    fireEvent.click(within(form).getByRole('button', { name: 'Save final' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
     expect(screen.getByRole('alert').textContent).toContain('Date and team')
     team(form)
     completeTimesAndForeman(form)
-    fireEvent.click(within(form).getByRole('button', { name: 'Save final' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
     expect(screen.getByRole('alert').textContent).toContain('at least one real worker')
     fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
-    fireEvent.click(within(form).getByRole('button', { name: 'Save final' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'final', team_id: 'paint' })))
   })
   it('keeps existing movement details, edit/delete, final-only report, and print working', async () => {
@@ -192,7 +243,7 @@ describe('team-first outside-work workflow', () => {
     expect(screen.getByText('ROBERT')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Hide workers' }))
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
-    fireEvent.click(within(screen.getByRole('form')).getByRole('button', { name: 'Save final' }))
+    fireEvent.click(within(screen.getByRole('form')).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'movement-1', status: 'final' })))
     await waitFor(() => expect(screen.queryByRole('form')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: 'Weekly foreman report' }))
