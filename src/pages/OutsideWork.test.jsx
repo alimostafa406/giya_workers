@@ -22,9 +22,10 @@ beforeEach(() => {
   mocks.save.mockResolvedValue('movement-1')
   mocks.remove.mockResolvedValue(undefined)
   mocks.workers.mockResolvedValue({ data: [
-    { id: 'worker-1', full_name: 'FOREMAN', is_active: true },
-    { id: 'worker-2', full_name: 'ACTIVE WORKER', is_active: true },
-    { id: 'worker-3', full_name: 'INACTIVE WORKER', is_active: false },
+    { id: 'worker-1', full_name: 'FOREMAN', employee_code: '900', is_active: true, staff_classification: 'special_staff' },
+    { id: 'worker-2', full_name: 'ACTIVE WORKER', employee_code: '79', is_active: true, staff_classification: 'normal', team_id: 'paint', team_name: 'Peinture Raghibe' },
+    { id: 'worker-3', full_name: 'INACTIVE WORKER', is_active: false, staff_classification: 'normal', team_id: 'paint', team_name: 'Peinture Raghibe' },
+    { id: 'worker-4', full_name: 'NORMAL LEADER', employee_code: '80', is_active: true, staff_classification: 'normal', team_id: 'paint', team_name: 'Peinture Raghibe' },
   ] })
   window.confirm = vi.fn(() => true)
   window.print = vi.fn()
@@ -43,27 +44,54 @@ describe('outside-work page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Hide workers' }))
     expect(screen.queryByText('ACTIVE WORKER')).toBeNull()
   })
-  it('creates and edits through only the outside-work RPC wrapper, with active selections', async () => {
+  it('searches foreign foremen and eligible normal workers without dumping either roster', async () => {
     open()
     await screen.findByText('FOREMAN', { selector: 'strong' })
     fireEvent.click(screen.getByRole('button', { name: 'Add foreman movement' }))
     const form = screen.getByRole('form', { name: 'Add foreman movement' })
-    expect(within(form).queryByText('INACTIVE WORKER')).toBeNull()
-    fireEvent.change(within(form).getByLabelText('Foreman name'), { target: { value: 'NEW FOREMAN' } })
-    fireEvent.click(within(form).getByRole('checkbox', { name: 'ACTIVE WORKER' }))
+    expect(within(form).queryByRole('listbox')).toBeNull()
+    expect(within(form).queryByText('ACTIVE WORKER')).toBeNull()
+    fireEvent.change(within(form).getByLabelText('Search foreign foremen'), { target: { value: 'leader' } })
+    expect(within(form).queryByRole('option', { name: /NORMAL LEADER/ })).toBeNull()
+    fireEvent.change(within(form).getByLabelText('Search foreign foremen'), { target: { value: 'foreman' } })
+    fireEvent.click(within(form).getByRole('option', { name: /FOREMAN/ }))
+    fireEvent.change(within(form).getByLabelText('Search workers'), { target: { value: 'worker' } })
+    expect(mocks.workers).toHaveBeenCalledTimes(1)
+    expect(within(form).queryByRole('option', { name: /INACTIVE WORKER/ })).toBeNull()
+    expect(within(form).queryByRole('option', { name: /FOREMAN/ })).toBeNull()
+    fireEvent.click(within(form).getByRole('option', { name: /ACTIVE WORKER/ }))
+    expect(within(form).getByText('Selected workers: 1')).toBeTruthy()
+    expect(within(form).getByRole('button', { name: 'Remove worker: ACTIVE WORKER' })).toBeTruthy()
+    expect(within(form).getByText('Override worker time')).toBeTruthy()
+    fireEvent.click(within(form).getByText('Override worker time'))
+    expect(within(form).getByLabelText('ACTIVE WORKER Start')).toBeTruthy()
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
-      id: null, foreman_name: 'NEW FOREMAN', workers: [expect.objectContaining({ worker_id: 'worker-2' })],
+      id: null, foreman_worker_id: 'worker-1', foreman_name: 'FOREMAN',
+      workers: [expect.objectContaining({ worker_id: 'worker-2' })],
     })))
+    expect(mocks.workers).toHaveBeenCalledWith({ includePayrollProfiles: false })
+  })
+  it('edits and deletes through the existing outside-work actions', async () => {
+    open()
+    await screen.findByText('FOREMAN', { selector: 'strong' })
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     fireEvent.click(within(screen.getByRole('form', { name: 'Add foreman movement' })).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mocks.save).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'movement-1' })))
-    expect(mocks.remove).not.toHaveBeenCalled()
-  })
-  it('deletes only the selected movement after confirmation', async () => {
-    open(); await screen.findByText('FOREMAN', { selector: 'strong' })
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith('movement-1'))
+  })
+  it('keeps manual foremen as a secondary explicit option', async () => {
+    open(); await screen.findByText('FOREMAN', { selector: 'strong' })
+    fireEvent.click(screen.getByRole('button', { name: 'Add foreman movement' }))
+    const form = screen.getByRole('form', { name: 'Add foreman movement' })
+    expect(within(form).queryByLabelText('Unregistered foreman name')).toBeNull()
+    fireEvent.click(within(form).getByRole('button', { name: 'Unregistered foreman' }))
+    fireEvent.change(within(form).getByLabelText('Unregistered foreman name'), { target: { value: 'GUEST FOREMAN' } })
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      foreman_worker_id: '', foreman_name: 'GUEST FOREMAN',
+    })))
   })
   it('prints a foreman-only weekly report without worker details or payroll data', async () => {
     const { container } = open()
