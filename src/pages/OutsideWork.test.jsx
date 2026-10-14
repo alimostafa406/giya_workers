@@ -70,6 +70,36 @@ const chooseForeman = (form) => {
 }
 
 describe('outside-work separate movement ranges', () => {
+  it('separates foreman and shared worker ranges and omits redundant worker time columns', async () => {
+    open()
+    const show = await screen.findByRole('button', { name: 'Show workers (1)' })
+    const card = show.closest('article')
+    expect(card.querySelector('[aria-label="Foreman"]').textContent).toContain('8:00 AM → 8:00 PM')
+    expect(card.querySelector('[aria-label="Foreman"]').textContent).toContain('12 h')
+    expect(card.querySelector('[aria-label="Workers"]').textContent).toContain('9:00 AM → 5:00 PM')
+    fireEvent.click(show)
+    expect(within(card).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Workers', 'Team'])
+    const hide = within(card).getByRole('button', { name: 'Hide workers (1)' })
+    fireEvent.click(hide)
+    expect(within(card).queryByRole('table')).toBeNull()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('preserves genuinely different historical worker times in the expanded table', async () => {
+    persisted[0].common_worker_start = null
+    persisted[0].common_worker_end = null
+    persisted[0].outside_work_movement_workers.push({ id: 'child-two', worker_id: 'richard', worker_name: 'RICHARD', start_time: '08:00:00', end_time: '18:00:00' })
+    const before = structuredClone(persisted)
+    open()
+    const show = await screen.findByRole('button', { name: 'Show workers (2)' })
+    const card = show.closest('article')
+    expect(within(card).getByText('Individual times shown in worker details')).toBeTruthy()
+    fireEvent.click(show)
+    expect(within(card).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Workers', 'Team', 'Start', 'End'])
+    expect(within(card).getByRole('cell', { name: '5:00 PM' })).toBeTruthy()
+    expect(within(card).getByRole('cell', { name: '6:00 PM' })).toBeTruthy()
+    expect(persisted).toEqual(before)
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it.each([
     ['2026-10-14', '2026-10-12', '2026-10-18'],
     ['2026-10-10', '2026-10-05', '2026-10-11'],
