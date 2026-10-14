@@ -16,7 +16,7 @@ beforeEach(() => {
 const special = { full_name: 'Foreign', employee_code: '064', phone: '', is_active: true, staff_classification: 'special_staff' }
 it('creates special staff without a team or automatically creating a payroll profile', async () => {
   await createWorkerRequest(special)
-  expect(mocks.insert).toHaveBeenCalledWith({ full_name: 'Foreign', employee_code: '064', phone: '', is_active: true })
+  expect(mocks.insert).toHaveBeenCalledWith({ full_name: 'Foreign', phone: '', is_active: true })
   expect(mocks.from.mock.calls.map(([table]) => table)).toEqual(['workers', 'worker_staff_classification'])
 })
 it('ignores special-staff hidden fields and preserves existing team/payroll and foreman links', async () => {
@@ -28,5 +28,6 @@ it('normal workers still require a team and retain normal weekly payroll default
   await expect(createWorkerRequest({ ...special, staff_classification: 'normal' })).rejects.toThrow(/team is required/i)
   await createWorkerRequest({ ...special, staff_classification: 'normal', team_id: 'team' })
   expect(mocks.insert.mock.calls[0][0].team_id).toBe('team')
+  expect(mocks.insert.mock.calls[0][0]).not.toHaveProperty('employee_code')
   expect(mocks.upsert).toHaveBeenCalledWith({ worker_id: 'worker', payment_type: 'weekly', monthly_salary: null })
 })

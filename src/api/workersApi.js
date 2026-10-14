@@ -139,6 +139,8 @@ export const createWorkerRequest = async (payload) => {
 	validateWorkerTeamAssignment(payload)
 	const client = getSupabaseClient()
 	const insertPayload = buildWorkerPayload(payload)
+	// The database owns allocation; never trust a browser-supplied new code.
+	delete insertPayload.employee_code
 
 	const { data, error } = await client
 		.from('workers')

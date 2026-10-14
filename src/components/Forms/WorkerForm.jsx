@@ -3,9 +3,9 @@ import { useTranslation } from '../../i18n/LanguageContext'
 import { workerRequiresOperationalTeam } from '../../utils/workerTeamEligibility'
 
 function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [fullName, setFullName] = useState(initialValues?.full_name || '')
-  const [employeeCode, setEmployeeCode] = useState(initialValues?.employee_code || '')
+  const employeeCode = initialValues?.employee_code || ''
   const [phone, setPhone] = useState(initialValues?.phone || '')
   const [teamId, setTeamId] = useState(
     initialValues?.team_id || initialValues?.team?.id || '',
@@ -17,7 +17,6 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
 
   useEffect(() => {
     setFullName(initialValues?.full_name || '')
-    setEmployeeCode(initialValues?.employee_code || '')
     setPhone(initialValues?.phone || '')
     setTeamId(initialValues?.team_id || initialValues?.team?.id || '')
     setIsActive(Boolean(initialValues?.is_active ?? true))
@@ -32,7 +31,7 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
     e.preventDefault()
     onSubmit({
       full_name: fullName,
-      employee_code: employeeCode,
+      ...(initialValues?.id ? { employee_code: employeeCode } : {}),
       phone,
       ...(teamRequired ? { team_id: teamId || null, payment_type: paymentType, monthly_salary: monthlySalary } : {}),
       is_active: isActive,
@@ -57,10 +56,9 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
         <label className="mb-1 block text-sm font-semibold">{t('workers.employeeCode')}</label>
         <input
           value={employeeCode}
-          onChange={(e) => setEmployeeCode(e.target.value)}
+          readOnly
           className="input-base"
-          placeholder="EMP-1001"
-          required
+          placeholder={({ ar: 'سيتم إنشاؤه تلقائيًا', en: 'Automatically generated', fr: 'Généré automatiquement' })[language]}
         />
       </div>
 
