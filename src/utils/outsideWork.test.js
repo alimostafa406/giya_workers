@@ -2,6 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { addOutsideWorkWorkers, changeOutsideWorkDate, durationMinutes, editOutsideWorkTime, foremanKey, formatClock, formatDuration, newOutsideWorkForm, outsideWorkDefaultTimes, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from './outsideWork'
 
 describe('outside-work foreman report', () => {
+  it.each([
+    ['2026-10-12', '17:00', 0],
+    ['2026-10-12', '19:00', 120],
+    ['2026-10-17', '14:00', 0],
+    ['2026-10-17', '18:00', 240],
+    ['2026-10-18', '18:00', 0],
+    ['2026-10-12', '16:00', 0],
+  ])('reports only overtime beyond normal end on %s ending %s', (date, end, expected) => {
+    const movement = { id: 'fixture', work_date: date, foreman_worker_id: 'foreman', start_time: '08:00', end_time: end }
+    const before = structuredClone(movement)
+    const report = weeklyForemanReport([movement], 'worker:foreman', weekDays(date))
+    expect(report.rows[0].foremanOvertimeMinutes).toBe(expected)
+    expect(report.totalOvertimeMinutes).toBe(expected)
+    expect(movement).toEqual(before)
+  })
   const days = weekDays('2026-10-14')
   const rows = [
     { id: 'one', work_date: '2026-10-12', foreman_worker_id: 'f1', foreman_name: 'FOREMAN', start_time: '08:00', end_time: '20:00' },
@@ -14,16 +29,18 @@ describe('outside-work foreman report', () => {
     expect(days).toEqual(['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18'])
     expect(weeklyForemanReport(rows, foremanKey(rows[0]), days).rows.map((row) => row.id)).toEqual(['one', 'two', 'three'])
   })
-  it('calculates foreman duration, distinct days, total, and daily average', () => {
+  it('calculates foreman overtime, distinct days and movement count without duration summaries', () => {
     const report = weeklyForemanReport(rows, 'worker:f1', days)
     expect(durationMinutes('07:45', '18:30')).toBe(645)
-    expect(report).toMatchObject({ dayCount: 2, movementCount: 3, totalMinutes: 1425, averageMinutes: 712.5 })
+    expect(report).toMatchObject({ dayCount: 2, movementCount: 3, totalOvertimeMinutes: 450 })
+    expect(report).not.toHaveProperty('totalMinutes')
+    expect(report).not.toHaveProperty('averageMinutes')
     expect(formatDuration(630)).toBe('10.5 h')
     expect(formatClock('20:00:00')).toBe('8:00 PM')
   })
   it('excludes all drafts while preserving legacy finalized rows', () => {
     const report = weeklyForemanReport([...rows, { ...rows[0], id: 'draft', status: 'draft', end_time: '23:00' }], 'worker:f1', days)
-    expect(report.totalMinutes).toBe(1425)
+    expect(report.totalOvertimeMinutes).toBe(450)
     expect(report.rows.map((row) => row.id)).not.toContain('draft')
   })
   it('hydrates incomplete drafts without inventing times and validates only final saves', () => {

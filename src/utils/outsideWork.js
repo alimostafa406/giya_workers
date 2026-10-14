@@ -35,14 +35,21 @@ export const foremanKey = (movement) => movement.foreman_worker_id
 export const isFinalOutsideWorkMovement = (movement) => (movement.status || 'final') === 'final'
 export const hasOutsideWorkForeman = (movement) => Boolean(movement.foreman_worker_id || String(movement.foreman_name || '').trim())
 
+// Outside-work reporting only; not the attendance/payroll overtime engine.
+export const foremanOvertimeMinutes = (date, end) => {
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay()
+  if (Number.isNaN(weekday) || weekday === 0) return 0
+  return durationMinutes(weekday === 6 ? '14:00' : '17:00', end) || 0
+}
+
 export const weeklyForemanReport = (movements, key, days) => {
   const rows = movements.filter((movement) => isFinalOutsideWorkMovement(movement) && hasOutsideWorkForeman(movement)
     && foremanKey(movement) === key && days.includes(movement.work_date))
     .sort((a, b) => a.work_date.localeCompare(b.work_date) || String(a.start_time || '').localeCompare(String(b.start_time || '')))
-  const totalMinutes = rows.reduce((sum, row) => sum + (durationMinutes(row.start_time, row.end_time) || 0), 0)
+    .map((row) => ({ ...row, foremanOvertimeMinutes: foremanOvertimeMinutes(row.work_date, row.end_time) }))
+  const totalOvertimeMinutes = rows.reduce((sum, row) => sum + row.foremanOvertimeMinutes, 0)
   const dayCount = new Set(rows.map((row) => row.work_date)).size
-  return { rows, dayCount, movementCount: rows.length, totalMinutes,
-    averageMinutes: dayCount ? totalMinutes / dayCount : 0 }
+  return { rows, dayCount, movementCount: rows.length, totalOvertimeMinutes }
 }
 
 const timeInput = (value) => String(value || '').slice(0, 5)
