@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { changeOutsideWorkDate, durationMinutes, editOutsideWorkTime, foremanKey, formatClock, formatDuration, newOutsideWorkForm, outsideWorkDefaultTimes, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from './outsideWork'
+import { addOutsideWorkWorkers, changeOutsideWorkDate, durationMinutes, editOutsideWorkWorkerTime, foremanKey, formatClock, formatDuration, newOutsideWorkForm, outsideWorkDefaultTimes, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from './outsideWork'
 
 describe('outside-work foreman report', () => {
   const days = weekDays('2026-10-14')
@@ -35,43 +35,46 @@ describe('outside-work foreman report', () => {
     expect(outsideWorkFinalError(form)).toBe('required')
     const complete = { ...form, work_date: '2026-10-14', team_id: 'team', foreman_name: 'LEADER',
       start_time: '08:00', end_time: '17:00', workers: [{ worker_id: 'local', start_time: '08:00', end_time: '17:00' }] }
-    expect(outsideWorkFinalError(complete)).toBe('unresolved')
+    expect(outsideWorkFinalError(complete)).toBe('')
     expect(outsideWorkFinalError({ ...complete, missing_worker_note: '' })).toBe('')
   })
 })
 
-describe('outside-work entry defaults', () => {
-  it('defaults every Monday-Friday to 08:00–17:00', () => {
+describe('individual outside-work entry times', () => {
+  const people = [{ id: 'one', full_name: 'FIRST' }, { id: 'two', full_name: 'SECOND' }]
+  it('defaults Monday-Friday independently to 08:00–17:00', () => {
     for (const date of ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16']) {
-      expect(outsideWorkDefaultTimes(date)).toEqual({ start: '08:00', end: '17:00' })
+      const form = addOutsideWorkWorkers(newOutsideWorkForm(date), people)
+      expect(form.workers.map((row) => [row.start_time, row.end_time])).toEqual([['08:00', '17:00'], ['08:00', '17:00']])
+      expect(form.foreman_name).toBe('')
+      expect(form.start_time).toBe('')
+      expect(form.common_worker_start).toBe('')
     }
   })
-  it('uses 08:00–14:00 Saturday and leaves Sunday hours empty', () => {
+  it('uses Saturday 08:00–14:00 and leaves Sunday rows blank', () => {
     expect(outsideWorkDefaultTimes('2026-10-17')).toEqual({ start: '08:00', end: '14:00' })
-    expect(outsideWorkDefaultTimes('2026-10-18')).toEqual({ start: '', end: '' })
+    expect(addOutsideWorkWorkers(newOutsideWorkForm('2026-10-18'), people).workers[0]).toMatchObject({ start_time: '', end_time: '' })
   })
-  it('updates untouched defaults and selected worker times on date changes', () => {
-    const form = { ...newOutsideWorkForm('2026-10-14'), workers: [{ worker_id: 'one', start_time: '08:00', end_time: '17:00' }] }
+  it('updates only untouched row times when the selected date changes', () => {
+    let form = addOutsideWorkWorkers(newOutsideWorkForm('2026-10-14'), people)
+    form = editOutsideWorkWorkerTime(form, 'one', 'start_time', '09:30')
     const saturday = changeOutsideWorkDate(form, '2026-10-17')
-    expect(saturday.common_worker_end).toBe('14:00')
-    expect(saturday.end_time).toBe('14:00')
-    expect(saturday.workers[0].end_time).toBe('14:00')
-    expect(changeOutsideWorkDate(saturday, '2026-10-18').common_worker_end).toBe('')
-    expect(changeOutsideWorkDate(saturday, '2026-10-19').common_worker_end).toBe('17:00')
+    expect(saturday.workers[0]).toMatchObject({ start_time: '09:30', end_time: '14:00' })
+    expect(saturday.workers[1]).toMatchObject({ start_time: '08:00', end_time: '14:00' })
   })
-  it('preserves common edits and worker overrides, including after draft hydration', () => {
-    let form = { ...newOutsideWorkForm('2026-10-14'), workers: [{ worker_id: 'one', start_time: '09:30', end_time: '17:00' }] }
-    form = editOutsideWorkTime(form, 'common_worker_start', '07:45')
-    form = outsideWorkForm({ ...form, id: 'saved-draft' })
-    const saturday = changeOutsideWorkDate(form, '2026-10-17')
-    expect(saturday.common_worker_start).toBe('07:45')
-    expect(saturday.common_worker_end).toBe('14:00')
-    expect(saturday.workers[0].start_time).toBe('09:30')
-    expect(saturday.workers[0].end_time).toBe('14:00')
+  it('editing one row never changes another, including after draft hydration', () => {
+    let form = addOutsideWorkWorkers(newOutsideWorkForm('2026-10-14'), people)
+    form = editOutsideWorkWorkerTime(form, 'one', 'end_time', '18:00')
+    expect(form.workers[1].end_time).toBe('17:00')
+    const reopened = outsideWorkForm({ ...form, id: 'draft' })
+    expect(changeOutsideWorkDate(reopened, '2026-10-17').workers.map((row) => row.end_time)).toEqual(['18:00', '14:00'])
+    expect(addOutsideWorkWorkers(reopened, people).workers).toHaveLength(2)
   })
-  it('preserves saved legacy and incomplete draft values instead of silently filling them', () => {
-    const saved = outsideWorkForm({ id: 'old', work_date: '2026-10-14', common_worker_start: '10:00', common_worker_end: '18:00' })
-    expect(changeOutsideWorkDate(saved, '2026-10-17').common_worker_end).toBe('18:00')
-    expect(outsideWorkForm({ id: 'empty-draft', work_date: '2026-10-14', start_time: null }).start_time).toBe('')
+  it('preserves archived foreman fields and saved legacy worker times on date edits', () => {
+    const saved = outsideWorkForm({ id: 'old', work_date: '2026-10-14', foreman_name: 'LEADER', start_time: '07:00', end_time: '20:00',
+      note: 'Archived', workers: [{ worker_id: 'one', start_time: '10:00', end_time: '18:00' }] })
+    const changed = changeOutsideWorkDate(saved, '2026-10-17')
+    expect(changed).toMatchObject({ foreman_name: 'LEADER', start_time: '07:00', end_time: '20:00', note: 'Archived' })
+    expect(changed.workers[0].end_time).toBe('18:00')
   })
 })

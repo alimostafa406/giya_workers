@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { getWorkersRequest } from '../api/workersApi'
 import { deleteOutsideWorkMovement, getOutsideWorkMovements, getOutsideWorkTeams, saveOutsideWorkMovement } from '../api/outsideWorkApi'
 import { getErrorMessage } from '../api/axios'
 import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
-import { durationMinutes, foremanKey, formatClock, formatDuration, isFinalOutsideWorkMovement, newOutsideWorkForm, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from '../utils/outsideWork'
+import { durationMinutes, foremanKey, formatClock, formatDuration, hasOutsideWorkForeman, isFinalOutsideWorkMovement, newOutsideWorkForm, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from '../utils/outsideWork'
 import OutsideWorkEntryForm from '../components/OutsideWork/OutsideWorkEntryForm'
 import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 import { biometricIdsByWorker } from '../utils/dailyOperationalReports'
@@ -62,7 +62,7 @@ const flowLabels = {
     otherSearch: 'إضافة عامل من فريق آخر', otherPlaceholder: 'اسم العامل / كود العامل / رقم البصمة',
     otherTeams: 'من فرق أخرى', missingWorker: 'عامل غير موجود', openWorkers: 'فتح صفحة العمال',
     savedBeforeWorkers: 'سيتم حفظ المسودة قبل فتح صفحة العمال. عند العودة يمكنك إكمالها.',
-    saveDraft: 'حفظ كمسودة', saveFinal: 'حفظ', advanced: 'خيارات إضافية', movements: 'الحركات', drafts: 'المسودات',
+    saveDraft: 'حفظ كمسودة', saveFinal: 'حفظ', movements: 'الحركات', drafts: 'المسودات',
     continue: 'متابعة', updated: 'آخر تحديث', noDrafts: 'لا توجد مسودات', saved: 'تم الحفظ',
     required: 'التاريخ والفريق مطلوبان للحفظ النهائي.', unresolved: 'أكمل العامل غير الموجود أو امسح الملاحظة قبل الحفظ النهائي.',
     selectWorkers: 'اختر عاملاً حقيقياً واحداً على الأقل.' },
@@ -71,7 +71,7 @@ const flowLabels = {
     otherSearch: 'Add worker from another team', otherPlaceholder: 'Worker name / employee code / biometric ID',
     otherTeams: 'From other teams', missingWorker: 'Worker not found', openWorkers: 'Open Workers page',
     savedBeforeWorkers: 'Your draft is saved before opening Workers. Return to continue it.',
-    saveDraft: 'Save as draft', saveFinal: 'Save', advanced: 'Additional options', movements: 'Movements', drafts: 'Drafts',
+    saveDraft: 'Save as draft', saveFinal: 'Save', movements: 'Movements', drafts: 'Drafts',
     continue: 'Continue', updated: 'Last updated', noDrafts: 'No drafts', saved: 'Saved',
     required: 'Date and team are required for final save.', unresolved: 'Resolve or clear the missing-worker note before final save.',
     selectWorkers: 'Select at least one real worker.' },
@@ -81,7 +81,7 @@ const flowLabels = {
     otherPlaceholder: 'Nom / code employé / ID biométrique', otherTeams: 'Autres équipes',
     missingWorker: 'Travailleur introuvable', openWorkers: 'Ouvrir la page Travailleurs',
     savedBeforeWorkers: 'Le brouillon sera enregistré avant l’ouverture. Revenez pour le compléter.',
-    saveDraft: 'Enregistrer le brouillon', saveFinal: 'Enregistrer', advanced: 'Options supplémentaires', movements: 'Déplacements',
+    saveDraft: 'Enregistrer le brouillon', saveFinal: 'Enregistrer', movements: 'Déplacements',
     drafts: 'Brouillons', continue: 'Continuer', updated: 'Dernière modification', noDrafts: 'Aucun brouillon',
     saved: 'Enregistré', required: 'La date et l’équipe sont requises.',
     unresolved: 'Résoudre ou effacer la note du travailleur introuvable avant l’enregistrement final.',
@@ -91,7 +91,6 @@ const flowLabels = {
 export default function OutsideWork() {
   const { language } = useTranslation()
   const l = { ...(labelSets[language] || labelSets.en), ...(flowLabels[language] || flowLabels.en) }
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const resumeId = useRef(params.get('draft') || sessionStorage.getItem('outside_work_resume_draft'))
   const [anchor, setAnchor] = useState(() => kinshasaClock().date)
@@ -144,7 +143,7 @@ export default function OutsideWork() {
   const finals = useMemo(() => movements.filter(isFinalOutsideWorkMovement), [movements])
   const drafts = useMemo(() => movements.filter((row) => row.status === 'draft')
     .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || ''))), [movements])
-  const foremen = useMemo(() => [...new Map(finals.map((row) => [foremanKey(row), row.foreman_name])).entries()], [finals])
+  const foremen = useMemo(() => [...new Map(finals.filter(hasOutsideWorkForeman).map((row) => [foremanKey(row), row.foreman_name])).entries()], [finals])
   const report = useMemo(() => weeklyForemanReport(finals, reportForeman, days), [finals, reportForeman, days])
   const reportName = foremen.find(([key]) => key === reportForeman)?.[1] || ''
   const biometricIds = useMemo(() => biometricIdsByWorker(mappings), [mappings])
@@ -155,7 +154,7 @@ export default function OutsideWork() {
     setSuccess('')
     if (movement.status === 'draft') setParams({ draft: movement.id }, { replace: true })
   }
-  const save = async (status, openWorkers = false) => {
+  const save = async (status) => {
     if (busy || !form) return
     const validation = status === 'final' ? outsideWorkFinalError(form) : ''
     if (validation) { setError(l[validation]); return }
@@ -163,18 +162,12 @@ export default function OutsideWork() {
     try {
       const id = await saveOutsideWorkMovement({ ...form, status })
       if (!id) throw new Error('The movement could not be saved.')
-      if (openWorkers) {
-        sessionStorage.setItem('outside_work_resume_draft', id)
-        setParams({ draft: id }, { replace: true })
-        navigate('/workers', { state: { returnTo: `/outside-work?draft=${id}` } })
-      } else {
-        await load()
-        setForm(null)
-        setParams({}, { replace: true })
-        sessionStorage.removeItem('outside_work_resume_draft')
-        setTab(status === 'draft' ? 'drafts' : 'movements')
-        setSuccess(l.saved)
-      }
+      await load()
+      setForm(null)
+      setParams({}, { replace: true })
+      sessionStorage.removeItem('outside_work_resume_draft')
+      setTab(status === 'draft' ? 'drafts' : 'movements')
+      setSuccess(l.saved)
     } catch (cause) { setError(getErrorMessage(cause)) }
     finally { setBusy(false) }
   }
@@ -205,7 +198,7 @@ export default function OutsideWork() {
     {error && <p role="alert" className="alert alert--error">{error}</p>}
     {success && <p role="status" className="text-sm font-bold text-emerald-700">{success}</p>}
     {form && <OutsideWorkEntryForm key={form.id || 'new'} value={form} onChange={setForm} workers={workers} teams={teams} biometricIds={biometricIds} labels={l} busy={busy}
-      onSave={save} onOpenWorkers={() => save('draft', true)} onCancel={() => { setForm(null); setParams({}, { replace: true }) }} />}
+      onSave={save} onCancel={() => { setForm(null); setParams({}, { replace: true }) }} />}
     {loading && <p>{l.loading}</p>}
     {!loading && tab === 'drafts' && <section className="space-y-3" aria-label={l.drafts}>
       {!drafts.length && <p className="surface-card p-5 text-sm text-(--muted)">{l.noDrafts}</p>}
@@ -223,8 +216,8 @@ export default function OutsideWork() {
           const members = row.outside_work_movement_workers || []
           const open = expanded.includes(row.id)
           return <article key={row.id} className="rounded-xl border p-3"><div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            <div><strong className="text-base">{row.foreman_name}</strong><p className="text-xs text-(--muted)">{teamName(row)}</p></div><span dir="ltr">{formatClock(row.start_time)} → {formatClock(row.end_time)}</span>
-            <span>{l.duration}: {formatDuration(durationMinutes(row.start_time, row.end_time))}</span><span>{l.count}: {members.length}</span>
+            <div><strong className="text-base">{row.foreman_name || teamName(row)}</strong>{row.foreman_name && <p className="text-xs text-(--muted)">{teamName(row)}</p>}</div>
+            {hasOutsideWorkForeman(row) && <><span dir="ltr">{formatClock(row.start_time)} → {formatClock(row.end_time)}</span><span>{l.duration}: {formatDuration(durationMinutes(row.start_time, row.end_time))}</span></>}<span>{l.count}: {members.length}</span>
             <div className="ms-auto flex gap-2"><button type="button" className="btn-secondary" aria-expanded={open} onClick={() => setExpanded((current) => open ? current.filter((id) => id !== row.id) : [...current, row.id])}>{open ? l.hide : `${l.show} (${members.length})`}</button>
               <button type="button" className="btn-secondary" onClick={() => edit(row)}>{l.edit}</button><button type="button" className="btn-secondary" disabled={busy} onClick={() => remove(row.id)}>{l.delete}</button></div></div>
             {open && <div className="mt-3 overflow-x-auto"><table className="w-full text-sm"><thead><tr>{[l.workers, l.team, l.start, l.end].map((label) => <th key={label} className="p-2 text-start">{label}</th>)}</tr></thead><tbody>{members.map((member) => <tr key={member.id} className="border-t"><td className="p-2">{member.worker_name}</td><td className="p-2">{workersById.get(String(member.worker_id))?.team_name || '—'}</td><td className="p-2" dir="ltr">{formatClock(member.start_time)}</td><td className="p-2" dir="ltr">{formatClock(member.end_time)}</td></tr>)}</tbody></table></div>}

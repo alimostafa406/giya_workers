@@ -33,11 +33,12 @@ export const foremanKey = (movement) => movement.foreman_worker_id
   ? `worker:${movement.foreman_worker_id}` : `name:${String(movement.foreman_name || '').trim().toLocaleLowerCase()}`
 
 export const isFinalOutsideWorkMovement = (movement) => (movement.status || 'final') === 'final'
+export const hasOutsideWorkForeman = (movement) => Boolean(movement.foreman_worker_id || String(movement.foreman_name || '').trim())
 
 export const weeklyForemanReport = (movements, key, days) => {
-  const rows = movements.filter((movement) => isFinalOutsideWorkMovement(movement)
+  const rows = movements.filter((movement) => isFinalOutsideWorkMovement(movement) && hasOutsideWorkForeman(movement)
     && foremanKey(movement) === key && days.includes(movement.work_date))
-    .sort((a, b) => a.work_date.localeCompare(b.work_date) || a.start_time.localeCompare(b.start_time))
+    .sort((a, b) => a.work_date.localeCompare(b.work_date) || String(a.start_time || '').localeCompare(String(b.start_time || '')))
   const totalMinutes = rows.reduce((sum, row) => sum + (durationMinutes(row.start_time, row.end_time) || 0), 0)
   const dayCount = new Set(rows.map((row) => row.work_date)).size
   return { rows, dayCount, movementCount: rows.length, totalMinutes,
@@ -61,11 +62,8 @@ export const outsideWorkForm = (movement = {}, date = '') => ({
 
 export const outsideWorkFinalError = (form) => {
   if (!form.work_date || !form.team_id) return 'required'
-  if (!String(form.foreman_name || '').trim()) return 'selectForemanError'
-  if (String(form.missing_worker_note || '').trim()) return 'unresolved'
   if (!form.workers.length) return 'selectWorkers'
-  if (durationMinutes(form.start_time, form.end_time) == null
-    || form.workers.some((row) => durationMinutes(row.start_time, row.end_time) == null)) return 'invalid'
+  if (form.workers.some((row) => durationMinutes(row.start_time, row.end_time) == null)) return 'invalid'
   return ''
 }
 
@@ -75,37 +73,38 @@ export const outsideWorkDefaultTimes = (date) => {
     : { start: '08:00', end: day === 6 ? '14:00' : '17:00' }
 }
 
-const timeFields = ['start_time', 'end_time', 'common_worker_start', 'common_worker_end']
-const timeWasEdited = (form, field) => form.entry_state?.manual_times?.[field]
-  ?? Boolean(form.id && form[field])
+export const newOutsideWorkForm = (date) => outsideWorkForm({}, date)
 
-export const newOutsideWorkForm = (date) => {
-  const defaults = outsideWorkDefaultTimes(date)
-  return { ...outsideWorkForm({}, date), start_time: defaults.start, end_time: defaults.end,
-    common_worker_start: defaults.start, common_worker_end: defaults.end,
-    entry_state: { manual_times: Object.fromEntries(timeFields.map((field) => [field, false])) } }
+export const addOutsideWorkWorkers = (form, workers) => {
+  const ids = new Set(form.workers.map((row) => String(row.worker_id)))
+  const defaults = outsideWorkDefaultTimes(form.work_date)
+  const added = []
+  const overrides = { ...form.entry_state?.overrides }
+  for (const worker of workers) {
+    if (ids.has(String(worker.id))) continue
+    ids.add(String(worker.id))
+    added.push({ worker_id: worker.id, worker_name: worker.full_name, start_time: defaults.start, end_time: defaults.end })
+    overrides[worker.id] = { start_time: false, end_time: false }
+  }
+  return { ...form, workers: [...form.workers, ...added], entry_state: { ...form.entry_state, overrides } }
 }
 
-const applyCommonTime = (form, field, next) => ({ ...form, [field]: next,
-  workers: form.workers.map((row) => {
-    const key = field === 'common_worker_start' ? 'start_time' : 'end_time'
-    const override = form.entry_state?.overrides?.[row.worker_id]?.[key]
-      || (row[key] && row[key] !== form[field])
-    return override ? row : { ...row, [key]: next }
-  }) })
-
-export const editOutsideWorkTime = (form, field, next) => ({
-  ...(field.startsWith('common_worker_') ? applyCommonTime(form, field, next) : { ...form, [field]: next }),
-  entry_state: { ...form.entry_state, manual_times: { ...form.entry_state?.manual_times, [field]: true } },
+export const editOutsideWorkWorkerTime = (form, id, field, next) => ({
+  ...form, workers: form.workers.map((row) => row.worker_id === id ? { ...row, [field]: next } : row),
+  entry_state: { ...form.entry_state, overrides: { ...form.entry_state?.overrides,
+    [id]: { ...form.entry_state?.overrides?.[id], [field]: true } } },
 })
 
 export const changeOutsideWorkDate = (form, date) => {
   const defaults = outsideWorkDefaultTimes(date)
-  let next = { ...form, work_date: date }
-  for (const field of timeFields) {
-    if (timeWasEdited(form, field)) continue
-    const value = field === 'start_time' || field === 'common_worker_start' ? defaults.start : defaults.end
-    next = field.startsWith('common_worker_') ? applyCommonTime(next, field, value) : { ...next, [field]: value }
-  }
-  return next
+  const previousDefaults = outsideWorkDefaultTimes(form.work_date)
+  return { ...form, work_date: date, workers: form.workers.map((row) => {
+    const next = { ...row }
+    for (const [field, key] of [['start_time', 'start'], ['end_time', 'end']]) {
+      const edited = form.entry_state?.overrides?.[row.worker_id]?.[field]
+        ?? Boolean(form.id || (row[field] && row[field] !== previousDefaults[key]))
+      if (!edited) next[field] = defaults[key]
+    }
+    return next
+  }) }
 }
