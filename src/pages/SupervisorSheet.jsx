@@ -5,7 +5,7 @@ import { getErrorMessage } from '../api/axios'
 import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
-import { getHistoricalSupervisorReviewRequest, saveSupervisorMorningReviewRequest } from '../api/supervisorMorningReviewApi'
+import { finalizeSupervisorReviewRequest, getHistoricalSupervisorReviewRequest, saveSupervisorMorningReviewRequest } from '../api/supervisorMorningReviewApi'
 import { useTranslation } from '../i18n/LanguageContext'
 import { useAuthStore } from '../store/authStore'
 import { ATTENDANCE_REFRESH_INTERVAL_MS, isAttendancePageLocked, kinshasaClock, prepareAttendanceOutput } from '../utils/attendanceOperationalGate'
@@ -23,6 +23,8 @@ export default function SupervisorSheet() {
   const selectedDateRef = useRef(date)
   const baselineRef = useRef({})
   const [readOnly, setReadOnly] = useState(false)
+  const [exactPopulation, setExactPopulation] = useState(false)
+  const [reconstructed, setReconstructed] = useState(false)
   const [workers, setWorkers] = useState([])
   const [teams, setTeams] = useState([])
   const [mappings, setMappings] = useState([])
@@ -53,14 +55,16 @@ export default function SupervisorSheet() {
     if (mountedRef.current) { setLoading(true); setError('') }
     try {
       return await refreshCoordinatorRef.current(`${date}:${final ? 'final' : 'live'}`, async () => {
-        const history = historical ? await getHistoricalSupervisorReviewRequest(date) : null
+        const history = historical ? await getHistoricalSupervisorReviewRequest(date) : final ? await finalizeSupervisorReviewRequest(date) : null
         const [workersResult, teamsResult, attendanceResult, mappingsResult] = await Promise.all([
-          historical ? { data: history.workers } : getWorkersRequest(), historical ? { data: history.teams } : getTeamsRequest(),
-          historical ? { data: history.attendance } : getAttendanceRequest({ date, staff_classification: 'normal' }),
+          history ? { data: history.workers } : getWorkersRequest(), history ? { data: history.teams } : getTeamsRequest(),
+          history ? { data: history.attendance } : getAttendanceRequest({ date, staff_classification: 'normal' }),
           getWorkerBiometricSearchIndexRequest(),
         ])
         if (!mountedRef.current || frozenRef.current || selectedDateRef.current !== date) return
-        setReadOnly(historical && (!history.available || history.read_only))
+        setReadOnly(Boolean(history && (!history.available || history.read_only)))
+        setExactPopulation(history?.exact_population === true)
+        setReconstructed(history?.reconstructed === true)
         const restored = savedSupervisorResults(asArray(attendanceResult.data), date)
         baselineRef.current = restored
         setResults((current) => ({ ...restored, ...current }))
@@ -108,8 +112,8 @@ export default function SupervisorSheet() {
   }, [date, historical, locked, finalWindow, frozen, refreshSnapshot])
 
   const availableTeams = useMemo(() => supervisorSheetTeams(teams), [teams])
-  const sheet = useMemo(() => buildSupervisorSheet({ workers: locked ? [] : workers, attendance, mappings, date, teamId }), [workers, attendance, mappings, date, teamId, locked])
-  const allSheet = useMemo(() => buildSupervisorSheet({ workers: locked ? [] : workers, attendance, mappings, date }), [workers, attendance, mappings, date, locked])
+  const sheet = useMemo(() => buildSupervisorSheet({ workers: locked ? [] : workers, attendance, mappings, date, teamId, exactPopulation }), [workers, attendance, mappings, date, teamId, locked, exactPopulation])
+  const allSheet = useMemo(() => buildSupervisorSheet({ workers: locked ? [] : workers, attendance, mappings, date, exactPopulation }), [workers, attendance, mappings, date, locked, exactPopulation])
   const missingSelections = unselectedSupervisorWorkerIds(allSheet.groups, results)
   const selectedTeamName = availableTeams.find((team) => String(team.id) === teamId)?.name || t('supervisorSheet.allTeams')
   const formattedDate = new Intl.DateTimeFormat(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : 'en-GB', {
@@ -167,6 +171,7 @@ export default function SupervisorSheet() {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(next) || next > kinshasaClock().date || next === date) return
           selectedDateRef.current = next; frozenRef.current = false; baselineRef.current = {}
           setFrozen(false); setLoading(true); setWorkers([]); setAttendance([]); setResults({}); setSaved(false)
+          setExactPopulation(false); setReconstructed(false)
           setError(''); setSaveError(''); setSaveMessage(''); setPrintMode('blank'); setNow(new Date()); setDate(next)
         }} />
       </label>
@@ -185,6 +190,7 @@ export default function SupervisorSheet() {
     {error ? <p role="alert" className="alert alert--error mb-4">{error}</p> : null}
     {saveError ? <p role="alert" className="alert alert--error mb-4">{saveError}</p> : null}
     {saveMessage ? <p role="status" className="alert mb-4">{saveMessage}</p> : null}
+    {reconstructed && <p role="status" className="mb-4 text-sm font-semibold text-amber-800">{({ ar: 'قائمة تاريخية معاد بناؤها — قد لا تطابق الورقة النهائية الأصلية', en: 'Reconstructed historical list — may not match the original final sheet', fr: 'Liste historique reconstruite — peut différer de la feuille finale originale' })[language]}</p>}
     {!locked && <p className="absence-report-screen-only mb-4 text-sm font-semibold text-(--muted)" role="status">
       {historical ? ({ ar: 'مراجعة تاريخ سابق', en: 'Historical date review', fr: 'Révision d’une date passée' })[language] : frozen ? t('supervisorSheet.frozen') : finalWindow ? t('supervisorSheet.finalChecking') : t('supervisorSheet.refreshingUntil11')}
       {historical && readOnly ? ({ ar: ' — للقراءة فقط: سجل تاريخي غير متاح أو فترة رواتب معتمدة/مدفوعة', en: ' — Read-only: historical roster unavailable or payroll finalized/paid', fr: ' — Lecture seule : historique indisponible ou paie finalisée/payée' })[language] : ''}
@@ -199,6 +205,7 @@ export default function SupervisorSheet() {
         <h1>{t('supervisorSheet.title')}</h1>
         <p>{t('attendance.date')}: <span dir="ltr">{formattedDate}</span> · {t('attendance.team')}: {selectedTeamName}</p>
         <p>{t('supervisorSheet.workerCount')}: {sheet.workerCount}</p>
+        {reconstructed && <p>{({ ar: 'قائمة تاريخية معاد بناؤها — قد لا تطابق الورقة النهائية الأصلية', en: 'Reconstructed historical list — may not match the original final sheet', fr: 'Liste historique reconstruite — peut différer de la feuille finale originale' })[language]}</p>}
       </header>
       {loading ? <p className="py-8 text-center">{t('common.loading')}</p> : !error && !sheet.workerCount ? <p className="absence-report-empty">{t('supervisorSheet.noWorkers')}</p> : null}
       {!loading && !error ? sheet.groups.filter((group) => group.workers.length > 0).map((group) => <section key={group.id} className="absence-team-block">

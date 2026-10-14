@@ -1,7 +1,13 @@
 import { getSupabaseClient } from '../lib/supabase'
 
 export const getHistoricalSupervisorReviewRequest = async (date) => {
-  const { data, error } = await getSupabaseClient().rpc('admin_get_historical_supervisor_review', { p_date: date })
+  const { data, error } = await getSupabaseClient().rpc('admin_get_final_supervisor_review', { p_date: date, p_finalize: false })
+  if (error) throw error
+  return data
+}
+
+export const finalizeSupervisorReviewRequest = async (date) => {
+  const { data, error } = await getSupabaseClient().rpc('admin_get_final_supervisor_review', { p_date: date, p_finalize: true })
   if (error) throw error
   return data
 }

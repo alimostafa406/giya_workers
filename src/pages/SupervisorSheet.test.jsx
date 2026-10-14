@@ -6,14 +6,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { MemoryRouter } from 'react-router-dom'
 import SupervisorSheet from './SupervisorSheet.jsx'
 import { LanguageProvider } from '../i18n/LanguageContext.jsx'
+import { buildSupervisorSheet } from '../utils/supervisorSheet'
 
 globalThis.React = React
-const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), save: vi.fn(), history: vi.fn() }))
+const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), save: vi.fn(), history: vi.fn(), finalize: vi.fn() }))
 vi.mock('../api/workersApi', () => ({ getWorkersRequest: mocks.workers }))
 vi.mock('../api/teamsApi', () => ({ getTeamsRequest: mocks.teams }))
 vi.mock('../api/attendanceApi', () => ({ getAttendanceRequest: mocks.attendance }))
 vi.mock('../api/biometricMappingApi', () => ({ getWorkerBiometricSearchIndexRequest: mocks.mappings }))
-vi.mock('../api/supervisorMorningReviewApi', () => ({ saveSupervisorMorningReviewRequest: mocks.save, getHistoricalSupervisorReviewRequest: mocks.history }))
+vi.mock('../api/supervisorMorningReviewApi', () => ({ saveSupervisorMorningReviewRequest: mocks.save, getHistoricalSupervisorReviewRequest: mocks.history, finalizeSupervisorReviewRequest: mocks.finalize }))
 vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ admin: { is_active: true } }) }))
 vi.mock('../utils/attendanceOperationalGate', async (importOriginal) => ({ ...await importOriginal(), isAttendancePageLocked: () => false }))
 
@@ -38,6 +39,14 @@ beforeEach(() => {
   mocks.history.mockImplementation(async (date) => ({ available: true, read_only: false,
     workers: (await mocks.workers()).data, teams: (await mocks.teams()).data,
     attendance: (await mocks.attendance({ date })).data }))
+  mocks.finalize.mockImplementation(async (date) => {
+    const workers = (await mocks.workers()).data
+    const attendance = (await mocks.attendance({ date, staff_classification: 'normal' })).data
+    const sheet = buildSupervisorSheet({ workers, attendance, date })
+    const ids = new Set(sheet.groups.flatMap((group) => group.workers.map((worker) => worker.id)))
+    return { available: true, exact_population: true, read_only: false, workers: workers.filter((worker) => ids.has(worker.id)),
+      attendance, teams: (await mocks.teams()).data }
+  })
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   vi.spyOn(window, 'print').mockImplementation(() => {})
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => window.setTimeout(() => callback(0), 0))
@@ -52,6 +61,30 @@ const showPaintTeam = async () => {
 }
 
 describe('supervisor attendance sheet', () => {
+  it('uses the persisted historical IDs even when a worker is now inactive or has a check-in', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
+    mocks.history.mockResolvedValue({ available: true, exact_population: true, read_only: false, teams: [{ id: 'paint', name: 'Paint' }],
+      workers: [{ id: 'historic', full_name: 'FROZEN WORKER', is_active: false, team_id: 'paint', team_name: 'Paint', biometric_id: '022' }],
+      attendance: [{ worker_id: 'historic', attendance_date: '2026-10-13', check_in: '08:00', manual_override: true,
+        biometric_sync_metadata: { supervisor_morning_review: { source: 'supervisor_sheet', choice: 'P' } } }] })
+    render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('ROBERT')
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-13' } })
+    await screen.findByText('FROZEN WORKER')
+    expect(screen.queryByText('ROBERT')).toBeNull()
+    expect(screen.getByText('022')).toBeTruthy()
+    expect(within(screen.getByRole('group', { name: 'FROZEN WORKER Result' })).getByRole('button', { name: 'P' }).getAttribute('aria-pressed')).toBe('true')
+  })
+  it('labels unsnapshotted historical reconstruction on screen and print', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
+    const original = mocks.history.getMockImplementation()
+    mocks.history.mockImplementation(async (date) => ({ ...await original(date), reconstructed: true, exact_population: false }))
+    const { container } = render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('ROBERT')
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-13' } })
+    await screen.findAllByText('Reconstructed historical list — may not match the original final sheet')
+    expect(container.querySelector('.absence-report-header').textContent).toContain('Reconstructed historical list')
+  })
   it('shows historical payroll locks read-only without sending a save', async () => {
     vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
     mocks.history.mockResolvedValue({ available: true, read_only: true, teams: [{ id: 'paint', name: 'Peinture' }],
