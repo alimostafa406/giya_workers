@@ -31,7 +31,7 @@ beforeEach(() => {
   localStorage.setItem('workers_app_language', 'en')
   sessionStorage.clear()
   persisted = [structuredClone(movement)]
-  mocks.list.mockImplementation(async () => structuredClone(persisted))
+  mocks.list.mockImplementation(async (start, end) => structuredClone(persisted.filter((row) => row.status === 'draft' || (row.work_date >= start && row.work_date <= end))))
   mocks.save.mockImplementation(async (values) => {
     const id = values.id || 'draft-new'
     const row = { ...structuredClone(values), id, updated_at: '2026-10-14T10:00:00Z',
@@ -70,6 +70,32 @@ const chooseForeman = (form) => {
 }
 
 describe('outside-work separate movement ranges', () => {
+  it.each([
+    ['2026-10-14', '2026-10-12', '2026-10-18'],
+    ['2026-10-10', '2026-10-05', '2026-10-11'],
+  ])('shows the finalized movement immediately in the correct week for %s', async (date, weekStart, weekEnd) => {
+    open()
+    const form = await start(); team(form); chooseForeman(form)
+    fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
+    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: date } })
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    const show = await screen.findByRole('button', { name: 'Show workers (2)' })
+    expect(mocks.list).toHaveBeenLastCalledWith(weekStart, weekEnd)
+    expect(mocks.save.mock.calls[0][0].work_date).toBe(date)
+    expect(show.closest('section').querySelector('h2').textContent).toContain(date === '2026-10-10' ? '10/10/2026' : '10/14/2026')
+    fireEvent.click(show)
+    expect(within(show.closest('section')).getByRole('cell', { name: 'ROBERT' })).toBeTruthy()
+    expect(within(show.closest('section')).getByRole('cell', { name: 'RICHARD' })).toBeTruthy()
+  })
+  it('switches to a dated draft week and keeps the Drafts tab usable', async () => {
+    open()
+    const form = await start(); team(form)
+    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-10' } })
+    fireEvent.click(within(form).getByRole('button', { name: 'Save as draft' }))
+    await screen.findByRole('button', { name: 'Continue' })
+    expect(screen.getByLabelText('Week').value).toBe('2026-10-10')
+    expect(mocks.list).toHaveBeenLastCalledWith('2026-10-05', '2026-10-11')
+  })
   it('automatically uses the linked team foreman and shows fallback for an unlinked team', async () => {
     mocks.teams.mockResolvedValue([{ id: 'paint', name: 'Peinture', foreman_worker_id: 'foreman' }, { id: 'montage', name: 'Montage' }])
     open()

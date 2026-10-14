@@ -162,7 +162,13 @@ export default function OutsideWork() {
     try {
       const id = await saveOutsideWorkMovement({ ...form, status })
       if (!id) throw new Error('The movement could not be saved.')
-      await load()
+      if (form.work_date && !days.includes(form.work_date)) {
+        // The anchor change triggers the existing loader for the saved date's week.
+        setLoading(true)
+        setAnchor(form.work_date)
+      } else {
+        await load()
+      }
       setForm(null)
       setParams({}, { replace: true })
       sessionStorage.removeItem('outside_work_resume_draft')
