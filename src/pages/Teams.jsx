@@ -19,6 +19,7 @@ import {
   buildBiometricCoverageByWorker,
 } from '../utils/biometricMappingCoverage'
 import { printAllTeamWorkers } from '../utils/teamWorkersPrint'
+import { eligibleTeamForemen, teamForemanLabels } from '../utils/teamForeman'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -32,6 +33,7 @@ const asArray = (value) => {
 
 function Teams() {
   const { t, language } = useTranslation()
+  const foremanLabels = teamForemanLabels[language] || teamForemanLabels.en
   const [teams, setTeams] = useState([])
   const [supervisors, setSupervisors] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -157,6 +159,7 @@ function Teams() {
       const payload = {
         name: String(values.name || '').trim(),
         supervisor_id: String(values.supervisor_id || '').trim() || null,
+        foreman_worker_id: values.foreman_worker_id || null,
         is_active: Boolean(values.is_active),
       }
 
@@ -231,6 +234,7 @@ function Teams() {
       render: (row) => (
         <div className="min-w-72 space-y-2 whitespace-normal">
           <div className="font-extrabold">{row.name}</div>
+          <div className="text-sm text-(--muted)">{foremanLabels.title}: {row.foreman?.full_name || foremanLabels.none}</div>
           <div className="flex flex-wrap gap-2" aria-label={`${t('common.actions')}: ${row.name}`}>
             <button type="button" onClick={() => openDetails(row)} className="btn-secondary px-3 py-1">
               {t('teams.viewMembers')}
@@ -308,6 +312,7 @@ function Teams() {
         <TeamForm
           initialValues={selectedTeam}
           supervisors={availableSupervisors}
+          foremen={eligibleTeamForemen(allWorkers)}
           onSubmit={handleSubmit}
           isSaving={isSaving}
         />

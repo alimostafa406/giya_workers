@@ -70,6 +70,18 @@ const chooseForeman = (form) => {
 }
 
 describe('outside-work separate movement ranges', () => {
+  it('automatically uses the linked team foreman and shows fallback for an unlinked team', async () => {
+    mocks.teams.mockResolvedValue([{ id: 'paint', name: 'Peinture', foreman_worker_id: 'foreman' }, { id: 'montage', name: 'Montage' }])
+    open()
+    const form = await start(); team(form)
+    expect(within(form).getByRole('button', { name: 'Change foreman' })).toBeTruthy()
+    expect(within(form).queryByLabelText('Search foreign foremen')).toBeNull()
+    expect(within(form).getAllByRole('checkbox')).toHaveLength(2)
+    team(form, 'montage')
+    expect(within(form).getByRole('status').textContent).toBe('No foreman is linked to this team')
+    expect(within(form).getByLabelText('Search foreign foremen')).toBeTruthy()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it('keeps team-first selection and shows exactly four movement time inputs', async () => {
     open()
     const form = await start()

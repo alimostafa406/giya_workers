@@ -15,7 +15,7 @@ export async function getOutsideWorkMovements(start, end) {
 
 export async function getOutsideWorkTeams() {
   const { data, error } = await getSupabaseClient().from('teams')
-    .select('id,name,is_active').eq('is_active', true).order('name')
+    .select('id,name,is_active,foreman_worker_id').eq('is_active', true).order('name')
   if (error) throw error
   return data || []
 }

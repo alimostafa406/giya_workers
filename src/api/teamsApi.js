@@ -1,12 +1,14 @@
 import { getSupabaseClient } from '../lib/supabase'
 import { activeWorkersOnly } from '../utils/activeWorkers'
+import { getWorkersRequest } from './workersApi'
+import { resolveTeamForeman } from '../utils/teamForeman'
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
 
 const readTeams = async (client) => {
 	const { data, error } = await client
 		.from('teams')
-		.select('id,name,supervisor_id,is_active,created_at,updated_at')
+		.select('id,name,supervisor_id,foreman_worker_id,is_active,created_at,updated_at')
 		.order('created_at', { ascending: false })
 
 	if (error) {
@@ -45,6 +47,7 @@ const buildPayload = (payload) => {
 		name: String(payload.name || '').trim(),
 		supervisor_id: String(payload.supervisor_id || '').trim() || null,
 		is_active: Boolean(payload.is_active),
+		...(Object.hasOwn(payload, 'foreman_worker_id') ? { foreman_worker_id: payload.foreman_worker_id || null } : {}),
 	}
 
 	return teamPayload
@@ -79,10 +82,11 @@ const ensureSupervisorIsAvailable = async (client, supervisorId, teamId = null) 
 
 export const getTeamsRequest = async () => {
 	const client = getSupabaseClient()
-	const [teams, workers, supervisors] = await Promise.all([
+	const [teams, workers, supervisors, foremen] = await Promise.all([
 		readTeams(client),
 		readWorkers(client),
 		readSupervisors(client),
+		getWorkersRequest({ includePayrollProfiles: false }),
 	])
 
 	const supervisorsById = new Map(
@@ -97,6 +101,7 @@ export const getTeamsRequest = async () => {
 
 		return {
 			...team,
+			foreman: resolveTeamForeman(team, foremen.data),
 			workers: teamWorkers,
 			workers_count: teamWorkers.length,
 			supervisor,

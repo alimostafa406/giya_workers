@@ -1,11 +1,9 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
-import { isSpecialStaffWorker } from './workerTeamEligibility.js'
+import { eligibleTeamForemen } from './teamForeman.js'
 
 const byName = (a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''))
 
-export const outsideWorkForemen = (workers = []) => workers
-  .filter((worker) => worker.is_active === true && isSpecialStaffWorker(worker))
-  .sort(byName)
+export const outsideWorkForemen = eligibleTeamForemen
 
 export const outsideWorkEligibleWorkers = (workers = [], date = '') => workers
   .filter((worker) => isOperationalAttendanceWorkerOnDate(worker, date))

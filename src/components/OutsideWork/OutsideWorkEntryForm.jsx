@@ -2,8 +2,12 @@ import { useMemo } from 'react'
 import { outsideWorkForemen, outsideWorkOtherWorkers, outsideWorkTeamWorkers, searchOutsideWorkPeople } from '../../utils/outsideWorkRoster'
 import { addOutsideWorkWorkers, changeOutsideWorkDate, editOutsideWorkTime } from '../../utils/outsideWork'
 import './OutsideWorkEntryForm.css'
+import { useTranslation } from '../../i18n/LanguageContext'
+import { resolveTeamForeman, selectOutsideWorkTeam, teamForemanLabels } from '../../utils/teamForeman'
 
 export default function OutsideWorkEntryForm({ value, onChange, workers, teams, biometricIds, labels: l, busy, onSave, onCancel }) {
+  const { language } = useTranslation()
+  const linkedForeman = resolveTeamForeman(teams.find((team) => String(team.id) === String(value.team_id)), workers)
   const entry = value.entry_state || {}
   const teamWorkers = useMemo(() => outsideWorkTeamWorkers(workers, value.work_date, value.team_id), [workers, value.work_date, value.team_id])
   const teamResults = entry.teamSearch?.trim() ? searchOutsideWorkPeople(teamWorkers, entry.teamSearch, biometricIds) : teamWorkers
@@ -26,7 +30,7 @@ export default function OutsideWorkEntryForm({ value, onChange, workers, teams, 
     <fieldset disabled={busy} className="outside-work-entry-body">
       <div className="outside-work-entry-fields">
         <label className="outside-work-field"><span>{l.date}</span><input aria-label={l.date} type="date" value={value.work_date} onChange={(event) => onChange((current) => changeOutsideWorkDate(current, event.target.value))} className="input-base" /></label>
-        <label className="outside-work-field"><span>{l.team}</span><select aria-label={l.team} value={value.team_id} onChange={(event) => onChange((current) => ({ ...current, team_id: event.target.value, entry_state: { ...current.entry_state, teamSearch: '', otherSearch: '' } }))} className="input-base">
+        <label className="outside-work-field"><span>{l.team}</span><select aria-label={l.team} value={value.team_id} onChange={(event) => onChange((current) => selectOutsideWorkTeam(current, event.target.value, teams, workers))} className="input-base">
           <option value="">{l.chooseTeam}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
           {value.team_id && !teams.some((team) => String(team.id) === String(value.team_id)) && <option value={value.team_id}>{selectedTeamName}</option>}
         </select></label>
@@ -66,6 +70,7 @@ export default function OutsideWorkEntryForm({ value, onChange, workers, teams, 
       <div className="outside-work-ranges">
       <section className="outside-work-range">
         <h3 className="text-sm font-bold">{l.foreman}</h3>
+        {value.team_id && !linkedForeman && <p role="status" className="text-sm text-amber-700">{(teamForemanLabels[language] || teamForemanLabels.en).none}</p>}
         {value.foreman_worker_id || value.foreman_name ? <div className="flex items-center justify-between gap-2 rounded-lg bg-(--surface-subtle) px-3 py-2 text-sm"><strong>{value.foreman_name}</strong><button type="button" onClick={() => onChange((current) => ({ ...current, foreman_worker_id: '', foreman_name: '' }))} className="text-xs font-semibold text-(--muted)">{l.changeForeman}</button></div>
           : <><input aria-label={l.searchForeman} placeholder={l.searchForeman} value={entry.foremanSearch || ''} onChange={(event) => setEntry('foremanSearch', event.target.value)} className="input-base w-full" />
             {entry.foremanSearch?.trim() && <div role="listbox" aria-label={l.foreman} className="max-h-36 overflow-y-auto rounded-lg border border-(--border) p-1">{foremanResults.map((worker) => <button type="button" role="option" aria-selected="false" key={worker.id} className="block w-full rounded-lg px-3 py-2 text-start text-sm hover:bg-(--primary-soft)" onClick={() => onChange((current) => ({ ...current, foreman_worker_id: worker.id, foreman_name: worker.full_name, entry_state: { ...current.entry_state, foremanSearch: '' } }))}>{worker.full_name} · {worker.employee_code || '—'}</button>)}{!foremanResults.length && <p className="px-3 py-2 text-sm text-(--muted)">{l.noMatches}</p>}</div>}</>}
