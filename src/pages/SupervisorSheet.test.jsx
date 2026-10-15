@@ -19,6 +19,8 @@ vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ ad
 vi.mock('../utils/attendanceOperationalGate', async (importOriginal) => ({ ...await importOriginal(), isAttendancePageLocked: () => false }))
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
   localStorage.setItem('workers_app_language', 'en')
   mocks.workers.mockResolvedValue({ data: [
     { id: 'one', full_name: 'ROBERT', employee_code: '79', team_id: 'paint', team_name: 'Peinture Raghibe', is_active: true, staff_classification: 'normal' },

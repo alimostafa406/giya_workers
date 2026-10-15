@@ -25,6 +25,7 @@ from hikvision_attendance_sync import (
     SupabaseReadClient,
     attendance_apply_blocked_reason,
     apply_biometric_attendance,
+    biometric_mapping_for_event,
     deduplicate_hikvision_events,
     hikvision_events,
     hikvision_events_with_devices,
@@ -41,6 +42,7 @@ from hikvision_attendance_sync import (
 from hikvision_user_sync import check_hikvision_reachable, sync_users_dataset
 from hikvision_devices import configured_devices
 from hikvision_local_config import load_local_hikvision_config, require_local_settings
+from attendance_shift import is_night_worker, NIGHT_END
 from hikvision_attendance_verification import (
     absence_plans_with_verification,
     completed_morning_snapshot_compatibility,
@@ -156,8 +158,8 @@ def late_tail_reconciliation_plans(
         plan for plan in plans
         if str(plan.get('worker_id') or '') in impacted_worker_ids
         and (plan.get('check_in') or (plan.get('checkout_only') and plan.get('proposed_status') == 'present'))
-        and plan.get('check_out')
-        and plan.get('check_out_next_day') is True
+        and ((plan.get('night_shift') and plan.get('check_in') and plan.get('proposed_status') == 'present')
+             or (plan.get('check_out') and plan.get('check_out_next_day') is True))
     ]
 
 
@@ -333,7 +335,7 @@ class AttendanceAgent:
                     continue
                 if (
                     event_time.date() == observed_date
-                    and event_time.timetz().replace(tzinfo=None) <= time(2, 0)
+                    and event_time.timetz().replace(tzinfo=None) <= NIGHT_END
                 ):
                     tail_events.append(event)
             replay_events = deduplicate_hikvision_events([*persisted_events, *tail_events])
@@ -357,8 +359,11 @@ class AttendanceAgent:
             return True, None
         diagnostics = RequestDiagnostics(False)
         try:
+            self.client = self.client or SupabaseReadClient(diagnostics)
+            resolution = load_resolution_data(self.client, target_date, for_apply=True)
             events, device_reads = hikvision_events_with_devices(
                 target_date, diagnostics, include_next_day_tail=True,
+                next_day_tail_end=NIGHT_END if any(is_night_worker(worker) for worker in resolution.get('workers', {}).values()) else time(2, 0),
             )
             self.logger.info('Attendance collection: date=%s broad_events_read=%s', target_date.isoformat(), len(events))
             now = local_now().isoformat()
@@ -384,20 +389,24 @@ class AttendanceAgent:
                         continue
                     if (
                         event_time.date() == target_date
-                        and event_time.timetz().replace(tzinfo=None) <= time(2, 0)
+                        and event_time.timetz().replace(tzinfo=None) <= NIGHT_END
                     ):
                         observed_events.append(event)
+                    else:
+                        mapping = biometric_mapping_for_event(resolution, event)
+                        worker = resolution.get('workers', {}).get(str(mapping.get('worker_id') or '')) if mapping else None
+                        if is_night_worker(worker):
+                            observed_events.append(event)
             self.persist_observed_biometric_events(observed_events, resolution, target_date)
             tail_results = self.reconcile_impacted_previous_workdays(observed_events, resolution, target_date)
             if tail_results:
                 self.logger.info('Late previous-workday reconciliation summary: %s', tail_results)
             if schedule is None:
-                self.logger.info('Sunday has no automatic normal attendance; processed only prior-workday tail evidence.')
-                self.hikvision_reachable = True
-                self.hikvision_probe_failures = 0
-                return True, None
+                events = observed_events
             apply_blocked_reason = attendance_apply_blocked_reason(device_reads)
             plans, counters = plan_attendance(events, resolution, target_date)
+            if schedule is None:
+                plans = [plan for plan in plans if plan.get('night_shift')]
             summary = write_summary(plans, resolution['existing_attendance'], counters)
             if self.dry_run:
                 self.logger.info('Attendance dry run: events=%s device_reads=%s %s', len(events), device_reads, dict(summary))
@@ -540,8 +549,11 @@ class AttendanceAgent:
             return True, None
         diagnostics = RequestDiagnostics(False)
         try:
+            self.client = self.client or SupabaseReadClient(diagnostics)
+            resolution = load_resolution_data(self.client, target_date, for_apply=True)
             events, device_reads = hikvision_events_with_devices(
                 target_date, diagnostics, include_next_day_tail=True,
+                next_day_tail_end=NIGHT_END if any(is_night_worker(worker) for worker in resolution.get('workers', {}).values()) else time(2, 0),
             )
             now = local_now().isoformat()
             for device_id, result in device_reads.items():

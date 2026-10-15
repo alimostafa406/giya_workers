@@ -10,6 +10,7 @@ const buildWorkerPayload = (payload) => {
 		phone: payload.phone,
 		...(!isSpecialStaffWorker(payload) ? { team_id: payload.team_id || null } : {}),
 		is_active: Boolean(payload.is_active),
+		...(Object.hasOwn(payload, 'attendance_shift') ? { attendance_shift: payload.attendance_shift } : {}),
 	}
 
 	return workerPayload
@@ -18,7 +19,7 @@ const buildWorkerPayload = (payload) => {
 const readWorkers = async (client) => {
 	const { data, error } = await client
 		.from('workers')
-		.select('id,team_id,full_name,employee_code,phone,is_active,operational_start_date,created_at,updated_at')
+		.select('id,team_id,full_name,employee_code,phone,is_active,attendance_shift,operational_start_date,created_at,updated_at')
 		.order('created_at', { ascending: false })
 
 	if (error) {
@@ -145,7 +146,7 @@ export const createWorkerRequest = async (payload) => {
 	const { data, error } = await client
 		.from('workers')
 		.insert(insertPayload)
-		.select('id,team_id,full_name,employee_code,phone,is_active,operational_start_date,created_at,updated_at')
+		.select('id,team_id,full_name,employee_code,phone,is_active,attendance_shift,operational_start_date,created_at,updated_at')
 		.single()
 
 	if (error) {
@@ -170,7 +171,7 @@ export const updateWorkerRequest = async (id, payload) => {
 		.from('workers')
 		.update(updatePayload)
 		.eq('id', id)
-		.select('id,team_id,full_name,employee_code,phone,is_active,operational_start_date,created_at,updated_at')
+		.select('id,team_id,full_name,employee_code,phone,is_active,attendance_shift,operational_start_date,created_at,updated_at')
 		.single()
 
 	if (error) {

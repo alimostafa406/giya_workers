@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '../../i18n/LanguageContext'
 import { workerRequiresOperationalTeam } from '../../utils/workerTeamEligibility'
+import { attendanceShiftLabels } from '../../utils/attendanceShift'
 
 function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
   const { t, language } = useTranslation()
+  const shiftLabels = attendanceShiftLabels[language] || attendanceShiftLabels.en
+  const [attendanceShift, setAttendanceShift] = useState(initialValues?.attendance_shift || 'day')
   const [fullName, setFullName] = useState(initialValues?.full_name || '')
   const employeeCode = initialValues?.employee_code || ''
   const [phone, setPhone] = useState(initialValues?.phone || '')
@@ -17,6 +20,7 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
 
   useEffect(() => {
     setFullName(initialValues?.full_name || '')
+    setAttendanceShift(initialValues?.attendance_shift || 'day')
     setPhone(initialValues?.phone || '')
     setTeamId(initialValues?.team_id || initialValues?.team?.id || '')
     setIsActive(Boolean(initialValues?.is_active ?? true))
@@ -36,6 +40,7 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
       ...(teamRequired ? { team_id: teamId || null, payment_type: paymentType, monthly_salary: monthlySalary } : {}),
       is_active: isActive,
       staff_classification: staffClassification,
+      attendance_shift: attendanceShift,
     })
   }
 
@@ -107,6 +112,11 @@ function WorkerForm({ initialValues, teams, onSubmit, isSaving }) {
         {!teamRequired ? <p className="mt-1 text-xs text-(--muted)">{t('workers.noTeamAllowed')}</p> : null}
       </div>}
 
+      <label className="block text-sm font-semibold">{shiftLabels.title}
+        <select aria-label={shiftLabels.title} value={attendanceShift} onChange={(event) => setAttendanceShift(event.target.value)} className="input-base mt-1">
+          <option value="day">{shiftLabels.day}</option><option value="night">{shiftLabels.night}</option>
+        </select>
+      </label>
       <label className="flex items-center gap-2 rounded-xl border border-(--border) bg-white px-3 py-2 text-sm font-semibold">
         <input
           type="checkbox"

@@ -6,6 +6,14 @@ import { LanguageProvider } from '../../i18n/LanguageContext'
 import WorkerForm from './WorkerForm'
 globalThis.React = React
 afterEach(cleanup)
+it('defaults to day and allows explicit night without altering exact employee code', () => {
+  const { submit } = open({ id: 'worker', team_id: 'team', employee_code: '064' })
+  const shift = screen.getByLabelText('Attendance shift')
+  expect(shift.value).toBe('day')
+  fireEvent.change(shift, { target: { value: 'night' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(submit).toHaveBeenCalledWith(expect.objectContaining({ attendance_shift: 'night', employee_code: '064' }))
+})
 const open = (values = {}) => {
   localStorage.setItem('workers_app_language', 'en')
   const submit = vi.fn()
@@ -16,17 +24,17 @@ it('keeps normal worker team/payment/monthly salary fields and payload unchanged
   const { container, submit } = open({ team_id: 'team', payment_type: 'monthly', monthly_salary: 1000 })
   expect(container.querySelector('select[required]').value).toBe('team')
   expect(container.querySelector('input[type="number"]').value).toBe('1000')
-  expect(container.querySelectorAll('select')).toHaveLength(3)
+  expect(container.querySelectorAll('select')).toHaveLength(4)
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(submit).toHaveBeenCalledWith(expect.objectContaining({ team_id: 'team', payment_type: 'monthly', monthly_salary: 1000 }))
 })
 it('hides special-staff team and payroll fields and saves only identity/classification/active fields', () => {
   const { container, submit } = open({ staff_classification: 'special_staff', payment_type: 'monthly', monthly_salary: 1000 })
-  expect(container.querySelectorAll('select')).toHaveLength(1)
+  expect(container.querySelectorAll('select')).toHaveLength(2)
   expect(container.querySelector('input[type="number"]')).toBeNull()
   expect(container.querySelector('select[required]')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-  expect(submit).toHaveBeenCalledWith({ full_name: 'Worker', phone: '', is_active: true, staff_classification: 'special_staff' })
+  expect(submit).toHaveBeenCalledWith({ full_name: 'Worker', phone: '', is_active: true, staff_classification: 'special_staff', attendance_shift: 'day' })
 })
 it('does not submit hidden legacy special-staff team/payroll data', () => {
   const { submit } = open({ staff_classification: 'special_staff', team_id: 'legacy', payment_type: 'monthly', monthly_salary: 1234 })
@@ -38,7 +46,7 @@ it('does not submit hidden legacy special-staff team/payroll data', () => {
 it('hides stale normal-worker fields immediately when classification changes', () => {
   const { container, submit } = open({ team_id: 'team' })
   fireEvent.change(container.querySelector('select'), { target: { value: 'special_staff' } })
-  expect(container.querySelectorAll('select')).toHaveLength(1)
+  expect(container.querySelectorAll('select')).toHaveLength(2)
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(submit.mock.calls[0][0]).not.toHaveProperty('team_id')
 })

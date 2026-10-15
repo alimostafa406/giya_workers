@@ -1,6 +1,7 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { biometricIdsByWorker } from './dailyOperationalReports.js'
 import { reportWorkerMatchesSearch } from './reportWorkerSearch.js'
+import { isDayAttendanceShift } from './attendanceShift.js'
 
 const BUSINESS_TIME_ZONE = 'Africa/Kinshasa'
 
@@ -57,6 +58,8 @@ export const buildAbsenceReport = ({ workers = [], attendance = [], mappings = [
     if (worker?.id && !workersById.has(String(worker.id))) workersById.set(String(worker.id), worker)
   })
   const rosterWorkers = [...workersById.values()].filter((worker) => (
+    isDayAttendanceShift(worker)
+    &&
     dates.some((date) => isOperationalAttendanceWorkerOnDate(worker, date))
     && (worker.staff_classification || 'normal') === 'normal'
     && (!teamId || String(worker.team_id || '') === String(teamId))

@@ -43,6 +43,7 @@ def active_normal_workers(resolution: dict) -> dict[str, dict]:
         worker_id: worker
         for worker_id, worker in resolution.get('workers', {}).items()
         if worker.get('is_active') is not False
+        and worker.get('attendance_shift', 'day') == 'day'
         and resolution.get('classifications', {}).get(worker_id, 'normal') == 'normal'
     }
 
@@ -118,7 +119,16 @@ def completed_morning_snapshot_compatibility(run: dict, resolution: dict, device
     snapshot_enrolled = {str(worker_id) for worker_id in run.get('biometric_in_scope_worker_ids') or []}
     snapshot_not_enrolled = {str(worker_id) for worker_id in run.get('non_biometric_excluded_worker_ids') or []}
     snapshot_unknown = {str(worker_id) for worker_id in run.get('unknown_biometric_status_worker_ids') or []}
-    current_scope = biometric_verification_scope(resolution)
+    # A later shift change must not invalidate an already completed morning
+    # snapshot. Retain its original members for compatibility checks only;
+    # fresh morning scopes still exclude every night worker.
+    compatibility_workers = {
+        worker_id: ({**worker, 'attendance_shift': 'day'}
+                    if worker_id in snapshot_roster and worker.get('attendance_shift') == 'night'
+                    else worker)
+        for worker_id, worker in resolution.get('workers', {}).items()
+    }
+    current_scope = biometric_verification_scope({**resolution, 'workers': compatibility_workers})
     current_roster = set(current_scope['roster'])
     completed_at = _parsed_instant(run.get('completed_at'))
     stored_roster_count = _parsed_nonnegative_int(run.get('active_normal_roster_count'))
@@ -217,6 +227,9 @@ def reconcile_completed_morning_verification_children(client, run: dict, resolut
         existing = attendance.get(worker_id)
         child = current_rows.get(worker_id)
         current_result = child.get('verification_result') if child else None
+        if resolution.get('workers', {}).get(worker_id, {}).get('attendance_shift') == 'night' and child:
+            # Preserve that worker's historical verification evidence verbatim.
+            continue
 
         if state == 'not_enrolled':
             desired_result = 'not_enrolled_excluded'

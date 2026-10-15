@@ -34,6 +34,7 @@ from attendance_business_rules import (
     workday_schedule,
 )
 from early_morning_attendance_review import is_early_morning_review_time
+from attendance_shift import is_night_worker, night_window, night_event_date, NIGHT_END
 
 
 ON_TIME_CHECKIN_END = OFFICIAL_START
@@ -183,7 +184,7 @@ def resolved_biometric_event_rows(events: list[dict], resolution: dict, target_d
         next_date = target_date + timedelta(days=1)
         is_next_day_tail = (
             event_timestamp.date() == next_date
-            and event_timestamp.timetz().replace(tzinfo=None) <= time(2, 0)
+            and event_timestamp.timetz().replace(tzinfo=None) <= (NIGHT_END if is_night_worker(worker) and not worker_uses_legacy_chauffeur_window(worker, resolution) else time(2, 0))
         )
         if event_timestamp.date() != target_date and not is_next_day_tail:
             continue
@@ -247,7 +248,7 @@ def persisted_biometric_events(client, target_date: date_type) -> tuple[list[dic
         is_target_date = timestamp.date() == target_date
         is_next_day_tail = (
             timestamp.date() == target_date + timedelta(days=1)
-            and timestamp.timetz().replace(tzinfo=None) <= time(2, 0)
+            and timestamp.timetz().replace(tzinfo=None) <= NIGHT_END
         )
         if not device_id or not employee_no or not (is_target_date or is_next_day_tail) or not isinstance(identity_parts, list):
             continue
@@ -587,6 +588,7 @@ def hikvision_events_with_devices(
     diagnostics: RequestDiagnostics,
     *,
     include_next_day_tail: bool = False,
+    next_day_tail_end: time = time(2, 0),
 ) -> tuple[list[dict], dict[str, dict]]:
     events: list[dict] = []
     device_reads: dict[str, dict] = {}
@@ -605,7 +607,7 @@ def hikvision_events_with_devices(
                         device,
                         return_status=True,
                         start_time=time(0, 0),
-                        end_time=time(2, 0),
+                        end_time=next_day_tail_end,
                         search_suffix='-previous-workday-tail',
                     )
                 device_events.extend(tail_events)
@@ -934,7 +936,7 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
         'worker_id,device_id,device_employee_no,is_active,mapping_review_state,created_at,updated_at',
         is_active='eq.true',
     )
-    workers = client.read('workers', 'id,full_name,employee_code,is_active,operational_start_date,team_id,created_at,updated_at')
+    workers = client.read('workers', 'id,full_name,employee_code,is_active,attendance_shift,operational_start_date,team_id,created_at,updated_at')
     teams = client.read('teams', 'id,name')
     classifications = client.read('worker_staff_classification', 'worker_id,classification')
     biometric_participation_rows = client.read(
@@ -1105,7 +1107,7 @@ def impacted_previous_workdays(events: list[dict], resolution: dict, observed_da
             continue
         if (
             event_timestamp.date() != observed_date
-            or event_timestamp.timetz().replace(tzinfo=None) > time(2, 0)
+            or event_timestamp.timetz().replace(tzinfo=None) > NIGHT_END
         ):
             continue
         if biometric_identity_is_ignored(resolution, event):
@@ -1115,7 +1117,9 @@ def impacted_previous_workdays(events: list[dict], resolution: dict, observed_da
         workday = observed_date - timedelta(days=1)
         if not worker_is_operational_on_date(worker, workday) or worker_uses_legacy_chauffeur_window(worker, resolution):
             continue
-        if workday_schedule(workday) is not None:
+        if event_timestamp.timetz().replace(tzinfo=None) > (NIGHT_END if is_night_worker(worker) else time(2, 0)):
+            continue
+        if workday_schedule(workday) is not None or is_night_worker(worker):
             impacted[workday].add(str(worker['id']))
     return dict(impacted)
 
@@ -1211,6 +1215,10 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             counters['ignored_inactive_worker'] += 1
             continue
         is_chauffeur = worker_uses_legacy_chauffeur_window(worker, resolution)
+        if is_night_worker(worker) and not is_chauffeur:
+            if night_event_date(event_timestamp) != target_date:
+                counters['outside_night_window'] += 1
+                continue
         is_previous_workday_tail = bool(
             not is_chauffeur
             and event_timestamp.date() == target_date + timedelta(days=1)
@@ -1218,6 +1226,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
         )
         if (
             not is_chauffeur
+            and not is_night_worker(worker)
             and is_early_morning_review_time(event_timestamp)
             and not is_previous_workday_tail
         ):
@@ -1254,6 +1263,11 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             key=lambda item: item[0],
         )
         is_chauffeur = worker_uses_legacy_chauffeur_window(worker, resolution)
+        is_night = is_night_worker(worker) and not is_chauffeur
+        schedule = workday_schedule(target_date)
+        if is_night and schedule is None:
+            # Night evidence uses its explicit window, not the daytime Sunday calendar.
+            schedule = workday_schedule(target_date + timedelta(days=1))
         workday_start = datetime.combine(
             target_date,
             schedule['legacy_workday_boundary'] if is_chauffeur else schedule['workday_boundary'],
@@ -1288,12 +1302,30 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
         use_new_earlier_check_in = bool(
             stored_check_in and check_in and check_in < stored_check_in
         )
+        if is_night and schedule:
+            workday_start, workday_end = night_window(target_date, MONITORING_TIME_ZONE)
+            checkin_end = workday_end
+            stored_check_in = None
+            if existing and not is_manual_protected(existing) and existing.get('attendance_source') == 'biometric':
+                raw = normalized_metadata(existing.get('biometric_sync_metadata')) or {}
+                try:
+                    previous = parse_monitoring_event_time(raw.get('check_in_event_timestamp') or '')
+                    if workday_start <= previous <= workday_end:
+                        stored_check_in = previous
+                except (ValueError, TypeError):
+                    pass
+            replace_out_of_window_existing_check_in = bool(existing and existing.get('check_in') and not stored_check_in)
+            arrivals = [item for item in parsed if workday_start <= item[0] <= workday_end]
+            check_in_event = arrivals[0] if arrivals else None
+            check_in = check_in_event[0] if check_in_event else None
+            check_in_from_existing = bool(stored_check_in and (check_in is None or stored_check_in <= check_in))
+            use_new_earlier_check_in = bool(stored_check_in and check_in and check_in < stored_check_in)
         if check_in_from_existing:
             check_in = stored_check_in
             check_in_event = None
         if schedule is None:
             checkout = []
-        elif is_chauffeur:
+        elif is_chauffeur or is_night:
             checkout = [
                 item for item in parsed
                 if workday_start <= item[0] <= workday_end
@@ -1312,6 +1344,11 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
         checkout_event = checkout[-1] if checkout else None
         checkout_time = checkout_event[0] if checkout_event else None
         status, fraction = proposed_status(target_date, check_in, checkout_time)
+        if is_night and schedule:
+            if check_in:
+                status, fraction = 'present', 1.0
+            elif local_now() <= workday_end:
+                status, fraction = 'pending', None
         chauffeur_any_punch_full_day = bool(is_chauffeur and check_in)
         if chauffeur_any_punch_full_day:
             # Temporary Chauffeur protection: a safely mapped real punch in
@@ -1355,9 +1392,9 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
                 'check_in_event_timestamp': check_in_event[1].get('time'),
                 'check_in_employee_no': check_in_event[1].get('employeeNoString'),
                 'check_in_device_name': check_in_event[1].get('name'),
-                'late_arrival': arrival_time > ON_TIME_CHECKIN_END,
-                'lateness_minutes': max(0, int((check_in - on_time_end).total_seconds() // 60)),
-                'lateness_seconds': max(0, int((check_in - on_time_end).total_seconds())),
+                'late_arrival': False if is_night else arrival_time > ON_TIME_CHECKIN_END,
+                'lateness_minutes': 0 if is_night else max(0, int((check_in - on_time_end).total_seconds() // 60)),
+                'lateness_seconds': 0 if is_night else max(0, int((check_in - on_time_end).total_seconds())),
                 'devices_seen': devices_seen,
             })
         elif check_in_from_existing:
@@ -1365,6 +1402,9 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             # devices_seen with devices contributing newly observed evidence.
             metadata = metadata or {}
             metadata['devices_seen'] = sorted(set(metadata.get('devices_seen') or []).union(devices_seen))
+        if is_night and check_in:
+            metadata = metadata or {}
+            metadata.update({'late_arrival': False, 'lateness_minutes': 0, 'lateness_seconds': 0})
         if checkout_event and check_in:
             metadata = metadata or {}
             metadata.update({
@@ -1386,6 +1426,7 @@ def plan_attendance(events: list[dict], resolution: dict, target_date: date_type
             'day_fraction': fraction,
             'saturday_morning_full_day': saturday_morning_full_day,
             'chauffeur_any_punch_full_day': chauffeur_any_punch_full_day,
+            'night_shift': is_night,
             'checkout_only': checkout_only,
             # Metadata is also populated for normal check-in/check-out audit data;
             # evening-only fields exist only for checkout-only attendance.
@@ -1685,6 +1726,7 @@ def main() -> int:
         target_date = date_type.fromisoformat(args.date)
         diagnostics = RequestDiagnostics(args.debug)
         client = SupabaseReadClient(diagnostics)
+        resolution = load_resolution_data(client, target_date, for_apply=args.apply)
         if args.from_persisted_events:
             events, persisted_rows = persisted_biometric_events(client, target_date)
             device_reads = {'persisted-event-store': {
@@ -1696,6 +1738,7 @@ def main() -> int:
         else:
             events, device_reads = hikvision_events_with_devices(
                 target_date, diagnostics, include_next_day_tail=True,
+                next_day_tail_end=NIGHT_END if any(is_night_worker(worker) for worker in resolution.get('workers', {}).values()) else time(2, 0),
             )
             persisted_rows = []
         resolution = load_resolution_data(client, target_date, for_apply=args.apply)
