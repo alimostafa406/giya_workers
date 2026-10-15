@@ -2,7 +2,7 @@
 import unittest
 from datetime import date
 from pathlib import Path
-from hikvision_attendance_sync import plan_attendance, impacted_previous_workdays
+from hikvision_attendance_sync import plan_attendance, impacted_previous_workdays, biometric_payload
 from hikvision_attendance_agent import late_tail_reconciliation_plans
 from test_attendance_sync_planning import resolution_with, attendance_event, WORKER_ID
 import test_attendance_final_verification as verification_fixtures
@@ -87,12 +87,30 @@ class NightShiftTests(unittest.TestCase):
         self.assertEqual(day[0]['proposed_status'], 'non_working_day')
 
     def test_chauffeur_calendar_rule_remains_unchanged(self):
-        resolution = self.resolution()
+        resolution = self.resolution('day')
         resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur'
         resolution['teams']['chauffeur'] = {'name': 'Chauffeur'}
         plans, _ = plan_attendance([self.event('08:00:00')], resolution, D)
         self.assertEqual(plans[0]['proposed_status'], 'present')
         self.assertFalse(plans[0]['night_shift'])
+
+    def test_explicit_night_chauffeur_uses_night_window(self):
+        resolution = self.resolution()
+        resolution['workers'][WORKER_ID]['team_id'] = 'chauffeur'
+        resolution['teams']['chauffeur'] = {'name': 'Chauffeur'}
+        plans, _ = plan_attendance([self.event('18:00:00'), self.event('05:30:00', True, 2)], resolution, D)
+        self.assertTrue(plans[0]['night_shift'])
+        self.assertEqual(plans[0]['check_in'], '18:00:00')
+        self.assertEqual(plans[0]['check_out'], '05:30:00')
+
+    def test_october_12_night_payload_remains_full_present(self):
+        day = date(2026, 10, 12)
+        plans, _ = plan_attendance([attendance_event('17:29:46', event_date=day.isoformat())], self.resolution(), day)
+        payload = biometric_payload(plans[0], None)
+        self.assertEqual(payload['status'], 'present')
+        self.assertEqual(payload['attendance_day_fraction'], 1.0)
+        self.assertIsNone(payload['check_out'])
+        self.assertFalse(payload['manual_override'])
 
     def test_night_event_not_marked_early_morning_review(self):
         plan, counters = self.plan([self.event('04:00:00', True)])

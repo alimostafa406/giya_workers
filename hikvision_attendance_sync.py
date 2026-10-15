@@ -977,6 +977,7 @@ def load_resolution_data(client: SupabaseReadClient, target_date: date_type, for
     }
     return {
         'confirmed': confirmed,
+        'active_mapping_rows': active_mappings,
         'unconfirmed': unconfirmed_device_numbers,
         'mapping_conflicts': mapping_conflicts,
         'ignored': {
@@ -1085,7 +1086,9 @@ def worker_is_operational_on_date(worker: dict | None, target_date: date_type) -
 
 
 def worker_uses_legacy_chauffeur_window(worker: dict, resolution: dict) -> bool:
-    """Keep the canonical Chauffeur team on its existing calendar-day window."""
+    """Day Chauffeurs retain their calendar window; an explicit night shift wins."""
+    if is_night_worker(worker):
+        return False
     team = resolution.get('teams', {}).get(str(worker.get('team_id') or ''), {})
     return str(team.get('name') or '').strip().casefold() == 'chauffeur'
 
@@ -1537,6 +1540,7 @@ def biometric_payload(plan: dict, existing: dict | None) -> dict | None:
             check_out
             or plan.get('saturday_morning_full_day') is True
             or plan.get('chauffeur_any_punch_full_day') is True
+            or plan.get('night_shift') is True
         ) else 'half_day'
 
     if status == 'present':
