@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { outsideWorkForemen, outsideWorkOtherWorkers, outsideWorkTeamWorkers, searchOutsideWorkPeople } from '../../utils/outsideWorkRoster'
 import { addOutsideWorkWorkers, changeOutsideWorkDate, editOutsideWorkTime } from '../../utils/outsideWork'
 import './OutsideWorkEntryForm.css'
@@ -7,6 +7,7 @@ import { resolveTeamForeman, selectOutsideWorkTeam, teamForemanLabels } from '..
 
 export default function OutsideWorkEntryForm({ value, onChange, workers, teams, biometricIds, labels: l, busy, onSave, onCancel, showDate = true }) {
   const { language } = useTranslation()
+  const [showSelectedWorkers, setShowSelectedWorkers] = useState(Boolean(value.id))
   const linkedForeman = resolveTeamForeman(teams.find((team) => String(team.id) === String(value.team_id)), workers)
   const entry = value.entry_state || {}
   const teamWorkers = useMemo(() => outsideWorkTeamWorkers(workers, value.work_date, value.team_id), [workers, value.work_date, value.team_id])
@@ -21,6 +22,11 @@ export default function OutsideWorkEntryForm({ value, onChange, workers, teams, 
   const selectedTeamName = teams.find((team) => String(team.id) === String(value.team_id))?.name || value.team?.name || '—'
   const setEntry = (key, next) => onChange((current) => ({ ...current, entry_state: { ...current.entry_state, [key]: next } }))
   const addWorker = (worker) => onChange((current) => addOutsideWorkWorkers(current, [worker]))
+  const addCrossTeamWorker = (worker) => {
+    if (value.workers.some((row) => String(row.worker_id) === String(worker.id))) return
+    addWorker(worker)
+    setShowSelectedWorkers(true)
+  }
   const removeWorker = (id) => onChange((current) => ({ ...current, workers: current.workers.filter((row) => row.worker_id !== id) }))
   const workerName = (row) => workersById.get(String(row.worker_id))?.full_name || row.worker_name || '—'
 
@@ -61,13 +67,13 @@ export default function OutsideWorkEntryForm({ value, onChange, workers, teams, 
       {value.team_id && <details className="outside-work-cross-search" open={Boolean(entry.otherSearch) || undefined}><summary>{l.otherAction || l.otherSearch}</summary>
         <label className="outside-work-field"><span>{l.otherSearch}</span><input aria-label={l.otherSearch} placeholder={l.otherPlaceholder} value={entry.otherSearch || ''} onChange={(event) => setEntry('otherSearch', event.target.value)} className="input-base" /></label>
         {entry.otherSearch?.trim() && <div className="max-h-44 overflow-y-auto rounded-xl border border-(--border) p-2" role="listbox" aria-label={l.otherTeams}>
-          {otherResults.map((worker) => <button type="button" role="option" aria-selected={value.workers.some((row) => String(row.worker_id) === String(worker.id))} key={worker.id} onClick={() => addWorker(worker)} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-start text-sm hover:bg-(--primary-soft)">
-            <span>{worker.full_name} · {worker.employee_code || '—'}<small className="ms-2 text-(--muted)">{worker.team_name}</small></span><span aria-hidden="true">+</span>
+          {otherResults.map((worker) => <button type="button" role="option" aria-selected={value.workers.some((row) => String(row.worker_id) === String(worker.id))} key={worker.id} onClick={() => addCrossTeamWorker(worker)} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-start text-sm hover:bg-(--primary-soft)">
+            <span>{worker.full_name} · {worker.employee_code || '—'}<small className="ms-2 text-(--muted)">{worker.team_name}</small></span><span aria-hidden="true">{value.workers.some((row) => String(row.worker_id) === String(worker.id)) ? '✓' : '+'}</span>
           </button>)}{!otherResults.length && <p className="px-3 py-2 text-sm text-(--muted)">{l.noMatches}</p>}
         </div>}
       </details>}
 
-      <details className="outside-work-selected-workers" aria-label={l.selectedWorkers} open={value.id ? true : undefined}><summary>{l.selectedWorkers} ({value.workers.length})</summary>
+      <details className="outside-work-selected-workers" aria-label={l.selectedWorkers} open={showSelectedWorkers}><summary onClick={(event) => { event.preventDefault(); setShowSelectedWorkers((current) => !current) }}>{l.selectedWorkers} ({value.workers.length})</summary>
         {value.workers.length > 0 && <div className="overflow-x-auto rounded-xl border border-(--border)"><table className="w-full text-sm">
           <thead className="bg-(--surface-subtle)"><tr>{[l.workers, l.team, l.removeWorker].map((label) => <th key={label} className="px-3 py-2 text-start font-bold">{label}</th>)}</tr></thead>
           <tbody>{value.workers.map((row) => {

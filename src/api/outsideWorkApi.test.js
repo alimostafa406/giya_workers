@@ -10,6 +10,22 @@ beforeEach(() => {
   mocks.rpc.mockReset().mockResolvedValue({ data: 'draft-id', error: null })
 })
 describe('outside-work draft API', () => {
+  it('serializes every selected worker ID without primary-team filtering on create and update, and reloads children', async () => {
+    const children = [
+      { worker_id: 'same-team-id', start_time: '08:00', end_time: '17:00' },
+      { worker_id: 'other-team-id', start_time: '08:00', end_time: '17:00' },
+    ]
+    const values = { status: 'final', team_id: 'primary-team', workers: children }
+    for (const id of [null, 'existing-movement']) {
+      await saveOutsideWorkMovement({ ...values, id })
+      expect(mocks.rpc).toHaveBeenLastCalledWith('admin_save_outside_work_movement', {
+        p_movement: expect.objectContaining({ id, team_id: 'primary-team', workers: children }),
+      })
+    }
+    mocks.query.range.mockResolvedValueOnce({ data: [{ id: 'existing-movement', outside_work_movement_workers: children }], error: null })
+    expect((await getOutsideWorkMovements('2026-10-12', '2026-10-18'))[0].outside_work_movement_workers).toEqual(children)
+    expect(values.workers).toEqual(children)
+  })
   it('loads every draft including undated drafts alongside the selected final week', async () => {
     await getOutsideWorkMovements('2026-10-12', '2026-10-18')
     expect(mocks.query.or).toHaveBeenCalledWith('status.eq.draft,and(work_date.gte.2026-10-12,work_date.lte.2026-10-18)')
