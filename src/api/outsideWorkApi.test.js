@@ -10,6 +10,16 @@ beforeEach(() => {
   mocks.rpc.mockReset().mockResolvedValue({ data: 'draft-id', error: null })
 })
 describe('outside-work draft API', () => {
+  it('sends a null primary team and every worker for foreman-led movements', async () => {
+    await saveOutsideWorkMovement({ status: 'final', work_date: '2026-10-15', foreman_worker_id: 'foreman-id', team_id: '',
+      workers: [{ worker_id: 'team-a-worker', start_time: '08:00', end_time: '17:00' }, { worker_id: 'team-b-worker', start_time: '08:00', end_time: '17:00' }] })
+    expect(mocks.rpc).toHaveBeenCalledWith('admin_save_outside_work_movement', { p_movement: expect.objectContaining({
+      team_id: null, foreman_worker_id: 'foreman-id', workers: [
+        { worker_id: 'team-a-worker', start_time: '08:00', end_time: '17:00' },
+        { worker_id: 'team-b-worker', start_time: '08:00', end_time: '17:00' },
+      ],
+    }) })
+  })
   it('serializes every selected worker ID without primary-team filtering on create and update, and reloads children', async () => {
     const children = [
       { worker_id: 'same-team-id', start_time: '08:00', end_time: '17:00' },

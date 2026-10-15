@@ -78,6 +78,53 @@ const chooseForeman = (form) => {
 }
 
 describe('outside-work separate movement ranges', () => {
+  it('saves a foreman-led movement without a primary team and preserves mixed-team workers through reload and edit', async () => {
+    const originalRoster = structuredClone(roster)
+    const first = open()
+    const form = await start()
+    expect(within(form).queryByRole('checkbox')).toBeNull()
+    expect(within(form).queryByLabelText('Search workers by name / employee code / biometric ID')).toBeNull()
+    chooseForeman(form)
+    expect(within(form).getByLabelText('Team').value).toBe('')
+    expect(within(form).queryByRole('checkbox')).toBeNull()
+    const search = within(form).getByRole('textbox', { name: 'Search workers by name / employee code / biometric ID' })
+    expect(search.closest('details').open).toBe(true)
+    expect(within(form).queryByRole('listbox')).toBeNull()
+    for (const name of ['ROBERT', 'JEREMIE']) {
+      fireEvent.change(search, { target: { value: name } })
+      fireEvent.click(within(form).getByRole('option', { name: new RegExp(name) }))
+    }
+    fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
+    const selected = form.querySelector('.outside-work-selected-workers')
+    expect(selected.open).toBe(true)
+    expect(selected.querySelector('summary').textContent).toBe('Selected workers (2)')
+    for (const text of ['ROBERT', 'JEREMIE', 'Peinture', 'Montage']) expect(within(selected).getByRole('cell', { name: text })).toBeTruthy()
+    fireEvent.click(within(form).getByRole('button', { name: 'Save movement' }))
+    const show = await screen.findByRole('button', { name: 'Show workers (2)' })
+    expect(show.closest('article').textContent).toContain('No primary team')
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'final', team_id: '', foreman_worker_id: 'foreman',
+      workers: [expect.objectContaining({ worker_id: 'robert' }), expect.objectContaining({ worker_id: 'jeremie' })],
+    }))
+    expect(persisted.find(row => row.id === 'draft-new').outside_work_movement_workers).toHaveLength(2)
+    first.unmount()
+    const reopened = open()
+    await start()
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    const editForm = screen.getByRole('form')
+    expect(within(editForm).getByLabelText('Team').value).toBe('')
+    for (const name of ['ROBERT', 'JEREMIE']) expect(within(editForm).getByRole('button', { name: `Remove worker: ${name}` })).toBeTruthy()
+    fireEvent.click(within(editForm).getByRole('button', { name: 'Save movement' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2))
+    await screen.findByRole('button', { name: 'Show workers (2)' })
+    expect(persisted.find(row => row.id === 'draft-new').outside_work_movement_workers.map(row => row.worker_id)).toEqual(['robert', 'jeremie'])
+    fireEvent.click(screen.getByRole('tab', { name: 'Weekly report' }))
+    fireEvent.change(screen.getByLabelText('Select a foreman'), { target: { value: 'worker:foreman' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Show workers (2)' }))
+    for (const name of ['ROBERT', 'JEREMIE', 'Peinture', 'Montage']) expect(screen.getAllByRole('cell', { name }).length).toBeGreaterThan(0)
+    expect(reopened.container.querySelector('.outside-work-print').textContent).toContain('JEREMIE')
+    expect(roster).toEqual(originalRoster)
+  })
   it('opens a ready entry workspace, shows only the selected day, and keeps report separate', async () => {
     const { container } = open()
     const form = await start()

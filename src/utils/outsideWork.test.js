@@ -58,6 +58,14 @@ describe('outside-work foreman report', () => {
 })
 
 describe('separate foreman and shared worker time ranges', () => {
+  it('requires either a team or foreman, and always real workers, for final save', () => {
+    const form = addOutsideWorkWorkers(newOutsideWorkForm('2026-10-14'), [{ id: 'one', full_name: 'FIRST' }])
+    expect(outsideWorkFinalError(form)).toBe('required')
+    expect(outsideWorkFinalError({ ...form, team_id: 'team' })).toBe('')
+    expect(outsideWorkFinalError({ ...form, foreman_worker_id: 'foreman', foreman_name: 'FOREMAN' })).toBe('')
+    expect(outsideWorkFinalError({ ...form, foreman_name: 'Unverified name only' })).toBe('required')
+    expect(outsideWorkFinalError({ ...form, foreman_worker_id: 'foreman', workers: [] })).toBe('selectWorkers')
+  })
   const people = [{ id: 'one', full_name: 'FIRST' }, { id: 'two', full_name: 'SECOND' }]
   it('defaults both ranges Monday-Friday to 08:00–17:00', () => {
     for (const date of ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16']) {

@@ -181,7 +181,7 @@ export default function OutsideWork() {
   const reportName = foremen.find(([key]) => key === reportForeman)?.[1] || ''
   const biometricIds = useMemo(() => biometricIdsByWorker(mappings), [mappings])
   const workersById = useMemo(() => new Map(workers.map((worker) => [String(worker.id), worker])), [workers])
-  const teamName = (movement) => movement.team?.name || teams.find((team) => team.id === movement.team_id)?.name || '—'
+  const teamName = (movement) => !movement.team_id ? l.noPrimaryTeam : movement.team?.name || teams.find((team) => team.id === movement.team_id)?.name || '—'
   const edit = (movement) => {
     setForm({ ...outsideWorkForm(movement), team: movement.team })
     if (movement.work_date) setAnchor(movement.work_date)

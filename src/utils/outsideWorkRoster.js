@@ -20,6 +20,6 @@ export const searchOutsideWorkPeople = (workers = [], query = '', biometricIds =
 export const outsideWorkTeamWorkers = (workers, date, teamId) => !teamId ? []
   : outsideWorkEligibleWorkers(workers, date).filter((worker) => String(worker.team_id) === String(teamId))
 
-export const outsideWorkOtherWorkers = (workers, date, teamId, query, biometricIds) => !teamId ? []
-  : searchOutsideWorkPeople(outsideWorkEligibleWorkers(workers, date)
-    .filter((worker) => String(worker.team_id) !== String(teamId)), query, biometricIds)
+export const outsideWorkOtherWorkers = (workers, date, teamId, query, biometricIds) =>
+  searchOutsideWorkPeople(outsideWorkEligibleWorkers(workers, date)
+    .filter((worker) => !teamId || String(worker.team_id) !== String(teamId)), query, biometricIds)

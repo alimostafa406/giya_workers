@@ -64,9 +64,9 @@ export default function OutsideWorkEntryForm({ value, onChange, workers, teams, 
         </label></li>)}{!teamResults.length && <li className="text-sm text-(--muted)">{l.noMatches}</li>}</ul>
       </section>}
 
-      {value.team_id && <details className="outside-work-cross-search" open={Boolean(entry.otherSearch) || undefined}><summary>{l.otherAction || l.otherSearch}</summary>
-        <label className="outside-work-field"><span>{l.otherSearch}</span><input aria-label={l.otherSearch} placeholder={l.otherPlaceholder} value={entry.otherSearch || ''} onChange={(event) => setEntry('otherSearch', event.target.value)} className="input-base" /></label>
-        {entry.otherSearch?.trim() && <div className="max-h-44 overflow-y-auto rounded-xl border border-(--border) p-2" role="listbox" aria-label={l.otherTeams}>
+      {(value.team_id || value.foreman_worker_id) && <details className="outside-work-cross-search" open={!value.team_id || Boolean(entry.otherSearch) || undefined}><summary>{value.team_id ? l.otherAction || l.otherSearch : l.workers}</summary>
+        <label className="outside-work-field"><span>{value.team_id ? l.otherSearch : l.searchAnyWorker}</span><input aria-label={value.team_id ? l.otherSearch : l.searchAnyWorker} placeholder={l.otherPlaceholder} value={entry.otherSearch || ''} onChange={(event) => setEntry('otherSearch', event.target.value)} className="input-base" /></label>
+        {entry.otherSearch?.trim() && <div className="max-h-44 overflow-y-auto rounded-xl border border-(--border) p-2" role="listbox" aria-label={value.team_id ? l.otherTeams : l.workers}>
           {otherResults.map((worker) => <button type="button" role="option" aria-selected={value.workers.some((row) => String(row.worker_id) === String(worker.id))} key={worker.id} onClick={() => addCrossTeamWorker(worker)} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-start text-sm hover:bg-(--primary-soft)">
             <span>{worker.full_name} · {worker.employee_code || '—'}<small className="ms-2 text-(--muted)">{worker.team_name}</small></span><span aria-hidden="true">{value.workers.some((row) => String(row.worker_id) === String(worker.id)) ? '✓' : '+'}</span>
           </button>)}{!otherResults.length && <p className="px-3 py-2 text-sm text-(--muted)">{l.noMatches}</p>}
@@ -78,7 +78,7 @@ export default function OutsideWorkEntryForm({ value, onChange, workers, teams, 
           <thead className="bg-(--surface-subtle)"><tr>{[l.workers, l.team, l.removeWorker].map((label) => <th key={label} className="px-3 py-2 text-start font-bold">{label}</th>)}</tr></thead>
           <tbody>{value.workers.map((row) => {
             const worker = workersById.get(String(row.worker_id))
-            const external = String(worker?.team_id || '') !== String(value.team_id || '')
+            const external = Boolean(value.team_id) && String(worker?.team_id || '') !== String(value.team_id)
             return <tr key={row.worker_id} className="border-t border-(--border)">
               <td className="px-3 py-2 font-semibold"><bdi>{workerName(row)}</bdi></td>
               <td className="px-3 py-2"><bdi>{worker?.team_name || '—'}</bdi>{external && <small className="ms-2 rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">{l.otherTeams}</small>}</td>

@@ -73,8 +73,7 @@ export const outsideWorkForm = (movement = {}, date = '') => ({
 })
 
 export const outsideWorkFinalError = (form) => {
-  if (!form.work_date || !form.team_id) return 'required'
-  if (form.entry_state?.time_model === 'shared' && !form.foreman_worker_id) return 'selectForemanError'
+  if (!form.work_date || (!form.team_id && !form.foreman_worker_id)) return 'required'
   if (hasOutsideWorkForeman(form) && durationMinutes(form.start_time, form.end_time) == null) return 'invalid'
   if (!form.workers.length) return 'selectWorkers'
   if (form.workers.some((row) => durationMinutes(row.start_time, row.end_time) == null)) return 'invalid'
