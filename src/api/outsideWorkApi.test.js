@@ -4,12 +4,28 @@ import { getOutsideWorkMovements, saveOutsideWorkMovement } from './outsideWorkA
 const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn(), query: null }))
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: () => ({ from: mocks.from, rpc: mocks.rpc }) }))
 beforeEach(() => {
-  const query = { select: vi.fn(() => query), or: vi.fn(() => query), order: vi.fn(() => query), range: vi.fn(async () => ({ data: [], error: null })) }
+  const query = { select: vi.fn(() => query), or: vi.fn(() => query), gte: vi.fn(() => query), lte: vi.fn(() => query), eq: vi.fn(() => query), order: vi.fn(() => query), range: vi.fn(async () => ({ data: [], error: null })) }
   mocks.query = query
   mocks.from.mockReset().mockReturnValue(query)
   mocks.rpc.mockReset().mockResolvedValue({ data: 'draft-id', error: null })
 })
 describe('outside-work draft API', () => {
+  it.each(['final', 'draft', 'all'])('bounds report reads to custom dates with %s status', async reportStatus => {
+    await getOutsideWorkMovements('2026-10-01', '2026-10-15', { reportStatus })
+    expect(mocks.query.gte).toHaveBeenCalledWith('work_date', '2026-10-01')
+    expect(mocks.query.lte).toHaveBeenCalledWith('work_date', '2026-10-15')
+    expect(mocks.query.or).not.toHaveBeenCalled()
+    if (reportStatus === 'all') expect(mocks.query.eq).not.toHaveBeenCalled()
+    else expect(mocks.query.eq).toHaveBeenCalledWith('status', reportStatus)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+  it('paginates report reads and rejects reversed/unbounded ranges', async () => {
+    mocks.query.range.mockResolvedValueOnce({ data: Array.from({ length: 500 }, (_, id) => ({ id })), error: null })
+    expect(await getOutsideWorkMovements('2026-10-01', '2026-10-15', { reportStatus: 'final' })).toHaveLength(500)
+    expect(mocks.query.range.mock.calls).toEqual([[0, 499], [500, 999]])
+    await expect(getOutsideWorkMovements('2026-10-15', '2026-10-01', { reportStatus: 'all' })).rejects.toThrow('Invalid report')
+    await expect(getOutsideWorkMovements('', '', { reportStatus: 'final' })).rejects.toThrow('Invalid report')
+  })
   it('sends a null primary team and every worker for foreman-led movements', async () => {
     await saveOutsideWorkMovement({ status: 'final', work_date: '2026-10-15', foreman_worker_id: 'foreman-id', team_id: '',
       workers: [{ worker_id: 'team-a-worker', start_time: '08:00', end_time: '17:00' }, { worker_id: 'team-b-worker', start_time: '08:00', end_time: '17:00' }] })

@@ -1,12 +1,17 @@
 import { getSupabaseClient } from '../lib/supabase'
 
-export async function getOutsideWorkMovements(start, end) {
+export async function getOutsideWorkMovements(start, end, { reportStatus } = {}) {
+  if (reportStatus !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(end || '') || start > end || !['final', 'draft', 'all'].includes(reportStatus))) throw new Error('Invalid report date range or status')
   const rows = []
   for (let offset = 0; ; offset += 500) {
-    const { data, error } = await getSupabaseClient().from('outside_work_movements')
+    let query = getSupabaseClient().from('outside_work_movements')
       .select('id,work_date,team_id,team:teams(id,name),status,foreman_worker_id,foreman_name,start_time,end_time,common_worker_start,common_worker_end,missing_worker_note,entry_state,note,created_by,created_at,updated_at,outside_work_movement_workers(id,worker_id,worker_name,start_time,end_time)')
-      .or(`status.eq.draft,and(work_date.gte.${start},work_date.lte.${end})`)
-      .order('work_date').order('start_time').order('id').range(offset, offset + 499)
+    if (reportStatus === undefined) query = query.or(`status.eq.draft,and(work_date.gte.${start},work_date.lte.${end})`)
+    else {
+      query = query.gte('work_date', start).lte('work_date', end)
+      if (reportStatus !== 'all') query = query.eq('status', reportStatus)
+    }
+    const { data, error } = await query.order('work_date').order('start_time').order('id').range(offset, offset + 499)
     if (error) throw error
     rows.push(...(data || []))
     if ((data || []).length < 500) return rows

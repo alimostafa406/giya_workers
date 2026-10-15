@@ -5,9 +5,9 @@ import { deleteOutsideWorkMovement, getOutsideWorkMovements, getOutsideWorkTeams
 import { getErrorMessage } from '../api/axios'
 import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
-import { changeOutsideWorkDate, foremanKey, formatDuration, hasOutsideWorkForeman, isFinalOutsideWorkMovement, newOutsideWorkForm, outsideWorkFinalError, outsideWorkForm, weekDays, weeklyForemanReport } from '../utils/outsideWork'
+import { changeOutsideWorkDate, isFinalOutsideWorkMovement, newOutsideWorkForm, outsideWorkFinalError, outsideWorkForm, weekDays } from '../utils/outsideWork'
 import OutsideWorkEntryForm from '../components/OutsideWork/OutsideWorkEntryForm'
-import WeeklyForemanRows from '../components/OutsideWork/WeeklyForemanRows'
+import OutsideWorkReport from '../components/OutsideWork/OutsideWorkReport'
 import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 import { biometricIdsByWorker } from '../utils/dailyOperationalReports'
 import OutsideWorkMovementCard from '../components/OutsideWork/OutsideWorkMovementCard'
@@ -99,16 +99,6 @@ const flowLabels = {
     selectWorkers: 'Sélectionner au moins un travailleur.', historyTimes: 'Les horaires enregistrés diffèrent ; ils restent inchangés jusqu’à modification des horaires communs.' },
 }
 
-function ForemanReportSummary({ report, labels }) {
-  return <div className="foreman-report-summary mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-    {[[labels.dayCount, report.dayCount], [labels.totalOvertime, formatDuration(report.totalOvertimeMinutes)], [labels.movementCount, report.movementCount]].map(([label, value]) =>
-      <div key={label} className="rounded-lg border border-(--border) p-3">
-        <p className="text-sm text-(--muted)">{label}</p>
-        <p className="mt-1 text-lg font-bold"><bdi dir="ltr" className="inline-block whitespace-nowrap">{value}</bdi></p>
-      </div>)}
-  </div>
-}
-
 export default function OutsideWork() {
   const { language } = useTranslation()
   const reportLabels = {
@@ -128,7 +118,6 @@ export default function OutsideWork() {
   const [form, setForm] = useState(() => newOutsideWorkForm(kinshasaClock().date))
   const [tab, setTab] = useState('movements')
   const [expanded, setExpanded] = useState([])
-  const [reportForeman, setReportForeman] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -176,9 +165,6 @@ export default function OutsideWork() {
   const finals = useMemo(() => movements.filter(isFinalOutsideWorkMovement), [movements])
   const drafts = useMemo(() => movements.filter((row) => row.status === 'draft')
     .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || ''))), [movements])
-  const foremen = useMemo(() => [...new Map(finals.filter(hasOutsideWorkForeman).map((row) => [foremanKey(row), row.foreman_name])).entries()], [finals])
-  const report = useMemo(() => weeklyForemanReport(finals, reportForeman, days), [finals, reportForeman, days])
-  const reportName = foremen.find(([key]) => key === reportForeman)?.[1] || ''
   const biometricIds = useMemo(() => biometricIdsByWorker(mappings), [mappings])
   const workersById = useMemo(() => new Map(workers.map((worker) => [String(worker.id), worker])), [workers])
   const teamName = (movement) => !movement.team_id ? l.noPrimaryTeam : movement.team?.name || teams.find((team) => team.id === movement.team_id)?.name || '—'
@@ -234,21 +220,15 @@ export default function OutsideWork() {
     setForm((current) => changeOutsideWorkDate(current || newOutsideWorkForm(date), date))
   }
   return <div className="outside-work-page" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-    <style>{`@media print { @page { size: A4 portrait; margin: 14mm; }
-      .app-sidebar, main > header, .outside-work-page > :not(.outside-work-print) { display: none !important; }
-      main, main > div, .outside-work-page { max-width: none !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
-      .outside-work-print { display: block !important; position: absolute; inset: 0; width: 100%; color: #111; }
-      .outside-work-print, .outside-work-print * { visibility: visible !important; }
-      .outside-work-print tr { break-inside: avoid; } .outside-work-print thead { display: table-header-group; }
-      .outside-work-print .foreman-report-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); break-inside: avoid; } }`}</style>
+
     <header className="outside-work-header"><h1>{l.title}</h1><p>{l.subtitle}</p></header>
     <div className="outside-work-control-bar">
-      <label className="outside-work-date-control"><span>{tab === 'report' ? l.week : l.date}</span>
-        <input aria-label={tab === 'report' ? l.week : l.date} type="date" value={tab === 'report' ? anchor : selectedDate}
-          onChange={(event) => tab === 'report' ? setAnchor(event.target.value) : selectDate(event.target.value)} className="input-base" />
-        <span className="outside-work-selected-date">{dateLabel(tab === 'report' ? anchor : selectedDate)}</span>
+      {tab !== 'report' && <label className="outside-work-date-control"><span>{l.date}</span>
+        <input aria-label={l.date} type="date" value={selectedDate}
+          onChange={(event) => selectDate(event.target.value)} className="input-base" />
+        <span className="outside-work-selected-date">{dateLabel(selectedDate)}</span>
         <WeekRange days={days} language={language} />
-      </label>
+      </label>}
       <nav className="outside-work-tabs" role="tablist" aria-label={l.title}>
         <button type="button" role="tab" id="outside-work-entry-tab" aria-controls="outside-work-entry-view" aria-selected={tab !== 'report'} onClick={() => { setTab('movements'); if (form?.work_date) setAnchor(form.work_date) }}>{l.entryTab}</button>
         <button type="button" role="tab" id="outside-work-report-tab" aria-controls="outside-work-report-view" aria-selected={tab === 'report'} onClick={() => setTab('report')}>{l.reportTab}</button>
@@ -278,20 +258,8 @@ export default function OutsideWork() {
             onToggle={() => toggleWorkers(row.id)} onEdit={() => edit(row)} onDelete={() => remove(row.id)} />)}
         </div>}
       </section>
-    </div> : <section id="outside-work-report-view" role="tabpanel" aria-labelledby="outside-work-report-tab" className="outside-work-report">
-      <div className="outside-work-panel-heading"><h2>{l.report}</h2></div>
-      <div className="outside-work-report-toolbar"><label>{l.foreman}<select aria-label={l.chooseReport} value={reportForeman} onChange={(event) => setReportForeman(event.target.value)} className="input-base"><option value="">{l.chooseReport}</option>{foremen.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
-        <button type="button" disabled={!report.rows.length} className="btn-secondary" onClick={() => window.print()}>{l.print}</button></div>
-      {loading ? <p role="status" className="outside-work-empty">{l.loading}</p> : reportForeman ? <>
-        <ForemanReportSummary report={report} labels={l} />
-        <div className="outside-work-table-scroll"><table className="outside-work-compact-table"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count, l.show].map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody><WeeklyForemanRows rows={report.rows} labels={l} dateLabel={dateLabel} workersById={workersById} expanded={expanded} onToggle={toggleWorkers} /></tbody></table></div>
-        {!report.rows.length && <p className="outside-work-empty">{l.noMovements}</p>}
-      </> : <p className="outside-work-empty">{l.reportHint}</p>}
-    </section>}
-    <section className="outside-work-print hidden" aria-hidden="true"><h1>{l.report}</h1><h2>{reportName}</h2><p><WeekRange days={days} language={language} /></p>
-      <table className="w-full border-collapse text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="border p-2 text-start">{item}</th>)}</tr></thead><tbody><WeeklyForemanRows rows={report.rows} labels={l} dateLabel={dateLabel} workersById={workersById} print /></tbody></table>
-      <ForemanReportSummary report={report} labels={l} />
-    </section>
+    </div> : <OutsideWorkReport workers={workers} teams={teams} biometricIds={biometricIds} />}
+
 
   </div>
 }
