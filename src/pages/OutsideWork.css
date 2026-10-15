@@ -1,0 +1,57 @@
+.outside-work-page { max-width: 1600px; margin-inline: auto; min-width: 0; padding-bottom: 2rem; }
+.outside-work-header { margin-bottom: 1.5rem; }
+.outside-work-header h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -.025em; }
+.outside-work-header p { margin-top: .35rem; color: var(--muted); font-size: .925rem; }
+.outside-work-control-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 0; margin-bottom: 1.25rem; border-block: 1px solid var(--border); }
+.outside-work-date-control { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; font-size: .875rem; font-weight: 700; }
+.outside-work-date-control input { max-width: 12rem; direction: ltr; }
+.outside-work-week-context { font-size: .8rem; font-weight: 500; color: var(--muted); }
+.outside-work-tabs { display: flex; gap: .25rem; padding: .25rem; background: var(--border); border-radius: .75rem; }
+.outside-work-tabs button { padding: .6rem 1rem; border-radius: .55rem; font-weight: 700; font-size: .875rem; color: var(--muted); }
+.outside-work-tabs button[aria-selected="true"] { background: var(--bg-soft); color: var(--primary); box-shadow: 0 1px 3px #17212b12; }
+.outside-work-tabs button:focus-visible, .outside-work-text-action:focus-visible, .outside-work-page summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.outside-work-entry-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.outside-work-entry-layout > * { min-width: 0; }
+.outside-work-entry, .outside-work-report { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 1rem; box-shadow: 0 2px 5px #17212b04; }
+.outside-work-panel-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: 1rem; }
+.outside-work-panel-heading h2 { font-size: 1.1rem; font-weight: 800; }
+.outside-work-panel-heading p { font-size: .8rem; color: var(--muted); }
+.outside-work-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.75rem; height: 1.75rem; padding-inline: .4rem; border-radius: .5rem; background: var(--primary-soft); color: var(--primary); font-size: .8rem; font-weight: 700; }
+.outside-work-list-switch { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 0 1rem; border-bottom: 1px solid var(--border); }
+.outside-work-list-switch button { padding: .4rem 0 .65rem; border-bottom: 2px solid transparent; color: var(--muted); font-size: .85rem; font-weight: 700; }
+.outside-work-list-switch button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); }
+.outside-work-movement-list { display: flex; flex-direction: column; gap: .9rem; }
+.outside-work-movement { padding: 1rem; border: 1px solid var(--border); border-radius: .85rem; background: var(--bg-soft); }
+.outside-work-movement-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: 1rem; }
+.outside-work-movement-heading h3 { font-size: 1rem; font-weight: 800; overflow-wrap: anywhere; }
+.outside-work-status { padding: .2rem .5rem; border-radius: .35rem; background: var(--surface-subtle); color: var(--muted); font-size: .7rem; white-space: nowrap; }
+.outside-work-movement-times { display: grid; grid-template-columns: minmax(0, 1fr); gap: .85rem; font-size: .9rem; }
+.outside-work-movement-times > div { min-width: 0; }
+.outside-work-person { display: flex; flex-wrap: wrap; gap: .45rem; align-items: baseline; margin-bottom: .35rem; }
+.outside-work-person > span { color: var(--muted); font-size: .8rem; }
+.outside-work-caption { color: var(--muted); font-size: .8rem; line-height: 1.6; }
+.outside-work-duration { display: block; margin-top: .2rem; }
+.outside-work-movement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding-top: .9rem; margin-top: .9rem; border-top: 1px solid var(--border); }
+.outside-work-text-action { font-size: .8rem; font-weight: 700; color: var(--primary); cursor: pointer; }
+.outside-work-text-action:hover { text-decoration: underline; text-underline-offset: 3px; }
+.outside-work-text-action:disabled { opacity: .45; cursor: not-allowed; }
+.outside-work-delete { color: var(--muted); margin-inline-start: auto; }
+.outside-work-delete:hover { color: var(--danger); }
+.outside-work-empty { display: flex; flex-direction: column; align-items: center; gap: .65rem; padding: 3rem 1.5rem; text-align: center; color: var(--muted); border: 1px dashed var(--border-strong); border-radius: .85rem; font-size: .9rem; }
+.outside-work-empty span { font-size: 1.5rem; color: var(--border-strong); }
+.outside-work-report { padding: 1.25rem; }
+.outside-work-report-toolbar { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: end; margin-bottom: 1.25rem; }
+.outside-work-report-toolbar label { display: flex; flex-direction: column; gap: .4rem; min-width: min(100%, 18rem); font-size: .85rem; font-weight: 700; }
+.outside-work-report-toolbar select { display: block; appearance: auto; width: 100%; }
+.outside-work-report .foreman-report-summary { margin-block: 0 1.25rem; }
+.outside-work-report .foreman-report-summary > div { background: var(--surface-subtle); border: 0; border-radius: .75rem; }
+.outside-work-table-scroll { max-width: 100%; overflow-x: auto; margin-top: .75rem; }
+.outside-work-compact-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.outside-work-compact-table th { color: var(--muted); background: var(--surface-subtle); font-weight: 700; text-align: start; }
+.outside-work-compact-table td, .outside-work-compact-table th { padding: .65rem .6rem; border-bottom: 1px solid var(--border); }
+.outside-work-compact-table td { overflow-wrap: anywhere; }
+.outside-work-compact-table bdi[dir="ltr"] { display: inline-block; white-space: nowrap; }
+.outside-work-page bdi { unicode-bidi: isolate; }
+@media (min-width: 650px) { .outside-work-movement-times { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }
+@media (min-width: 1180px) { .outside-work-entry-layout { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1.75rem; } }
+@media (max-width: 500px) { .outside-work-tabs { width: 100%; } .outside-work-tabs button { flex: 1; padding-inline: .5rem; } .outside-work-date-control { width: 100%; } .outside-work-week-context { width: 100%; } }

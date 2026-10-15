@@ -57,11 +57,19 @@ const open = (route = '/outside-work') => render(<LanguageProvider><MemoryRouter
   <Route path="/outside-work" element={<OutsideWork />} /><Route path="/workers" element={<WorkersStub />} />
 </Routes></MemoryRouter></LanguageProvider>)
 const start = async () => {
-  const add = await screen.findByRole('button', { name: 'Add outside-work movement' })
-  await waitFor(() => expect(add.disabled).toBe(false))
-  fireEvent.click(add)
-  return screen.getByRole('form', { name: 'Add outside-work movement' })
+  const form = await screen.findByRole('form', { name: 'Add outside-work movement' })
+  await within(form).findByRole('option', { name: 'Peinture' })
+  return form
 }
+const showDay = async (date = '2026-10-13') => {
+  await start()
+  fireEvent.change(screen.getByLabelText('Date'), { target: { value: date } })
+}
+const showSelected = (form) => {
+  const details = form.querySelector('.outside-work-selected-workers')
+  if (!details.open) fireEvent.click(details.querySelector('summary'))
+}
+
 const team = (form, id = 'paint') => fireEvent.change(within(form).getByLabelText('Team'), { target: { value: id } })
 
 const chooseForeman = (form) => {
@@ -70,10 +78,85 @@ const chooseForeman = (form) => {
 }
 
 describe('outside-work separate movement ranges', () => {
+  it('opens a ready entry workspace, shows only the selected day, and keeps report separate', async () => {
+    const { container } = open()
+    const form = await start()
+    expect(screen.getByRole('heading', { name: 'Record a new movement' })).toBeTruthy()
+    expect(container.querySelector('.outside-work-entry-layout')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Show workers (1)' })).toBeNull()
+    team(form); chooseForeman(form)
+    fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
+    fireEvent.change(within(form).getByLabelText('Foreman End'), { target: { value: '20:00' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Weekly report' }))
+    expect(screen.queryByRole('form')).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Weekly report' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('tab', { name: 'Record movements' }))
+    const restored = screen.getByRole('form')
+    expect(within(restored).getByLabelText('Foreman End').value).toBe('20:00')
+    expect(within(restored).getByRole('checkbox', { name: /ROBERT/ }).checked).toBe(true)
+    await showDay()
+    expect(await screen.findByRole('button', { name: 'Show workers (1)' })).toBeTruthy()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('edits the existing movement in the visible form and saves its original ID', async () => {
+    open(); await showDay()
+    const edit = await screen.findByRole('button', { name: 'Edit' })
+    fireEvent.click(edit)
+    const heading = screen.getByRole('heading', { name: 'Edit outside-work movement' })
+    expect(document.activeElement).toBe(heading)
+    const form = screen.getByRole('form')
+    expect(within(form).getByLabelText('Foreman End').value).toBe('20:00')
+    expect(within(form).getByLabelText('Workers End').value).toBe('17:00')
+    fireEvent.change(within(form).getByLabelText('Foreman End'), { target: { value: '21:00' } })
+    fireEvent.click(within(form).getByRole('button', { name: 'Save movement' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'movement-1', end_time: '21:00', common_worker_end: '17:00' })))
+    await screen.findByRole('button', { name: 'Edit' })
+    expect(persisted.filter((row) => row.id === 'movement-1')).toHaveLength(1)
+  })
+  it('keeps cross-team search and selected-worker details compact and expandable', async () => {
+    open(); const form = await start(); team(form)
+    const cross = form.querySelector('.outside-work-cross-search')
+    expect(cross.open).toBe(false)
+    expect(within(form).getByLabelText('Add worker from another team').closest('details').open).toBe(false)
+    fireEvent.click(cross.querySelector('summary'))
+    const search = within(form).getByRole('textbox', { name: 'Add worker from another team' })
+    fireEvent.change(search, { target: { value: '064' } })
+    fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
+    expect(form.querySelector('.outside-work-selected-workers').open).toBe(false)
+    showSelected(form)
+    expect(within(form).getByRole('cell', { name: 'JEREMIE' })).toBeTruthy()
+    expect(within(form).getByRole('cell', { name: /Montage/ })).toBeTruthy()
+    fireEvent.click(within(form).getByRole('button', { name: 'Remove worker: JEREMIE' }))
+    expect(within(form).queryByRole('cell', { name: 'JEREMIE' })).toBeNull()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('filters already loaded team workers without new requests or lost selections', async () => {
+    open(); const form = await start(); team(form)
+    fireEvent.click(within(form).getByRole('checkbox', { name: /ROBERT/ }))
+    const requests = mocks.workers.mock.calls.length
+    fireEvent.change(within(form).getByLabelText('Search within team'), { target: { value: 'rich' } })
+    expect(within(form).getAllByRole('checkbox')).toHaveLength(1)
+    expect(within(form).getByRole('checkbox', { name: /RICHARD/ })).toBeTruthy()
+    fireEvent.change(within(form).getByLabelText('Search within team'), { target: { value: 'no-match' } })
+    expect(form.querySelector('.outside-work-worker-list').textContent).toContain('No matches')
+    fireEvent.change(within(form).getByLabelText('Search within team'), { target: { value: '' } })
+    expect(within(form).getByRole('checkbox', { name: /ROBERT/ }).checked).toBe(true)
+    expect(mocks.workers).toHaveBeenCalledTimes(requests)
+  })
+  it('keeps delete confirmation and existing deletion API behavior', async () => {
+    open(); await showDay()
+    const button = await screen.findByRole('button', { name: 'Delete' })
+    window.confirm.mockReturnValueOnce(false)
+    fireEvent.click(button)
+    expect(mocks.remove).not.toHaveBeenCalled()
+    fireEvent.click(button)
+    await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith('movement-1'))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Show workers (1)' })).toBeNull())
+  })
   it('expands weekly workers while print always includes names without actions', async () => {
     const { container } = open()
-    await screen.findByText('FOREMAN', { selector: 'strong' })
-    fireEvent.click(screen.getByRole('button', { name: 'Weekly foreman report' }))
+    await screen.findByRole('option', { name: 'Peinture' })
+    fireEvent.click(screen.getByRole('tab', { name: 'Weekly report' }))
     fireEvent.change(screen.getByLabelText('Select a foreman'), { target: { value: 'worker:foreman' } })
     expect(screen.queryByRole('cell', { name: 'ROBERT' })).toBeNull()
     const print = container.querySelector('.outside-work-print')
@@ -96,8 +179,8 @@ describe('outside-work separate movement ranges', () => {
     localStorage.setItem('workers_app_language', 'ar')
     persisted[0].end_time = '17:00:00'
     const { container } = open()
-    await screen.findByText('FOREMAN', { selector: 'strong' })
-    fireEvent.click(screen.getByRole('button', { name: 'تقرير المعلم الأسبوعي' }))
+    await screen.findByRole('option', { name: 'Peinture' })
+    fireEvent.click(screen.getByRole('tab', { name: 'التقرير الأسبوعي' }))
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'worker:foreman' } })
     const summaries = container.querySelectorAll('.foreman-report-summary')
     expect(summaries).toHaveLength(2)
@@ -122,6 +205,7 @@ describe('outside-work separate movement ranges', () => {
   })
   it('separates foreman and shared worker ranges and omits redundant worker time columns', async () => {
     open()
+    await showDay()
     const show = await screen.findByRole('button', { name: 'Show workers (1)' })
     const card = show.closest('article')
     expect(card.querySelector('[aria-label="Foreman"]').textContent).toContain('8:00 AM → 8:00 PM')
@@ -140,6 +224,7 @@ describe('outside-work separate movement ranges', () => {
     persisted[0].outside_work_movement_workers.push({ id: 'child-two', worker_id: 'richard', worker_name: 'RICHARD', start_time: '08:00:00', end_time: '18:00:00' })
     const before = structuredClone(persisted)
     open()
+    await showDay()
     const show = await screen.findByRole('button', { name: 'Show workers (2)' })
     const card = show.closest('article')
     expect(within(card).getByText('Individual times shown in worker details')).toBeTruthy()
@@ -157,12 +242,13 @@ describe('outside-work separate movement ranges', () => {
     open()
     const form = await start(); team(form); chooseForeman(form)
     fireEvent.click(within(form).getByRole('button', { name: 'Select all team workers' }))
-    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: date } })
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: date } })
+    await waitFor(() => expect(form.querySelector('fieldset').disabled).toBe(false))
+    fireEvent.click(within(form).getByRole('button', { name: 'Save movement' }))
     const show = await screen.findByRole('button', { name: 'Show workers (2)' })
     expect(mocks.list).toHaveBeenLastCalledWith(weekStart, weekEnd)
     expect(mocks.save.mock.calls[0][0].work_date).toBe(date)
-    expect(show.closest('section').querySelector('h2').textContent).toContain(date === '2026-10-10' ? '10/10/2026' : '10/14/2026')
+    expect(show.closest('section').querySelector('.outside-work-panel-heading').textContent).toContain(date === '2026-10-10' ? '10/10/2026' : '10/14/2026')
     fireEvent.click(show)
     expect(within(show.closest('section')).getByRole('cell', { name: 'ROBERT' })).toBeTruthy()
     expect(within(show.closest('section')).getByRole('cell', { name: 'RICHARD' })).toBeTruthy()
@@ -170,10 +256,10 @@ describe('outside-work separate movement ranges', () => {
   it('switches to a dated draft week and keeps the Drafts tab usable', async () => {
     open()
     const form = await start(); team(form)
-    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-10' } })
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-10' } })
     fireEvent.click(within(form).getByRole('button', { name: 'Save as draft' }))
     await screen.findByRole('button', { name: 'Continue' })
-    expect(screen.getByLabelText('Week').value).toBe('2026-10-10')
+    expect(screen.getByLabelText('Date').value).toBe('2026-10-10')
     expect(mocks.list).toHaveBeenLastCalledWith('2026-10-05', '2026-10-11')
   })
   it('automatically uses the linked team foreman and shows fallback for an unlinked team', async () => {
@@ -206,6 +292,7 @@ describe('outside-work separate movement ranges', () => {
     expect(form.querySelectorAll('input[type="time"]')).toHaveLength(4)
     expect(within(form).queryByLabelText('ROBERT Start')).toBeNull()
     expect(within(form).queryByLabelText('RICHARD End')).toBeNull()
+    showSelected(form)
     expect(within(form).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Workers', 'Team', 'Remove worker'])
   })
   it('defaults both ranges on weekdays and Saturday, and leaves Sunday blank', async () => {
@@ -215,10 +302,10 @@ describe('outside-work separate movement ranges', () => {
     expect(within(form).getByLabelText('Foreman End').value).toBe('17:00')
     expect(within(form).getByLabelText('Workers Start').value).toBe('08:00')
     expect(within(form).getByLabelText('Workers End').value).toBe('17:00')
-    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-17' } })
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-17' } })
     expect(within(form).getByLabelText('Foreman End').value).toBe('14:00')
     expect(within(form).getByLabelText('Workers End').value).toBe('14:00')
-    fireEvent.change(within(form).getByLabelText('Date'), { target: { value: '2026-10-18' } })
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-18' } })
     for (const label of ['Foreman Start', 'Foreman End', 'Workers Start', 'Workers End']) {
       expect(within(form).getByLabelText(label).value).toBe('')
     }
@@ -231,7 +318,7 @@ describe('outside-work separate movement ranges', () => {
     expect(within(form).getByLabelText('Workers End').value).toBe('17:00')
     fireEvent.change(within(form).getByLabelText('Workers End'), { target: { value: '18:00' } })
     expect(within(form).getByLabelText('Foreman End').value).toBe('20:00')
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Save movement' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
       status: 'final', foreman_worker_id: 'foreman', start_time: '08:00', end_time: '20:00',
       common_worker_start: '08:00', common_worker_end: '18:00',
@@ -252,8 +339,9 @@ describe('outside-work separate movement ranges', () => {
     fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
     fireEvent.click(within(form).getByRole('option', { name: /JEREMIE/ }))
     fireEvent.change(within(form).getByLabelText('Add worker from another team'), { target: { value: '' } })
+    showSelected(form)
     expect(within(form).getByText('From other teams')).toBeTruthy()
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Save movement' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
       workers: [expect.objectContaining({ worker_id: 'robert', end_time: '18:30' }),
         expect.objectContaining({ worker_id: 'jeremie', end_time: '18:30' })],
@@ -280,12 +368,13 @@ describe('outside-work separate movement ranges', () => {
     await screen.findByRole('button', { name: 'Continue' })
     rendered.unmount()
     open('/outside-work?draft=draft-new')
-    const resumed = await screen.findByRole('form', { name: 'Add outside-work movement' })
+    await screen.findByRole('heading', { name: 'Edit outside-work movement' })
+    const resumed = screen.getByRole('form', { name: 'Add outside-work movement' })
     expect(within(resumed).getByLabelText('Foreman End').value).toBe('20:00')
     expect(within(resumed).getByLabelText('Workers End').value).toBe('18:00')
     expect(within(resumed).getByRole('button', { name: 'Remove worker: ROBERT' })).toBeTruthy()
     expect(within(resumed).getByRole('button', { name: 'Remove worker: JEREMIE' })).toBeTruthy()
-    expect(within(resumed).getByLabelText('Date').value).toBe('2026-10-14')
+    expect(screen.getByLabelText('Date').value).toBe('2026-10-14')
   })
   it('preserves saved individual times until a shared range is explicitly edited', async () => {
     persisted.push({ ...structuredClone(movement), id: 'legacy-draft', status: 'draft',
@@ -293,7 +382,8 @@ describe('outside-work separate movement ranges', () => {
       outside_work_movement_workers: [...movement.outside_work_movement_workers,
         { id: 'child-two', worker_id: 'jeremie', worker_name: 'JEREMIE', start_time: '08:00', end_time: '18:00' }] })
     open('/outside-work?draft=legacy-draft')
-    const form = await screen.findByRole('form', { name: 'Add outside-work movement' })
+    await screen.findByText(/Saved worker times differ/)
+    const form = screen.getByRole('form', { name: 'Add outside-work movement' })
     expect(within(form).getByText(/Saved worker times differ/)).toBeTruthy()
     fireEvent.click(within(form).getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
@@ -303,8 +393,8 @@ describe('outside-work separate movement ranges', () => {
   })
   it('keeps historical weekly report and print values unchanged', async () => {
     const { container } = open()
-    await screen.findByText('FOREMAN', { selector: 'strong' })
-    fireEvent.click(screen.getByRole('button', { name: 'Weekly foreman report' }))
+    await screen.findByRole('option', { name: 'Peinture' })
+    fireEvent.click(screen.getByRole('tab', { name: 'Weekly report' }))
     fireEvent.change(screen.getByLabelText('Select a foreman'), { target: { value: 'worker:foreman' } })
     const print = container.querySelector('.outside-work-print')
     expect(print.querySelector('.foreman-report-summary').textContent).toContain('Total foreman overtime3 h')
