@@ -180,8 +180,12 @@ describe('outside-work separate movement ranges', () => {
     persisted[0].end_time = '17:00:00'
     const { container } = open()
     await screen.findByRole('option', { name: 'Peinture' })
+    expect(container.querySelector('.outside-work-selected-date').textContent).toBe('الأربعاء — 14/10/2026')
+    fireEvent.change(screen.getByLabelText('التاريخ'), { target: { value: '2026-10-13' } })
+    expect(container.querySelector('.outside-work-selected-date').textContent).toBe('الثلاثاء — 13/10/2026')
     fireEvent.click(screen.getByRole('tab', { name: 'التقرير الأسبوعي' }))
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'worker:foreman' } })
+    await waitFor(() => expect(container.querySelectorAll('.foreman-report-summary')).toHaveLength(2))
     const summaries = container.querySelectorAll('.foreman-report-summary')
     expect(summaries).toHaveLength(2)
     for (const summary of summaries) {
@@ -192,7 +196,7 @@ describe('outside-work separate movement ranges', () => {
     }
     for (const range of container.querySelectorAll('bdi')) {
       if (range.textContent.includes('→')) {
-        expect(range.textContent).toBe('2026-10-12 → 2026-10-18')
+        expect(range.textContent).toBe('الاثنين 12/10/2026 → الأحد 18/10/2026')
         expect(range.dir).toBe('ltr')
       }
     }
@@ -200,7 +204,7 @@ describe('outside-work separate movement ranges', () => {
       expect(overtime.textContent).toBe('0 h')
       expect(overtime.dir).toBe('ltr')
     }
-    expect(container.querySelector('.outside-work-print p bdi').textContent).toBe('2026-10-12 → 2026-10-18')
+    expect(container.querySelector('.outside-work-print p bdi').textContent).toBe('الاثنين 12/10/2026 → الأحد 18/10/2026')
     expect(mocks.save).not.toHaveBeenCalled()
   })
   it('separates foreman and shared worker ranges and omits redundant worker time columns', async () => {

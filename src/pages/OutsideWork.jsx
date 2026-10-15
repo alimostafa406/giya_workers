@@ -13,6 +13,13 @@ import { biometricIdsByWorker } from '../utils/dailyOperationalReports'
 import OutsideWorkMovementCard from '../components/OutsideWork/OutsideWorkMovementCard'
 import { outsideWorkUiLabels } from '../components/OutsideWork/outsideWorkUiLabels'
 import './OutsideWork.css'
+import { outsideWorkDateLabel } from '../utils/outsideWorkDateLabels'
+
+function WeekRange({ days, language }) {
+  return <bdi dir="ltr" className="outside-work-week-context" style={{ display: 'inline-flex', gap: '.3em', alignItems: 'center' }}>
+    <bdi dir={language === 'ar' ? 'rtl' : 'ltr'}>{outsideWorkDateLabel(days[0], language, true)}</bdi>{' → '}<bdi dir={language === 'ar' ? 'rtl' : 'ltr'}>{outsideWorkDateLabel(days[6], language, true)}</bdi>
+  </bdi>
+}
 
 const labelSets = {
   ar: { title: 'العمل الخارجي', week: 'الأسبوع', add: 'إضافة حركة معلم', date: 'التاريخ', foreman: 'المعلم',
@@ -214,8 +221,7 @@ export default function OutsideWork() {
     catch (cause) { setError(getErrorMessage(cause)) }
     finally { setBusy(false) }
   }
-  const dateLabel = (date) => !date ? '—' : new Intl.DateTimeFormat(language === 'ar' ? 'ar-CD' : language,
-    { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`))
+  const dateLabel = (date) => outsideWorkDateLabel(date, language)
   const timestamp = (date) => date ? new Intl.DateTimeFormat(language === 'ar' ? 'ar-CD' : language,
     { dateStyle: 'short', timeStyle: 'short', timeZone: 'Africa/Kinshasa' }).format(new Date(date)) : '—'
 
@@ -240,7 +246,8 @@ export default function OutsideWork() {
       <label className="outside-work-date-control"><span>{tab === 'report' ? l.week : l.date}</span>
         <input aria-label={tab === 'report' ? l.week : l.date} type="date" value={tab === 'report' ? anchor : selectedDate}
           onChange={(event) => tab === 'report' ? setAnchor(event.target.value) : selectDate(event.target.value)} className="input-base" />
-        <bdi dir="ltr" className="outside-work-week-context">{days[0]} → {days[6]}</bdi>
+        <span className="outside-work-selected-date">{dateLabel(tab === 'report' ? anchor : selectedDate)}</span>
+        <WeekRange days={days} language={language} />
       </label>
       <nav className="outside-work-tabs" role="tablist" aria-label={l.title}>
         <button type="button" role="tab" id="outside-work-entry-tab" aria-controls="outside-work-entry-view" aria-selected={tab !== 'report'} onClick={() => { setTab('movements'); if (form?.work_date) setAnchor(form.work_date) }}>{l.entryTab}</button>
@@ -281,7 +288,7 @@ export default function OutsideWork() {
         {!report.rows.length && <p className="outside-work-empty">{l.noMovements}</p>}
       </> : <p className="outside-work-empty">{l.reportHint}</p>}
     </section>}
-    <section className="outside-work-print hidden" aria-hidden="true"><h1>{l.report}</h1><h2>{reportName}</h2><p><bdi dir="ltr" className="inline-block whitespace-nowrap">{days[0]} → {days[6]}</bdi></p>
+    <section className="outside-work-print hidden" aria-hidden="true"><h1>{l.report}</h1><h2>{reportName}</h2><p><WeekRange days={days} language={language} /></p>
       <table className="w-full border-collapse text-sm"><thead><tr>{[l.day, l.date, l.foremanStart, l.foremanEnd, l.overtime, l.count].map((item) => <th key={item} className="border p-2 text-start">{item}</th>)}</tr></thead><tbody><WeeklyForemanRows rows={report.rows} labels={l} dateLabel={dateLabel} workersById={workersById} print /></tbody></table>
       <ForemanReportSummary report={report} labels={l} />
     </section>
