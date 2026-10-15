@@ -22,10 +22,11 @@ export const durationMinutes = (start, end) => {
 
 export const formatDuration = (minutes) => minutes == null ? '—' : `${Number((minutes / 60).toFixed(2))} h`
 
-export const formatClock = (value) => {
+export const formatClock = (value, { hour12 = true } = {}) => {
   const match = String(value || '').match(/^(\d{1,2}):(\d{2})/)
   if (!match) return '—'
   const hour = Number(match[1])
+  if (!hour12) return `${String(hour).padStart(2, '0')}:${match[2]}`
   return `${hour % 12 || 12}:${match[2]} ${hour < 12 ? 'AM' : 'PM'}`
 }
 

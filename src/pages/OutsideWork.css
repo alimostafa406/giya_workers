@@ -25,6 +25,7 @@
 .outside-work-movement-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: 1rem; }
 .outside-work-movement-heading h3 { font-size: 1rem; font-weight: 800; overflow-wrap: anywhere; }
 .outside-work-status { padding: .2rem .5rem; border-radius: .35rem; background: var(--surface-subtle); color: var(--muted); font-size: .7rem; white-space: nowrap; }
+.outside-work-card-badges { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; }
 .outside-work-movement-times { display: grid; grid-template-columns: minmax(0, 1fr); gap: .85rem; font-size: .9rem; }
 .outside-work-movement-times > div { min-width: 0; }
 .outside-work-person { display: flex; flex-wrap: wrap; gap: .45rem; align-items: baseline; margin-bottom: .35rem; }

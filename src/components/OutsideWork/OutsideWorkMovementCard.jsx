@@ -2,23 +2,26 @@ import { durationMinutes, foremanOvertimeMinutes, formatClock, formatDuration, h
 
 export default function OutsideWorkMovementCard({ row, workersById, teamName, labels: l, language, open, onToggle, onEdit, onDelete, busy }) {
   const members = row.outside_work_movement_workers || []
+  const independentForeman = !row.team_id && hasOutsideWorkForeman(row)
+  const cardClock = (value) => formatClock(value, { hour12: false })
   const timeKey = (time) => !time ? '' : String(time).length === 5 ? `${time}:00` : String(time)
   const ranges = [...new Map(members.map((member) => [`${timeKey(member.start_time)}|${timeKey(member.end_time)}`, member])).values()]
   const workerStart = row.common_worker_start || (ranges.length === 1 ? ranges[0].start_time : null)
   const workerEnd = row.common_worker_end || (ranges.length === 1 ? ranges[0].end_time : null)
   const individualTimes = ranges.length > 1 || members.some((member) => timeKey(member.start_time) !== timeKey(workerStart) || timeKey(member.end_time) !== timeKey(workerEnd))
   return <article className="outside-work-movement">
-    <header className="outside-work-movement-heading"><h3><bdi>{teamName}</bdi></h3><span className="outside-work-status">{l.finalBadge}</span></header>
+    <header className="outside-work-movement-heading"><h3><bdi>{independentForeman ? row.foreman_name : teamName}</bdi></h3>
+      <span className="outside-work-card-badges">{independentForeman && <span className="outside-work-status">{l.independentForeman}</span>}<span className="outside-work-status">{l.finalBadge}</span></span></header>
     <div className="outside-work-movement-times">
       {hasOutsideWorkForeman(row) && <div aria-label={l.foreman}>
-        <p className="outside-work-person"><span>{l.foreman}</span><strong><bdi>{row.foreman_name}</bdi></strong></p>
-        <p><bdi dir="ltr">{formatClock(row.start_time)} → {formatClock(row.end_time)}</bdi></p>
+        {!independentForeman && <p className="outside-work-person"><span>{l.foreman}</span><strong><bdi>{row.foreman_name}</bdi></strong></p>}
+        <p><bdi dir="ltr">{cardClock(row.start_time)} → {cardClock(row.end_time)}</bdi></p>
         <p className="outside-work-caption">{l.overtime}: <bdi dir="ltr">{formatDuration(foremanOvertimeMinutes(row.work_date, row.end_time))}</bdi>
           <span className="outside-work-duration"> · {l.duration}: <bdi dir="ltr">{formatDuration(durationMinutes(row.start_time, row.end_time))}</bdi></span></p>
       </div>}
       <div aria-label={l.workers}>
         <p className="outside-work-person"><span>{l.workers}</span><strong>{members.length}</strong></p>
-        {workerStart && workerEnd ? <p><bdi dir="ltr">{formatClock(workerStart)} → {formatClock(workerEnd)}</bdi></p>
+        {workerStart && workerEnd ? <p><bdi dir="ltr">{cardClock(workerStart)} → {cardClock(workerEnd)}</bdi></p>
           : <p className="outside-work-caption">{({ ar: 'أوقات فردية موضحة في تفاصيل العمال', en: 'Individual times shown in worker details', fr: 'Horaires individuels dans les détails des travailleurs' })[language]}</p>}
       </div>
     </div>
@@ -29,6 +32,6 @@ export default function OutsideWorkMovementCard({ row, workersById, teamName, la
     </footer>
     {open && <div className="outside-work-table-scroll"><table className="outside-work-compact-table"><thead><tr>{[l.workers, l.team, ...(individualTimes ? [l.start, l.end] : [])].map((label) => <th key={label}>{label}</th>)}</tr></thead>
       <tbody>{members.map((member) => <tr key={member.id || member.worker_id}><td><bdi>{member.worker_name}</bdi></td><td><bdi>{workersById.get(String(member.worker_id))?.team_name || '—'}</bdi></td>
-        {individualTimes && <><td><bdi dir="ltr">{formatClock(member.start_time)}</bdi></td><td><bdi dir="ltr">{formatClock(member.end_time)}</bdi></td></>}</tr>)}</tbody></table></div>}
+        {individualTimes && <><td><bdi dir="ltr">{cardClock(member.start_time)}</bdi></td><td><bdi dir="ltr">{cardClock(member.end_time)}</bdi></td></>}</tr>)}</tbody></table></div>}
   </article>
 }

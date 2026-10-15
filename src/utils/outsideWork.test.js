@@ -37,6 +37,10 @@ describe('outside-work foreman report', () => {
     expect(report).not.toHaveProperty('averageMinutes')
     expect(formatDuration(630)).toBe('10.5 h')
     expect(formatClock('20:00:00')).toBe('8:00 PM')
+    expect(formatClock('08:00:00', { hour12: false })).toBe('08:00')
+    expect(formatClock('18:00:00', { hour12: false })).toBe('18:00')
+    expect(formatClock('00:05:00', { hour12: false })).toBe('00:05')
+    expect(formatClock(null, { hour12: false })).toBe('—')
   })
   it('excludes all drafts while preserving legacy finalized rows', () => {
     const report = weeklyForemanReport([...rows, { ...rows[0], id: 'draft', status: 'draft', end_time: '23:00' }], 'worker:f1', days)
