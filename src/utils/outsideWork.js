@@ -39,8 +39,8 @@ export const hasOutsideWorkForeman = (movement) => Boolean(movement.foreman_work
 // Outside-work reporting only; not the attendance/payroll overtime engine.
 export const foremanOvertimeMinutes = (date, end) => {
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay()
-  if (Number.isNaN(weekday) || weekday === 0) return 0
-  return durationMinutes(weekday === 6 ? '14:00' : '17:00', end) || 0
+  if (Number.isNaN(weekday)) return 0
+  return durationMinutes(outsideWorkDefaultTimes(date, { foreman: true }).end, end) || 0
 }
 
 export const weeklyForemanReport = (movements, key, days) => {
@@ -81,15 +81,17 @@ export const outsideWorkFinalError = (form) => {
   return ''
 }
 
-export const outsideWorkDefaultTimes = (date) => {
+export const outsideWorkDefaultTimes = (date, { foreman = false } = {}) => {
   const day = new Date(`${date}T12:00:00Z`).getUTCDay()
+  if (day === 0 && foreman) return { start: '09:00', end: '14:00' }
   return Number.isNaN(day) || day === 0 ? { start: '', end: '' }
     : { start: '08:00', end: day === 6 ? '14:00' : '17:00' }
 }
 
 export const newOutsideWorkForm = (date) => {
   const defaults = outsideWorkDefaultTimes(date)
-  return { ...outsideWorkForm({}, date), start_time: defaults.start, end_time: defaults.end,
+  const foremanDefaults = outsideWorkDefaultTimes(date, { foreman: true })
+  return { ...outsideWorkForm({}, date), start_time: foremanDefaults.start, end_time: foremanDefaults.end,
     common_worker_start: defaults.start, common_worker_end: defaults.end,
     entry_state: { time_model: 'shared', manual_times: { start_time: false, end_time: false,
       common_worker_start: false, common_worker_end: false } } }
@@ -117,13 +119,15 @@ export const editOutsideWorkTime = (form, field, next) => ({
 
 export const changeOutsideWorkDate = (form, date) => {
   const defaults = outsideWorkDefaultTimes(date)
+  const foremanDefaults = outsideWorkDefaultTimes(date, { foreman: true })
   let next = { ...form, work_date: date }
   for (const field of ['start_time', 'end_time', 'common_worker_start', 'common_worker_end']) {
     const workerField = field === 'common_worker_start' ? 'start_time' : 'end_time'
     if (form.id && field.startsWith('common_worker_') && form.workers.some((row) => row[workerField] !== form[field])) continue
     const edited = form.entry_state?.manual_times?.[field] ?? Boolean(form.id)
     if (edited) continue
-    const time = field === 'start_time' || field === 'common_worker_start' ? defaults.start : defaults.end
+    const range = field.startsWith('common_worker_') ? defaults : foremanDefaults
+    const time = field === 'start_time' || field === 'common_worker_start' ? range.start : range.end
     const manual = next.entry_state.manual_times
     next = editOutsideWorkTime(next, field, time)
     next.entry_state = { ...next.entry_state, manual_times: manual }

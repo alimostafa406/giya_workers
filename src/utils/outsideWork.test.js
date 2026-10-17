@@ -4,10 +4,16 @@ import { addOutsideWorkWorkers, changeOutsideWorkDate, durationMinutes, editOuts
 describe('outside-work foreman report', () => {
   it.each([
     ['2026-10-12', '17:00', 0],
+    ['2026-10-12', '18:00', 60],
     ['2026-10-12', '19:00', 120],
     ['2026-10-17', '14:00', 0],
     ['2026-10-17', '18:00', 240],
-    ['2026-10-18', '18:00', 0],
+    ['2026-10-18', '13:30', 0],
+    ['2026-10-18', '14:00', 0],
+    ['2026-10-18', '14:30', 30],
+    ['2026-10-18', '15:00', 60],
+    ['2026-10-18', '16:30', 150],
+    ['2026-10-18', '18:00', 240],
     ['2026-10-12', '16:00', 0],
   ])('reports only overtime beyond normal end on %s ending %s', (date, end, expected) => {
     const movement = { id: 'fixture', work_date: date, foreman_worker_id: 'foreman', start_time: '08:00', end_time: end }
@@ -18,6 +24,13 @@ describe('outside-work foreman report', () => {
     expect(movement).toEqual(before)
   })
   const days = weekDays('2026-10-14')
+  it('uses the fixed Sunday end boundary regardless of actual start, retaining half hours', () => {
+    for (const start_time of ['08:00', '09:00', '11:00']) {
+      const movement = { id: 'sunday', work_date: '2026-10-11', foreman_worker_id: 'f1', start_time, end_time: '16:30' }
+      expect(weeklyForemanReport([movement], 'worker:f1', weekDays(movement.work_date)).totalOvertimeMinutes).toBe(150)
+      expect(formatDuration(150)).toBe('2.5 h')
+    }
+  })
   const rows = [
     { id: 'one', work_date: '2026-10-12', foreman_worker_id: 'f1', foreman_name: 'FOREMAN', start_time: '08:00', end_time: '20:00' },
     { id: 'two', work_date: '2026-10-13', foreman_worker_id: 'f1', foreman_name: 'FOREMAN', start_time: '07:45', end_time: '18:30' },
@@ -77,12 +90,18 @@ describe('separate foreman and shared worker time ranges', () => {
       expect([form.start_time, form.end_time, form.common_worker_start, form.common_worker_end]).toEqual(['08:00', '17:00', '08:00', '17:00'])
     }
   })
-  it('defaults both Saturday ranges to 08:00–14:00 and Sunday to blank', () => {
+  it('preserves Saturday defaults and gives only Sunday foremen 09:00–14:00', () => {
     expect(outsideWorkDefaultTimes('2026-10-17')).toEqual({ start: '08:00', end: '14:00' })
     const saturday = newOutsideWorkForm('2026-10-17')
     expect([saturday.start_time, saturday.end_time, saturday.common_worker_start, saturday.common_worker_end]).toEqual(['08:00', '14:00', '08:00', '14:00'])
     const sunday = newOutsideWorkForm('2026-10-18')
-    expect([sunday.start_time, sunday.end_time, sunday.common_worker_start, sunday.common_worker_end]).toEqual(['', '', '', ''])
+    expect([sunday.start_time, sunday.end_time, sunday.common_worker_start, sunday.common_worker_end]).toEqual(['09:00', '14:00', '', ''])
+    expect(outsideWorkDefaultTimes('2026-10-18')).toEqual({ start: '', end: '' })
+    const edited = editOutsideWorkTime(newOutsideWorkForm('2026-10-14'), 'end_time', '18:30')
+    const changed = changeOutsideWorkDate(edited, '2026-10-18')
+    expect([changed.start_time, changed.end_time]).toEqual(['09:00', '18:30'])
+    const historical = outsideWorkForm({ id: 'saved', work_date: '2026-10-11', start_time: '10:00', end_time: '18:00', workers: [] })
+    expect(changeOutsideWorkDate(historical, '2026-10-18').start_time).toBe('10:00')
   })
   it('editing either range leaves the other independent', () => {
     let form = addOutsideWorkWorkers(newOutsideWorkForm('2026-10-14'), people)

@@ -35,6 +35,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('custom outside-work report center', () => {
+  it.each(['comprehensive', 'foreman', 'team'])('uses Sunday overtime in %s report details, summary and print', async type => {
+    const sunday = movement('sunday', '2026-10-11', { start_time: '09:00:00', end_time: '16:30:00' })
+    const before = structuredClone(sunday)
+    api.list.mockResolvedValueOnce([sunday])
+    const { container } = open(); await loaded()
+    change('Report type', type)
+    if (type === 'foreman') change('Select a foreman', 'worker:f1')
+    if (type === 'team') change('Select team', 'A')
+    const screenSummary = container.querySelector('.foreman-report-summary')
+    const print = container.querySelector('.outside-work-print')
+    expect(screenSummary.textContent).toContain('2.5 h')
+    expect(print.querySelector('.foreman-report-summary').textContent).toContain('2.5 h')
+    expect(print.querySelector('.outside-report-facts').textContent).toContain('2.5 h')
+    expect(print.textContent).toContain('ALPHA')
+    expect(sunday).toEqual(before)
+    fireEvent.click(screen.getByRole('button', { name: 'Print Report' }))
+    expect(window.print).toHaveBeenCalledOnce()
+  })
   it('defaults to comprehensive final-only and includes no-team and cross-team workers in print', async () => {
     const { container } = open(); await loaded()
     expect(screen.getByLabelText('Report type').value).toBe('comprehensive')

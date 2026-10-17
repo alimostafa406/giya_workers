@@ -78,6 +78,18 @@ const chooseForeman = (form) => {
 }
 
 describe('outside-work separate movement ranges', () => {
+  it('shows saved Sunday foreman overtime in the movement card without changing actual or worker times', async () => {
+    Object.assign(persisted[0], { work_date: '2026-10-11', start_time: '09:00:00', end_time: '18:00:00' })
+    const before = structuredClone(persisted)
+    open(); await showDay('2026-10-11')
+    const card = (await screen.findByRole('button', { name: 'Show workers (1)' })).closest('article')
+    expect(within(card).getByText('4 h')).toBeTruthy()
+    expect(within(card).getByText('9 h')).toBeTruthy()
+    expect(within(card).getByText('09:00 → 18:00')).toBeTruthy()
+    expect(within(card).getByText('09:00 → 17:00')).toBeTruthy()
+    expect(persisted).toEqual(before)
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it('titles an independent foreman card once and formats only its real times in 24-hour display', async () => {
     localStorage.setItem('workers_app_language', 'ar')
     Object.assign(persisted[0], { team_id: null, team: null, foreman_name: 'Ahmad abo hussien', end_time: '18:00:00', common_worker_start: '08:00' })
@@ -395,7 +407,7 @@ describe('outside-work separate movement ranges', () => {
     showSelected(form)
     expect(within(form).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Workers', 'Team', 'Remove worker'])
   })
-  it('defaults both ranges on weekdays and Saturday, and leaves Sunday blank', async () => {
+  it('preserves weekday/Saturday defaults and defaults only Sunday foreman times', async () => {
     open()
     const form = await start()
     expect(within(form).getByLabelText('Foreman Start').value).toBe('08:00')
@@ -406,7 +418,9 @@ describe('outside-work separate movement ranges', () => {
     expect(within(form).getByLabelText('Foreman End').value).toBe('14:00')
     expect(within(form).getByLabelText('Workers End').value).toBe('14:00')
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-18' } })
-    for (const label of ['Foreman Start', 'Foreman End', 'Workers Start', 'Workers End']) {
+    expect(within(form).getByLabelText('Foreman Start').value).toBe('09:00')
+    expect(within(form).getByLabelText('Foreman End').value).toBe('14:00')
+    for (const label of ['Workers Start', 'Workers End']) {
       expect(within(form).getByLabelText(label).value).toBe('')
     }
   })
