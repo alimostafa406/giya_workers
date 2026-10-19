@@ -5,7 +5,7 @@ import { getErrorMessage } from '../api/axios'
 import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
-import { finalizeSupervisorReviewRequest, getHistoricalSupervisorReviewRequest, saveSupervisorMorningReviewRequest } from '../api/supervisorMorningReviewApi'
+import { finalizeSupervisorReviewRequest, getHistoricalSupervisorReviewRequest, saveSupervisorMorningReviewRequest, getMorningReportStatusRequest } from '../api/supervisorMorningReviewApi'
 import { useTranslation } from '../i18n/LanguageContext'
 import { useAuthStore } from '../store/authStore'
 import { ATTENDANCE_REFRESH_INTERVAL_MS, isAttendancePageLocked, kinshasaClock, prepareAttendanceOutput } from '../utils/attendanceOperationalGate'
@@ -56,6 +56,7 @@ export default function SupervisorSheet() {
     try {
       return await refreshCoordinatorRef.current(`${date}:${final ? 'final' : 'live'}`, async () => {
         const history = historical ? await getHistoricalSupervisorReviewRequest(date) : final ? await finalizeSupervisorReviewRequest(date) : null
+        if (history?.state === 'PROCESSING_AFTER_CUTOFF') return
         const [workersResult, teamsResult, attendanceResult, mappingsResult] = await Promise.all([
           history ? { data: history.workers } : getWorkersRequest(), history ? { data: history.teams } : getTeamsRequest(),
           history ? { data: history.attendance } : getAttendanceRequest({ date, staff_classification: 'normal' }),
@@ -109,6 +110,21 @@ export default function SupervisorSheet() {
       window.removeEventListener('focus', refreshAfterFocus)
       document.removeEventListener('visibilitychange', refreshAfterFocus)
     }
+  }, [date, historical, locked, finalWindow, frozen, refreshSnapshot])
+
+  useEffect(() => {
+    if (historical || locked || !finalWindow || frozen) return undefined
+    let disposed = false, busy = false
+    const timer = window.setInterval(async () => {
+      if (busy) return
+      busy = true
+      try {
+        const status = await getMorningReportStatusRequest(date)
+        if (!disposed && status?.state === 'FINAL') await refreshSnapshot({ final: true })
+      } catch { /* Fail closed; no worker-data polling. */ }
+      finally { busy = false }
+    }, 15_000)
+    return () => { disposed = true; window.clearInterval(timer) }
   }, [date, historical, locked, finalWindow, frozen, refreshSnapshot])
 
   const availableTeams = useMemo(() => supervisorSheetTeams(teams), [teams])
@@ -199,7 +215,7 @@ export default function SupervisorSheet() {
     {locked ? <div className="surface-card border border-amber-200 bg-amber-50 px-6 py-10 text-center" role="status">
       <h3 className="text-xl font-extrabold text-amber-900">{t('attendance.operationalLockTitle')}</h3>
       <p className="mt-2 text-sm font-semibold text-amber-800">{t('attendance.operationalLockDescription')}</p>
-    </div> : <article className="absence-report-print-root" dir={language === 'ar' ? 'rtl' : 'ltr'} data-print-mode={printMode}>
+    </div> : finalWindow && !frozen ? <p role="status" className="surface-card p-6 text-center">جاري إكمال التحقق من البصمات...</p> : <article className="absence-report-print-root" dir={language === 'ar' ? 'rtl' : 'ltr'} data-print-mode={printMode}>
       <header className="absence-report-header">
         <p className="absence-report-company">{t('absenceReport.companyTitle')}</p>
         <h1>{t('supervisorSheet.title')}</h1>

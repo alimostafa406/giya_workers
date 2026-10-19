@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from threading import Lock
 
 import requests
+from morning_report_completion import tracked
 
 from attendance_business_rules import workday_schedule
 from hikvision_attendance_sync import (
@@ -101,6 +102,7 @@ def _stored_status_counts(resolution: dict, worker_ids: set[str]) -> dict:
     return {key: counts.get(key, 0) for key in ('present', 'half_day', 'absent')}
 
 
+@tracked('weekly_reconciliation', lambda start_date, end_date: (start_date, end_date, False))
 def review_week_attendance(start_date: str, end_date: str) -> dict:
     review_dates = monday_saturday_dates(start_date, end_date)
     load_local_hikvision_config()

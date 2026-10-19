@@ -361,7 +361,9 @@ class FinalMorningVerificationTests(unittest.TestCase):
         compatibility.return_value = {'compatible': True, 'post_verification_worker_ids': []}
         reconcile.return_value = {'safe': True, 'upserted': 1}
 
-        result = agent.run_final_morning_verification()
+        # Before cutoff the existing positive/negative verification fast path
+        # remains useful; it is not a certificate for the final morning report.
+        result = agent.run_final_morning_verification(target_date=DAY)
 
         self.assertEqual(result, (True, None))
         reconcile.assert_called_once_with(agent.client, self.completed_run(), load.return_value)

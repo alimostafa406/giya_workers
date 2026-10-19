@@ -5,7 +5,7 @@ import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
-import { finalizeSupervisorReviewRequest, getHistoricalSupervisorReviewRequest } from '../api/supervisorMorningReviewApi'
+import { finalizeSupervisorReviewRequest, getHistoricalSupervisorReviewRequest, getMorningReportStatusRequest } from '../api/supervisorMorningReviewApi'
 import { buildSupervisorSheet } from '../utils/supervisorSheet'
 import { reportWorkerMatchesSearch } from '../utils/reportWorkerSearch'
 import ReportWorkerSearch from '../components/Reports/ReportWorkerSearch'
@@ -75,6 +75,7 @@ export default function AbsenceReport() {
           : requested.mode === 'today' && requested.selectedDate < currentBusinessDate()
             ? await getHistoricalSupervisorReviewRequest(requested.selectedDate) : null
         const finalReview = review?.exact_population ? review : null
+        if (final && review?.state === 'PROCESSING_AFTER_CUTOFF') return null
         if (final && (!finalReview?.available || !finalReview.exact_population)) throw new Error('Final morning snapshot unavailable')
         const [workersResult, teamsResult, attendanceResult, mappingsResult] = await Promise.all([
           finalReview ? { data: finalReview.workers } : getWorkersRequest(),
@@ -91,6 +92,8 @@ export default function AbsenceReport() {
           fetchedAt: new Date(),
           exactPopulation: finalReview?.exact_population === true,
         }
+        if (!final && requested.mode === 'today' && requested.selectedDate === currentBusinessDate()
+          && isSupervisorFinalWindow(requested.selectedDate, new Date())) return null
         if (mountedRef.current && requestKeyFor(requestRef.current) === key) {
           latestSnapshotRef.current = nextSnapshot
           setSnapshot(nextSnapshot)
@@ -129,6 +132,21 @@ export default function AbsenceReport() {
     }
     refreshSnapshot(requestRef.current, { final: finalWindow }).catch(() => {})
   }, [locked, mode, refreshSnapshot, selectedDate, finalWindow, frozen])
+
+  useEffect(() => {
+    if (!finalWindow || frozen || locked) return undefined
+    let disposed = false, busy = false
+    const timer = window.setInterval(async () => {
+      if (busy) return
+      busy = true
+      try {
+        const status = await getMorningReportStatusRequest(selectedDate)
+        if (!disposed && status?.state === 'FINAL') await refreshSnapshot({ mode: 'today', selectedDate }, { final: true })
+      } catch { /* Fail closed; keep waiting and retry status only. */ }
+      finally { busy = false }
+    }, 15_000)
+    return () => { disposed = true; window.clearInterval(timer) }
+  }, [finalWindow, frozen, locked, selectedDate, refreshSnapshot])
 
   const report = useMemo(() => {
     if (snapshot.key === requestKey && snapshot.exactPopulation) {
@@ -183,21 +201,21 @@ export default function AbsenceReport() {
       <label className="min-w-44 text-sm font-bold">{t('attendance.date')}<input className="input-base mt-1" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value || currentBusinessDate())} /></label>
       <label className="min-w-52 text-sm font-bold">{t('attendance.team')}<select className="input-base mt-1" value={teamId} onChange={(event) => setTeamId(event.target.value)}><option value="">{t('absenceReport.allTeams')}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
       <ReportWorkerSearch value={search} onChange={setSearch} label={t('reports.workerSearchLabel')} placeholder={t('reports.workerSearchPlaceholder')} />
-      <button type="button" className="btn-primary" disabled={locked || reportLoading} onClick={printReport}>{t('absenceReport.print')}</button>
+      <button type="button" className="btn-primary" disabled={locked || reportLoading || (finalWindow && !frozen)} onClick={printReport}>{t('absenceReport.print')}</button>
     </div>
     {error ? <p className="absence-report-screen-only alert alert--error mb-4">{error}</p> : null}
 
     {locked ? <div className="surface-card border border-amber-200 bg-amber-50 px-6 py-10 text-center" role="status">
       <h3 className="text-xl font-extrabold text-amber-900">{t('attendance.operationalLockTitle')}</h3>
       <p className="mt-2 text-sm font-semibold text-amber-800">{t('attendance.operationalLockDescription')}</p>
-    </div> : <article className={`absence-report-print-root absence-report--${mode}`} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+    </div> : finalWindow && !frozen ? <p role="status" className="surface-card p-6 text-center">جاري إكمال التحقق من البصمات...</p> : <article className={`absence-report-print-root absence-report--${mode}`} dir={language === 'ar' ? 'rtl' : 'ltr'}>
       <header className="absence-report-header">
         <p className="absence-report-company">{t('absenceReport.companyTitle')}</p>
         <h1>{title}</h1>
         <p>{range}</p>
         {isTodayView && <p className="text-sm text-(--muted)" role="status">{language === 'ar'
-          ? frozen ? 'القائمة النهائية — تم اعتمادها الساعة 11:00' : 'تقرير مؤقت — سيتم اعتماد القائمة النهائية الساعة 11:00'
-          : frozen ? 'Final list — cutoff 11:00' : 'Provisional report — final list at 11:00'}</p>}
+          ? frozen ? 'القائمة النهائية — اكتمل التحقق من البصمات' : 'تقرير مؤقت — بانتظار اكتمال التحقق بعد 11:00'
+          : frozen ? 'Final list — biometric verification complete' : 'Provisional report — verification completes after cutoff 11:00'}</p>}
         <p className="absence-report-generated">{t('absenceReport.generatedAt')}: {snapshot.fetchedAt?.toLocaleString(locale) || '—'}</p>
         {snapshot.fetchedAt ? <p className="absence-report-screen-only text-sm font-semibold text-(--muted)">{t('attendance.lastUpdated')}: <span dir="ltr">{kinshasaClock(snapshot.fetchedAt).time}</span></p> : null}
       </header>

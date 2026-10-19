@@ -19,6 +19,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import requests
+from morning_report_completion import cutoff_pass, complete_cutoff_run, tracked, versions
 
 from hikvision_attendance_sync import (
     RequestDiagnostics,
@@ -352,6 +353,7 @@ class AttendanceAgent:
             )
         return dict(totals)
 
+    @tracked('current_attendance', lambda self: (local_now().date(), local_now().date(), False), enabled=lambda self: not self.dry_run)
     def process_today_attendance(self) -> tuple[bool, str | None]:
         target_date = local_now().date()
         if target_date == TEST_ONLY_DATE:
@@ -462,7 +464,9 @@ class AttendanceAgent:
         try:
             self.client = self.client or SupabaseReadClient(diagnostics)
             current = self.client.morning_verification_for_date(target_date)
-            if current.get('status') == 'complete':
+            cutoff_current = not cutoff_pass(target_date, local_now()) or (
+                complete_cutoff_run(current) and current['device_failure_summary']['cutoff_verification'].get('versions') == versions(self.client, target_date))
+            if current.get('status') == 'complete' and cutoff_current:
                 current_resolution = load_resolution_data(self.client, target_date, for_apply=True)
                 compatibility = completed_morning_snapshot_compatibility(
                     current, current_resolution, configured_devices(),

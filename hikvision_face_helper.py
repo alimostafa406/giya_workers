@@ -14,6 +14,7 @@ from urllib.parse import quote, unquote
 from datetime import date as date_type, datetime
 
 import requests
+from morning_report_completion import tracked
 from requests.auth import HTTPDigestAuth
 from hikvision_attendance_sync import (
     RequestDiagnostics,
@@ -225,6 +226,7 @@ def require_active_admin(handler):
     return user_id
 
 
+@tracked('helper_attendance', lambda payload, apply=False: (payload.get('date'), payload.get('date'), False), enabled=lambda payload, apply=False: apply)
 def run_attendance_operation(payload, apply=False):
     requested_date = str(payload.get("date") or "").strip()
     target_date = date_type.fromisoformat(requested_date)

@@ -9,16 +9,17 @@ import { LanguageProvider } from '../i18n/LanguageContext.jsx'
 import { buildSupervisorSheet } from '../utils/supervisorSheet'
 
 globalThis.React = React
-const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), save: vi.fn(), history: vi.fn(), finalize: vi.fn() }))
+const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), save: vi.fn(), history: vi.fn(), finalize: vi.fn(), status: vi.fn() }))
 vi.mock('../api/workersApi', () => ({ getWorkersRequest: mocks.workers }))
 vi.mock('../api/teamsApi', () => ({ getTeamsRequest: mocks.teams }))
 vi.mock('../api/attendanceApi', () => ({ getAttendanceRequest: mocks.attendance }))
 vi.mock('../api/biometricMappingApi', () => ({ getWorkerBiometricSearchIndexRequest: mocks.mappings }))
-vi.mock('../api/supervisorMorningReviewApi', () => ({ saveSupervisorMorningReviewRequest: mocks.save, getHistoricalSupervisorReviewRequest: mocks.history, finalizeSupervisorReviewRequest: mocks.finalize }))
+vi.mock('../api/supervisorMorningReviewApi', () => ({ saveSupervisorMorningReviewRequest: mocks.save, getHistoricalSupervisorReviewRequest: mocks.history, finalizeSupervisorReviewRequest: mocks.finalize, getMorningReportStatusRequest: mocks.status }))
 vi.mock('../store/authStore', () => ({ useAuthStore: (selector) => selector({ admin: { is_active: true } }) }))
 vi.mock('../utils/attendanceOperationalGate', async (importOriginal) => ({ ...await importOriginal(), isAttendancePageLocked: () => false }))
 
 beforeEach(() => {
+  mocks.status.mockResolvedValue({ state: 'PROCESSING_AFTER_CUTOFF' })
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
   localStorage.setItem('workers_app_language', 'en')
@@ -63,6 +64,28 @@ const showPaintTeam = async () => {
 }
 
 describe('supervisor attendance sheet', () => {
+  it('shows no worker list while verification runs and waits for shared backend FINAL', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const finalResponse = mocks.finalize.getMockImplementation()
+    mocks.finalize.mockResolvedValue({ state: 'PROCESSING_AFTER_CUTOFF' })
+    const { container } = render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('جاري إكمال التحقق من البصمات...')
+    expect(container.querySelector('.absence-report-print-root')).toBeNull()
+    expect(screen.queryByText('ROBERT')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Print Results' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Save Attendance Results' }).disabled).toBe(true)
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(mocks.workers).not.toHaveBeenCalled()
+    expect(mocks.attendance).not.toHaveBeenCalled()
+    expect(mocks.finalize).toHaveBeenCalledTimes(1)
+    mocks.finalize.mockImplementation(finalResponse)
+    mocks.status.mockResolvedValue({ state: 'FINAL' })
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    expect(screen.getByText('ROBERT')).toBeTruthy()
+    const count = mocks.status.mock.calls.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(mocks.status).toHaveBeenCalledTimes(count)
+  })
   it('uses the persisted historical IDs even when a worker is now inactive or has a check-in', async () => {
     vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-14T10:30:00Z'))
     mocks.history.mockResolvedValue({ available: true, exact_population: true, read_only: false, teams: [{ id: 'paint', name: 'Paint' }],

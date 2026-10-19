@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 
 from attendance_business_rules import END_OF_DAY, workday_schedule
+from morning_report_completion import CUTOFF, cutoff_pass, versions, processing
 from hikvision_attendance_sync import (
     MONITORING_TIME_ZONE,
     apply_biometric_attendance,
@@ -381,7 +382,7 @@ def absence_plans_with_verification(plans: list[dict], verification: dict | None
     ]
 
 
-def _query_targets(targets, resolution, devices, target_date, diagnostics, start_time, max_workers):
+def _query_targets(targets, resolution, devices, target_date, diagnostics, start_time, max_workers, *, cutoff=False):
     worker_query_keys = defaultdict(set)
     device_targets = {}
     for worker_id in targets:
@@ -396,6 +397,12 @@ def _query_targets(targets, resolution, devices, target_date, diagnostics, start
         snapshot_end = snapshot_now.time().replace(tzinfo=None, microsecond=0)
     else:
         snapshot_end = END_OF_DAY
+    if cutoff:
+        snapshot_end = CUTOFF
+        # Final verification covers EVERY configured source, including devices
+        # whose workers already have a check-in or have no negative targets.
+        for device in devices:
+            device_targets.setdefault(device.device_id, {'device': device, 'identities': set()})
 
     def query_device(target):
         device = target['device']
@@ -438,6 +445,8 @@ def run_targeted_verification(
     schedule = workday_schedule(target_date)
     if schedule is None:
         return {'status': 'complete', 'target_workers': 0, 'reason': 'non_working_day'}
+    cutoff = mode == MORNING_VERIFICATION_TYPE and cutoff_pass(target_date, datetime.now(MONITORING_TIME_ZONE))
+    before_versions = versions(client, target_date) if cutoff and not dry_run else None
     resolution = load_resolution_data(client, target_date, for_apply=True)
     started_monotonic = time_module.monotonic()
     normal_workers = active_normal_workers(resolution)
@@ -446,7 +455,7 @@ def run_targeted_verification(
         biometric_in_scope = scope['enrolled']
         non_biometric_excluded = scope['not_enrolled']
         unknown_biometric_status = scope['unknown']
-        targets = morning_verification_targets(resolution)
+        targets = biometric_in_scope if cutoff else morning_verification_targets(resolution)
     else:
         # Checkout verification does not define morning-report authority.
         biometric_in_scope = normal_workers
@@ -488,6 +497,15 @@ def run_targeted_verification(
         })
 
     persisted, _ = persisted_biometric_events(client, target_date)
+    def within_cutoff(event):
+        try:
+            stamp = datetime.fromisoformat(str(event.get('time') or '').replace('Z', '+00:00'))
+            stamp = stamp.astimezone(MONITORING_TIME_ZONE) if stamp.tzinfo else stamp
+            return stamp.date() == target_date and schedule['workday_boundary'] <= stamp.time().replace(tzinfo=None) <= CUTOFF
+        except ValueError:
+            return False
+    if cutoff:
+        persisted = [event for event in persisted if within_cutoff(event)]
     persisted_by_worker = {
         worker_id: filter_worker_events(persisted, worker_id, resolution, start_time=schedule['workday_boundary'])
         for worker_id in targets
@@ -495,13 +513,13 @@ def run_targeted_verification(
     satisfied = {worker_id for worker_id, events in persisted_by_worker.items() if events}
     counters['workers_found_in_persisted_events'] = len(satisfied)
 
-    query_targets = {worker_id: worker for worker_id, worker in targets.items() if worker_id not in satisfied}
+    query_targets = targets if cutoff else {worker_id: worker for worker_id, worker in targets.items() if worker_id not in satisfied}
     counters['workers_requiring_direct_verification'] = len(query_targets)
     counters['workers_requiring_identity_fallback'] = len(query_targets)
     start_time = schedule['workday_boundary'] if mode == MORNING_VERIFICATION_TYPE else schedule['checkout_start']
     query_results, worker_query_keys = _query_targets(
         query_targets, resolution, devices, target_date, diagnostics, start_time,
-        int(os.environ.get('HIKVISION_VERIFICATION_MAX_DEVICE_CONCURRENCY', '2')),
+        int(os.environ.get('HIKVISION_VERIFICATION_MAX_DEVICE_CONCURRENCY', '2')), cutoff=cutoff,
     )
     query_statuses = [status for _, status in query_results.values()]
     counters['device_queries_attempted'] = sum(status.get('attempted', True) for status in query_statuses)
@@ -530,6 +548,8 @@ def run_targeted_verification(
         if device_status.get('state') != 'complete':
             continue
         for event in device_events:
+            if cutoff and not within_cutoff(event):
+                continue
             mapping = biometric_mapping_for_event(resolution, event)
             worker_id = str(mapping.get('worker_id') or '') if mapping else ''
             event_key = (str(event.get('_device_id') or ''), str(event.get('employeeNoString') or ''))
@@ -698,6 +718,22 @@ def run_targeted_verification(
                 'verified_at': datetime.now().astimezone().isoformat(),
             })
 
+    proof = None
+    if cutoff:
+        after_versions = versions(client, target_date) if not dry_run else None
+        if counters['device_queries_failed'] or len(query_results) != len(devices):
+            failures.append({'reason': 'cutoff_device_coverage_incomplete'})
+        if any(not status.get('segments') or any(segment.get('state') != 'complete'
+            or segment.get('pagination_complete') is not True for segment in status.get('segments', []))
+            for status in query_statuses):
+            failures.append({'reason': 'cutoff_pagination_incomplete'})
+        if any(apply_results.get(key, 0) for key in ('errors', 'aborted_structural_error', 'structural_supabase_error', 'skipped_concurrent_change')):
+            failures.append({'reason': 'cutoff_reconciliation_failed'})
+        if before_versions and after_versions and any(before_versions.get(key) != after_versions.get(key) for key in ('mapping', 'roster')):
+            failures.append({'reason': 'cutoff_inputs_changed'})
+        proof = {'coverage': query_statuses, 'cutoff': '11:00:00',
+                 'persistence_complete': True, 'reconciliation_complete': not failures,
+                 'versions': after_versions}
     status = 'complete' if not failures else 'incomplete'
     counters['verified_worker_count'] = len(targets) - unresolved_in_scope_count
     counters['workers_verified_no_event'] = counters['verified_no_event']
@@ -730,8 +766,14 @@ def run_targeted_verification(
             'biometric_in_scope_worker_ids': sorted(biometric_in_scope),
             'non_biometric_excluded_worker_ids': sorted(non_biometric_excluded),
             'unknown_biometric_status_worker_ids': sorted(unknown_biometric_status),
-            'device_failure_summary': {'failures': failures},
+            'device_failure_summary': {'failures': failures, 'cutoff_verification': proof},
         })
+        if cutoff and status == 'complete':
+            # A successful full-source cutoff replay is also the successful
+            # retry of a failed broad current-day collection. Retain its audit
+            # row, but resolve that failure; never clear identity/helper jobs.
+            with processing('current_attendance', target_date, target_date, client=client):
+                pass
     if logger:
         logger.info('Targeted %s verification: status=%s counters=%s', mode, status, dict(counters))
     return {'status': status, **dict(counters), 'worker_results': worker_results, 'failures': failures}

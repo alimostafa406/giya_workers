@@ -13,6 +13,7 @@ import requests
 from hikvision_http import HIKVISION_PROBE_TIMEOUT, HIKVISION_REQUEST_TIMEOUT, HikvisionReadClient
 from hikvision_device_lock import HikvisionDeviceOperationLock
 from hikvision_devices import configured_devices
+from morning_report_completion import tracked
 
 
 def _users_file() -> Path:
@@ -238,6 +239,7 @@ def _merge_single_device_inventory(cached_users: list[dict], device_users: list[
     return merged, current_by_no, discovered
 
 
+@tracked('identity_inventory', lambda *args, **kwargs: (None, None, True))
 def sync_users_dataset(target_device_id: str | None = 'all') -> dict:
     """Keep current device presence separate from retained local audit history."""
     users_file = _users_file()

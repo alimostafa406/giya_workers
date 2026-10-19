@@ -13,6 +13,7 @@ from threading import Lock
 from uuid import UUID
 
 import requests
+from morning_report_completion import tracked
 
 from hikvision_attendance_sync import (
     RequestDiagnostics,
@@ -85,6 +86,7 @@ def _worker_events(events: list[dict], resolution: dict, worker_id: str) -> tupl
     return safe, skipped
 
 
+@tracked('worker_recovery', lambda worker_id, week_start_date, **kwargs: (week_start_date, monday_saturday_dates(week_start_date)[-1], False), enabled=lambda *args, apply=True, **kwargs: apply)
 def recover_worker_week(worker_id: str, week_start_date: str, *, apply: bool = True) -> dict:
     try:
         worker_id = str(UUID(str(worker_id)))

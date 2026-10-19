@@ -7,14 +7,15 @@ import AbsenceReport from './AbsenceReport.jsx'
 import { LanguageProvider } from '../i18n/LanguageContext.jsx'
 
 globalThis.React = React
-const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), finalize: vi.fn(), history: vi.fn() }))
-vi.mock('../api/supervisorMorningReviewApi', () => ({ finalizeSupervisorReviewRequest: mocks.finalize, getHistoricalSupervisorReviewRequest: mocks.history }))
+const mocks = vi.hoisted(() => ({ workers: vi.fn(), teams: vi.fn(), attendance: vi.fn(), mappings: vi.fn(), finalize: vi.fn(), history: vi.fn(), status: vi.fn() }))
+vi.mock('../api/supervisorMorningReviewApi', () => ({ finalizeSupervisorReviewRequest: mocks.finalize, getHistoricalSupervisorReviewRequest: mocks.history, getMorningReportStatusRequest: mocks.status }))
 vi.mock('../api/workersApi', () => ({ getWorkersRequest: mocks.workers }))
 vi.mock('../api/teamsApi', () => ({ getTeamsRequest: mocks.teams }))
 vi.mock('../api/attendanceApi', () => ({ getAttendanceRequest: mocks.attendance }))
 vi.mock('../api/biometricMappingApi', () => ({ getWorkerBiometricSearchIndexRequest: mocks.mappings }))
 
 beforeEach(() => {
+  mocks.status.mockResolvedValue({ state: 'PROCESSING_AFTER_CUTOFF' })
   mocks.history.mockResolvedValue({ exact_population: false })
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-19T09:30:00Z'))
@@ -35,6 +36,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks() })
 
 describe('absence-report 11:00 Kinshasa freeze', () => {
+  it('hides provisional workers while processing; polls only status until backend FINAL', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-10-19T09:59:50Z'))
+    const finalResponse = mocks.finalize.getMockImplementation()
+    mocks.finalize.mockResolvedValue({ state: 'PROCESSING_AFTER_CUTOFF' })
+    const { container } = render(<MemoryRouter><LanguageProvider><AbsenceReport /></LanguageProvider></MemoryRouter>)
+    await screen.findByText('NIVA')
+    vi.setSystemTime(new Date('2026-10-19T10:00:00Z'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(screen.getByText('جاري إكمال التحقق من البصمات...')).toBeTruthy()
+    expect(container.querySelector('.absence-report-print-root')).toBeNull()
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(mocks.attendance).toHaveBeenCalledTimes(1)
+    expect(mocks.finalize).toHaveBeenCalledTimes(1)
+    expect(mocks.status).toHaveBeenCalled()
+    mocks.finalize.mockImplementation(finalResponse)
+    mocks.status.mockResolvedValue({ state: 'FINAL' })
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    expect(screen.getByText('NIVA')).toBeTruthy()
+    const calls = mocks.status.mock.calls.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(mocks.status).toHaveBeenCalledTimes(calls)
+  })
   it('uses persisted historical IDs even when a later punch exists', async () => {
     mocks.history.mockResolvedValue({ available: true, exact_population: true,
       workers: [{ id: 'late', full_name: 'HISTORICAL LATE PUNCH', employee_code: 'late', team_id: 'team', team_name: 'Cleaner', biometric_id: '045' }],
