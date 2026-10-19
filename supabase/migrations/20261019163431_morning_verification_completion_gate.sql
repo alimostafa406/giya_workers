@@ -1,3 +1,4 @@
+-- Applied production version: 20261019163431 (Supabase MCP migration history).
 -- Extend existing verification, keep snapshots immutable, expose one completion gate.
 create table private.morning_processing_operation (
   id uuid primary key default gen_random_uuid(), operation text not null,
