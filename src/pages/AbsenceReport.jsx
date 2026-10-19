@@ -5,10 +5,12 @@ import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi
 import { getErrorMessage } from '../api/axios'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
+import { finalizeSupervisorReviewRequest, getHistoricalSupervisorReviewRequest } from '../api/supervisorMorningReviewApi'
+import { buildSupervisorSheet } from '../utils/supervisorSheet'
+import { reportWorkerMatchesSearch } from '../utils/reportWorkerSearch'
 import ReportWorkerSearch from '../components/Reports/ReportWorkerSearch'
 import { useTranslation } from '../i18n/LanguageContext'
 import {
-  ATTENDANCE_REFRESH_INTERVAL_MS,
   isAttendancePageLocked,
   kinshasaClock,
   prepareAttendanceOutput,
@@ -69,10 +71,15 @@ export default function AbsenceReport() {
     if (mountedRef.current) { setLoading(true); setError('') }
     try {
       return await refreshCoordinatorRef.current(`${key}:${final ? 'final' : 'live'}`, async () => {
+        const review = final ? await finalizeSupervisorReviewRequest(requested.selectedDate)
+          : requested.mode === 'today' && requested.selectedDate < currentBusinessDate()
+            ? await getHistoricalSupervisorReviewRequest(requested.selectedDate) : null
+        const finalReview = review?.exact_population ? review : null
+        if (final && (!finalReview?.available || !finalReview.exact_population)) throw new Error('Final morning snapshot unavailable')
         const [workersResult, teamsResult, attendanceResult, mappingsResult] = await Promise.all([
-          getWorkersRequest(),
-          getTeamsRequest(),
-          getAttendanceRequest(attendanceParams),
+          finalReview ? { data: finalReview.workers } : getWorkersRequest(),
+          finalReview ? { data: finalReview.teams } : getTeamsRequest(),
+          finalReview ? { data: finalReview.attendance } : getAttendanceRequest(attendanceParams),
           getWorkerBiometricSearchIndexRequest(),
         ])
         const nextSnapshot = {
@@ -82,6 +89,7 @@ export default function AbsenceReport() {
           attendance: asArray(attendanceResult.data),
           mappings: asArray(mappingsResult.data),
           fetchedAt: new Date(),
+          exactPopulation: finalReview?.exact_population === true,
         }
         if (mountedRef.current && requestKeyFor(requestRef.current) === key) {
           latestSnapshotRef.current = nextSnapshot
@@ -101,9 +109,17 @@ export default function AbsenceReport() {
   useEffect(() => () => { mountedRef.current = false }, [])
 
   useEffect(() => {
+    if (frozen) return undefined
     const timer = window.setInterval(() => setNow(new Date()), 1_000)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [frozen])
+
+  useEffect(() => {
+    if (!isTodayView || locked || finalWindow || frozen) return undefined
+    const cutoff = new Date(`${selectedDate}T11:00:00+01:00`).getTime()
+    const timer = window.setTimeout(() => setNow(new Date()), Math.max(0, cutoff - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [selectedDate, isTodayView, locked, finalWindow, frozen])
 
   useEffect(() => {
     if (locked) return
@@ -114,51 +130,33 @@ export default function AbsenceReport() {
     refreshSnapshot(requestRef.current, { final: finalWindow }).catch(() => {})
   }, [locked, mode, refreshSnapshot, selectedDate, finalWindow, frozen])
 
-  useEffect(() => {
-    if (!isTodayView || locked || finalWindow || frozen) return undefined
-    const timer = window.setInterval(() => {
-      const requested = requestRef.current
-      if (!isSupervisorFinalWindow(requested.selectedDate, new Date())) refreshSnapshot(requested).catch(() => {})
-    }, ATTENDANCE_REFRESH_INTERVAL_MS)
-    return () => window.clearInterval(timer)
-  }, [isTodayView, locked, finalWindow, frozen, refreshSnapshot])
-
-  useEffect(() => {
-    const refreshAfterFocus = () => {
-      const requested = requestRef.current
-      if (document.visibilityState !== 'hidden'
-        && requested.mode === 'today'
-        && requested.selectedDate === currentBusinessDate()
-        && !isSupervisorFinalWindow(requested.selectedDate, new Date())
-        && !isAttendancePageLocked({ selectedDate: requested.selectedDate, now: new Date() })) {
-        refreshSnapshot(requested).catch(() => {})
-      }
+  const report = useMemo(() => {
+    if (snapshot.key === requestKey && snapshot.exactPopulation) {
+      const sheet = buildSupervisorSheet({ workers: snapshot.workers.filter((worker) => reportWorkerMatchesSearch(worker, search)),
+        date: selectedDate, teamId, exactPopulation: true })
+      return { groups: sheet.groups, missingMorningWorkers: sheet.workerCount }
     }
-    window.addEventListener('focus', refreshAfterFocus)
-    document.addEventListener('visibilitychange', refreshAfterFocus)
-    return () => {
-      window.removeEventListener('focus', refreshAfterFocus)
-      document.removeEventListener('visibilitychange', refreshAfterFocus)
-    }
-  }, [refreshSnapshot])
-
-  const report = useMemo(() => buildAbsenceReport({
-    workers: snapshot.key === requestKey ? snapshot.workers : [],
-    attendance: snapshot.key === requestKey ? snapshot.attendance : [],
-    mappings: snapshot.key === requestKey ? snapshot.mappings : [],
-    mode,
-    selectedDate,
-    businessDate,
-    teamId,
-    search,
-  }), [businessDate, mode, requestKey, search, selectedDate, snapshot, teamId])
+    return buildAbsenceReport({
+      workers: snapshot.key === requestKey ? snapshot.workers : [],
+      attendance: snapshot.key === requestKey ? snapshot.attendance : [],
+      mappings: snapshot.key === requestKey ? snapshot.mappings : [],
+      mode,
+      selectedDate,
+      businessDate,
+      teamId,
+      search,
+    })
+  }, [businessDate, mode, requestKey, search, selectedDate, snapshot, teamId])
 
   const printReport = async () => {
     setError('')
     const requested = { ...requestRef.current }
     const result = await prepareAttendanceOutput({
       locked,
-      refresh: () => refreshSnapshot(requested),
+      refresh: () => requested.mode === 'today' && snapshot.key === requestKeyFor(requested)
+        ? isSupervisorFinalWindow(requested.selectedDate, new Date()) && !frozenSnapshotRef.current
+          ? refreshSnapshot(requested, { final: true }) : Promise.resolve(snapshot)
+        : refreshSnapshot(requested),
       generate: async () => {
         await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)))
         window.print()
@@ -197,6 +195,9 @@ export default function AbsenceReport() {
         <p className="absence-report-company">{t('absenceReport.companyTitle')}</p>
         <h1>{title}</h1>
         <p>{range}</p>
+        {isTodayView && <p className="text-sm text-(--muted)" role="status">{language === 'ar'
+          ? frozen ? 'القائمة النهائية — تم اعتمادها الساعة 11:00' : 'تقرير مؤقت — سيتم اعتماد القائمة النهائية الساعة 11:00'
+          : frozen ? 'Final list — cutoff 11:00' : 'Provisional report — final list at 11:00'}</p>}
         <p className="absence-report-generated">{t('absenceReport.generatedAt')}: {snapshot.fetchedAt?.toLocaleString(locale) || '—'}</p>
         {snapshot.fetchedAt ? <p className="absence-report-screen-only text-sm font-semibold text-(--muted)">{t('attendance.lastUpdated')}: <span dir="ltr">{kinshasaClock(snapshot.fetchedAt).time}</span></p> : null}
       </header>
