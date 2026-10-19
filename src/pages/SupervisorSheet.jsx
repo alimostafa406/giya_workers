@@ -207,7 +207,7 @@ export default function SupervisorSheet() {
     {saveError ? <p role="alert" className="alert alert--error mb-4">{saveError}</p> : null}
     {saveMessage ? <p role="status" className="alert mb-4">{saveMessage}</p> : null}
     {reconstructed && <p role="status" className="mb-4 text-sm font-semibold text-amber-800">{({ ar: 'قائمة تاريخية معاد بناؤها — قد لا تطابق الورقة النهائية الأصلية', en: 'Reconstructed historical list — may not match the original final sheet', fr: 'Liste historique reconstruite — peut différer de la feuille finale originale' })[language]}</p>}
-    {!locked && <p className="absence-report-screen-only mb-4 text-sm font-semibold text-(--muted)" role="status">
+    {!locked && (historical || !finalWindow || frozen) && <p className="absence-report-screen-only mb-4 text-sm font-semibold text-(--muted)" role="status">
       {historical ? ({ ar: 'مراجعة تاريخ سابق', en: 'Historical date review', fr: 'Révision d’une date passée' })[language] : frozen ? t('supervisorSheet.frozen') : finalWindow ? t('supervisorSheet.finalChecking') : t('supervisorSheet.refreshingUntil11')}
       {historical && readOnly ? ({ ar: ' — للقراءة فقط: سجل تاريخي غير متاح أو فترة رواتب معتمدة/مدفوعة', en: ' — Read-only: historical roster unavailable or payroll finalized/paid', fr: ' — Lecture seule : historique indisponible ou paie finalisée/payée' })[language] : ''}
       {frozen && !saved && allSheet.workerCount > 0 ? ` · ${t('supervisorSheet.missingSelections', { count: missingSelections.length })}` : ''}

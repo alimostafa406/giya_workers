@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 
 from attendance_business_rules import END_OF_DAY, workday_schedule
-from morning_report_completion import CUTOFF, cutoff_pass, versions, processing
+from morning_report_completion import CUTOFF, cutoff_pass, versions, processing, rpc
 from hikvision_attendance_sync import (
     MONITORING_TIME_ZONE,
     apply_biometric_attendance,
@@ -746,8 +746,14 @@ def run_targeted_verification(
     counters['morning_verification_status'] = status if mode == MORNING_VERIFICATION_TYPE else None
     counters['morning_verification_duration'] = counters['run_duration_seconds'] if mode == MORNING_VERIFICATION_TYPE else None
     if mode == MORNING_VERIFICATION_TYPE and not dry_run and run:
-        for result in worker_results:
-            client.upsert_attendance_verification_worker({**result, 'run_id': run['id']})
+        rows = [{**result, 'run_id': run['id']} for result in worker_results]
+        if isinstance(getattr(client, 'base_url', None), str) and hasattr(client, 'upsert'):
+            # Same existing unique-key writer, one durable batch. A failed
+            # batch leaves the run incomplete; no final header is published.
+            client.upsert('attendance_verification_worker', rows, 'run_id,worker_id')
+        else:
+            for result in rows:
+                client.upsert_attendance_verification_worker(result)
         client.update_attendance_verification_run(run['id'], {
             'status': status,
             'completed_at': datetime.now().astimezone().isoformat(), 'agent_id': agent_id,
@@ -774,6 +780,8 @@ def run_targeted_verification(
             # row, but resolve that failure; never clear identity/helper jobs.
             with processing('current_attendance', target_date, target_date, client=client):
                 pass
+            if isinstance(getattr(client, 'base_url', None), str):
+                rpc(client, 'agent_finalize_morning_report', {'p_date': target_date.isoformat()})
     if logger:
         logger.info('Targeted %s verification: status=%s counters=%s', mode, status, dict(counters))
     return {'status': status, **dict(counters), 'worker_results': worker_results, 'failures': failures}

@@ -1,7 +1,7 @@
 """Cutoff completion regressions; all device/DB writes are fake."""
 import unittest
 from datetime import date, datetime, time
-from unittest.mock import patch
+from unittest.mock import patch, Mock, MagicMock
 from types import SimpleNamespace
 
 from morning_report_completion import complete_cutoff_run, cutoff_pass, processing
@@ -31,9 +31,12 @@ class CompletionTests(unittest.TestCase):
         proof['coverage'][0]['query_end'] = '11:00:00'
         self.assertTrue(complete_cutoff_run({'status': 'complete', 'device_failure_summary': {'cutoff_verification': proof}}))
 
-    def run_pass(self, *, pagination=True, mapping_changed=False, persist_failure=False):
+    def run_pass(self, *, pagination=True, mapping_changed=False, persist_failure=False, batch=False):
         client = FakeClient()
         client.morning_input_versions = lambda _: V
+        if batch:
+            client.base_url = 'fake'
+            client.upsert = Mock()
         if persist_failure:
             client.insert_biometric_attendance_events = lambda _: (_ for _ in ()).throw(RuntimeError('persistence failed'))
         before = base_resolution()
@@ -47,6 +50,8 @@ class CompletionTests(unittest.TestCase):
              patch('hikvision_attendance_verification.persisted_biometric_events', return_value=([], None)), \
              patch('hikvision_attendance_verification._query_targets', return_value=(statuses, {'w1': {('office-main', '0336699')}})), \
              patch('hikvision_attendance_verification.plan_attendance', return_value=([{'proposed_status': 'present'}], {})), \
+             patch('morning_report_completion.rpc', return_value='job'), \
+             patch('hikvision_attendance_verification.rpc', return_value={'state': 'FINAL'}), \
              patch('hikvision_attendance_verification.apply_biometric_attendance', return_value={'updated': 1}):
             result = run_targeted_verification(client=client, target_date=DAY,
                 devices=[DEVICE_MAIN, DEVICE_SECONDARY], diagnostics=None, agent_id='test')
@@ -90,6 +95,29 @@ class CompletionTests(unittest.TestCase):
                 with processing('identity_sync', identity=True, client=client):
                     raise ValueError('retry')
             self.assertEqual(call.call_args.args[2]['p_status'], 'failed')
+
+    def test_worker_evidence_batch_finishes_before_complete_header(self):
+        result, client = self.run_pass(batch=True)
+        self.assertEqual(result['status'], 'complete')
+        client.upsert.assert_called_once()
+        table, rows, conflict = client.upsert.call_args.args
+        self.assertEqual(table, 'attendance_verification_worker')
+        self.assertEqual(conflict, 'run_id,worker_id')
+        self.assertEqual([row['worker_id'] for row in rows], ['w1'])
+        self.assertEqual(rows[0]['run_id'], client.runs[0]['id'])
+
+    def test_agent_does_not_reuse_certificate_while_shared_gate_still_waits(self):
+        from hikvision_attendance_agent import AttendanceAgent
+        agent = AttendanceAgent.__new__(AttendanceAgent)
+        agent.client = MagicMock(base_url='https://example.invalid')
+        agent.client.morning_verification_for_date.return_value = {'status': 'complete'}
+        agent.logger = MagicMock(); agent.agent_id = 'test'; agent.dry_run = False
+        with patch('hikvision_attendance_agent.local_now', return_value=datetime.fromisoformat('2026-10-19T12:00:00+01:00')), \
+             patch('hikvision_attendance_agent.rpc', return_value={'state': 'PROCESSING_AFTER_CUTOFF'}), \
+             patch('hikvision_attendance_agent.configured_devices', return_value=[]), \
+             patch('hikvision_attendance_agent.run_targeted_verification', return_value={'status': 'complete'}) as verify:
+            self.assertEqual(agent.run_final_morning_verification(), (True, None))
+            verify.assert_called_once()
 
 
 if __name__ == '__main__':
