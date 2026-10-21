@@ -27,3 +27,16 @@ export const saveSupervisorMorningReviewRequest = async ({ date, workerIds, resu
   if (error) throw error
   return data
 }
+
+const supervisorDraftRequest = async (date, action, context = {}, results = null) => {
+  const { data, error } = await getSupabaseClient().rpc('admin_supervisor_review_draft', {
+    p_date: date, p_action: action, p_snapshot_token: context.snapshot_token ?? null,
+    p_revision: context.revision ?? null, p_official_token: context.official_token ?? null,
+    p_results: results,
+  })
+  if (error) throw error
+  return data
+}
+export const getSupervisorDraftRequest = (date) => supervisorDraftRequest(date, 'load')
+export const saveSupervisorDraftRequest = ({ date, context, results }) => supervisorDraftRequest(date, 'save', context, results)
+export const submitSupervisorDraftRequest = ({ date, context }) => supervisorDraftRequest(date, 'submit', context)

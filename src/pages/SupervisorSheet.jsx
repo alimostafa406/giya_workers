@@ -5,13 +5,13 @@ import { getErrorMessage } from '../api/axios'
 import { getWorkerBiometricSearchIndexRequest } from '../api/biometricMappingApi'
 import { getTeamsRequest } from '../api/teamsApi'
 import { getWorkersRequest } from '../api/workersApi'
-import { finalizeSupervisorReviewRequest, getHistoricalSupervisorReviewRequest, saveSupervisorMorningReviewRequest, getMorningReportStatusRequest } from '../api/supervisorMorningReviewApi'
+import { finalizeSupervisorReviewRequest, getHistoricalSupervisorReviewRequest, getMorningReportStatusRequest, getSupervisorDraftRequest, saveSupervisorDraftRequest, submitSupervisorDraftRequest } from '../api/supervisorMorningReviewApi'
 import { useTranslation } from '../i18n/LanguageContext'
 import { useAuthStore } from '../store/authStore'
 import { ATTENDANCE_REFRESH_INTERVAL_MS, isAttendancePageLocked, kinshasaClock, prepareAttendanceOutput } from '../utils/attendanceOperationalGate'
 import { createAbsenceReportRefreshCoordinator } from '../utils/absenceReport'
 import { buildSupervisorSheet, supervisorSheetTeams } from '../utils/supervisorSheet'
-import { isSupervisorFinalWindow, savedSupervisorResults, supervisorChoiceOutcome, supervisorReviewWorkerIds, unselectedSupervisorWorkerIds } from '../utils/supervisorMorningReview'
+import { isSupervisorFinalWindow, initialSupervisorChoices, savedSupervisorResults, supervisorChoiceOutcome, supervisorReviewWorkerIds, unselectedSupervisorWorkerIds } from '../utils/supervisorMorningReview'
 
 const RESULTS = ['A', 'P', 'O', 'M']
 const asArray = (value) => Array.isArray(value) ? value : Array.isArray(value?.data) ? value.data : []
@@ -22,6 +22,7 @@ export default function SupervisorSheet() {
   const [date, setDate] = useState(() => kinshasaClock().date)
   const selectedDateRef = useRef(date)
   const baselineRef = useRef({})
+  const baselineStateRef = useRef('unsaved')
   const [readOnly, setReadOnly] = useState(false)
   const [exactPopulation, setExactPopulation] = useState(false)
   const [reconstructed, setReconstructed] = useState(false)
@@ -38,6 +39,11 @@ export default function SupervisorSheet() {
   const [saveMessage, setSaveMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [draftContext, setDraftContext] = useState(null)
+  const [draftState, setDraftState] = useState('unsaved')
+  const [draftConflict, setDraftConflict] = useState(false)
+  const editingRef = useRef(false)
+  const savingRef = useRef(false)
   const [frozen, setFrozen] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const today = kinshasaClock(now).date
@@ -48,8 +54,8 @@ export default function SupervisorSheet() {
   const locked = isAttendancePageLocked({ selectedDate: date, now })
   const finalWindow = isSupervisorFinalWindow(date, now)
 
-  const refreshSnapshot = useCallback(async ({ final = false } = {}) => {
-    if (frozenRef.current) return
+  const refreshSnapshot = useCallback(async ({ final = false, reload = false } = {}) => {
+    if (frozenRef.current && !reload) return
     if (isSupervisorFinalWindow(date, new Date()) && !final) throw new Error('final_review_pending')
     if (isAttendancePageLocked({ selectedDate: date, now: new Date() })) throw new Error('attendance_locked')
     if (mountedRef.current) { setLoading(true); setError('') }
@@ -57,18 +63,29 @@ export default function SupervisorSheet() {
       return await refreshCoordinatorRef.current(`${date}:${final ? 'final' : 'live'}`, async () => {
         const history = historical ? await getHistoricalSupervisorReviewRequest(date) : final ? await finalizeSupervisorReviewRequest(date) : null
         if (history?.state === 'PROCESSING_AFTER_CUTOFF') return
+        const draft = history?.exact_population === true ? await getSupervisorDraftRequest(date) : null
         const [workersResult, teamsResult, attendanceResult, mappingsResult] = await Promise.all([
           history ? { data: history.workers } : getWorkersRequest(), history ? { data: history.teams } : getTeamsRequest(),
           history ? { data: history.attendance } : getAttendanceRequest({ date, staff_classification: 'normal' }),
           getWorkerBiometricSearchIndexRequest(),
         ])
-        if (!mountedRef.current || frozenRef.current || selectedDateRef.current !== date) return
-        setReadOnly(Boolean(history && (!history.available || history.read_only)))
+        if (!mountedRef.current || (frozenRef.current && !reload) || selectedDateRef.current !== date) return
+        setReadOnly(Boolean(history && (!history.available || history.read_only || !history.exact_population)) || draft?.read_only === true)
         setExactPopulation(history?.exact_population === true)
         setReconstructed(history?.reconstructed === true)
         const restored = savedSupervisorResults(asArray(attendanceResult.data), date)
-        baselineRef.current = restored
-        setResults((current) => ({ ...restored, ...current }))
+        const choices = history?.exact_population ? initialSupervisorChoices(asArray(workersResult.data).map((w) => String(w.id)), restored, draft?.results) : restored
+        baselineRef.current = choices
+        if (!editingRef.current || reload) setResults(choices)
+        editingRef.current = false
+        setDraftContext(draft)
+        const officiallyComplete = choices && Object.keys(choices).length > 0 && Object.keys(choices).every((id) => restored[id])
+        const state = draft?.status === 'finalized' || (draft?.status !== 'draft' && officiallyComplete) ? 'finalized' : draft?.status === 'draft' ? 'saved' : 'unsaved'
+        baselineStateRef.current = state
+        setDraftState(state)
+        setSaved(state === 'finalized')
+        setDraftConflict(false)
+        if (draft?.snapshot_changed) setSaveError(t('supervisorSheet.populationChanged'))
         setWorkers(asArray(workersResult.data))
         setTeams(asArray(teamsResult.data))
         setAttendance(asArray(attendanceResult.data))
@@ -82,7 +99,7 @@ export default function SupervisorSheet() {
     } finally {
       if (mountedRef.current && selectedDateRef.current === date) setLoading(false)
     }
-  }, [date, historical])
+  }, [date, historical, t])
 
   useEffect(() => () => { mountedRef.current = false }, [])
   useEffect(() => {
@@ -152,25 +169,47 @@ export default function SupervisorSheet() {
     if (!result.ok) setError(result.reason === 'locked' ? t('attendance.operationalLockTitle') : t('attendance.outputRefreshFailed'))
   }
 
+  const persistDraft = async () => {
+    const workerIds = supervisorReviewWorkerIds(allSheet.groups)
+    const selectedResults = Object.fromEntries(workerIds.map((id) => [id, results[id]]))
+    const context = await saveSupervisorDraftRequest({ date, context: draftContext, results: selectedResults })
+    setDraftContext(context); setDraftState('saved'); baselineRef.current = selectedResults; baselineStateRef.current = 'saved'
+    return context
+  }
+
+  const saveDraft = async () => {
+    if (savingRef.current || !frozen || readOnly || !draftContext || draftConflict || loading || error) return
+    savingRef.current = true; setSaving(true); setSaveError(''); setSaveMessage('')
+    try { await persistDraft() }
+    catch (requestError) {
+      if (requestError.code === '40001') { setDraftConflict(true); setSaveError(t('supervisorSheet.draftConflict')) }
+      else setSaveError(t('supervisorSheet.draftSaveFailed'))
+    } finally { savingRef.current = false; setSaving(false) }
+  }
+
   const saveResults = async () => {
-    if (!admin?.is_active || !frozen || readOnly || loading || error || saving || !allSheet.workerCount) return
+    if (!admin?.is_active || !frozen || readOnly || loading || error || savingRef.current || !allSheet.workerCount || !draftContext || draftConflict) return
     if (missingSelections.length) {
       setSaveError(t('supervisorSheet.missingSelections', { count: missingSelections.length }))
       return
     }
     if (!window.confirm(t('supervisorSheet.saveConfirm'))) return
-    const workerIds = supervisorReviewWorkerIds(allSheet.groups)
-    const selectedResults = Object.fromEntries(workerIds.map((id) => [id, results[id]]))
-    setSaving(true); setSaveError('')
+    savingRef.current = true; setSaving(true); setSaveError(''); setSaveMessage('')
+    let draftSaved = false
     try {
-      await saveSupervisorMorningReviewRequest({ date, workerIds, results: selectedResults })
-      baselineRef.current = selectedResults
+      // Separate commit: even if the official transaction fails, these choices
+      // remain recoverable after refresh/logout/crash/restart.
+      const context = await persistDraft()
+      draftSaved = true
+      const completed = await submitSupervisorDraftRequest({ date, context })
+      setDraftContext(completed); setDraftState('finalized')
+      baselineStateRef.current = 'finalized'
       setSaved(true)
-      setSaveMessage(t('supervisorSheet.saveSuccess', { count: workerIds.length }))
     } catch (requestError) {
-      setSaveError(getErrorMessage(requestError))
+      if (requestError.code === '40001') { setDraftConflict(true); setSaveError(t('supervisorSheet.draftConflict')) }
+      else setSaveError(t(draftSaved ? 'supervisorSheet.finalFailedDraftSafe' : 'supervisorSheet.draftSaveFailed'))
     } finally {
-      setSaving(false)
+      savingRef.current = false; setSaving(false)
     }
   }
 
@@ -186,6 +225,8 @@ export default function SupervisorSheet() {
           const next = event.target.value
           if (!/^\d{4}-\d{2}-\d{2}$/.test(next) || next > kinshasaClock().date || next === date) return
           selectedDateRef.current = next; frozenRef.current = false; baselineRef.current = {}
+          editingRef.current = false; setDraftContext(null); setDraftState('unsaved'); setDraftConflict(false)
+          baselineStateRef.current = 'unsaved'
           setFrozen(false); setLoading(true); setWorkers([]); setAttendance([]); setResults({}); setSaved(false)
           setExactPopulation(false); setReconstructed(false)
           setError(''); setSaveError(''); setSaveMessage(''); setPrintMode('blank'); setNow(new Date()); setDate(next)
@@ -199,18 +240,28 @@ export default function SupervisorSheet() {
       </label>
       <button type="button" className="btn-secondary" disabled={locked || (finalWindow && !frozen) || loading || Boolean(error) || !sheet.workerCount} onClick={() => printSheet('blank')}>{t('supervisorSheet.printBlank')}</button>
       <button type="button" className="btn-primary" disabled={locked || (finalWindow && !frozen) || loading || Boolean(error) || !sheet.workerCount} onClick={() => printSheet('results')}>{t('supervisorSheet.printResults')}</button>
-      <button type="button" className="btn-secondary" disabled={saving} onClick={() => { setResults({ ...baselineRef.current }); setSaved(false); setPrintMode('blank') }}>{t('supervisorSheet.clearResults')}</button>
-      {admin?.is_active && <button type="button" className="btn-primary" disabled={!frozen || readOnly || loading || Boolean(error) || saving || !allSheet.workerCount} onClick={saveResults}>{t('supervisorSheet.saveResults')}</button>}
+      <button type="button" className="btn-secondary" disabled={saving} onClick={() => { setResults({ ...baselineRef.current }); setSaved(baselineStateRef.current === 'finalized'); setDraftState(baselineStateRef.current); setPrintMode('blank') }}>{t('supervisorSheet.clearResults')}</button>
+      {admin?.is_active && <>
+        <button type="button" className="btn-secondary" disabled={!frozen || readOnly || loading || Boolean(error) || saving || !allSheet.workerCount || !draftContext || draftConflict} onClick={saveDraft}>{t('supervisorSheet.saveDraft')}</button>
+        <button type="button" className="btn-primary" disabled={!frozen || readOnly || loading || Boolean(error) || saving || !allSheet.workerCount || !draftContext || draftConflict} onClick={saveResults}>{t('supervisorSheet.saveResults')}</button>
+      </>}
+      {(draftConflict || (error && frozen)) && <button type="button" className="btn-secondary" disabled={saving} onClick={() => {
+        if (window.confirm(t('supervisorSheet.reloadDraftConfirm'))) { setSaveError(''); refreshSnapshot({ final: true, reload: true }).catch(() => {}) }
+      }}>{t('supervisorSheet.reloadDraft')}</button>}
       {finalWindow && !frozen && !loading && <button type="button" className="btn-secondary" onClick={() => refreshSnapshot({ final: true }).catch(() => {})}>{t('supervisorSheet.retryFinalCheck')}</button>}
     </div>
     {error ? <p role="alert" className="alert alert--error mb-4">{error}</p> : null}
     {saveError ? <p role="alert" className="alert alert--error mb-4">{saveError}</p> : null}
     {saveMessage ? <p role="status" className="alert mb-4">{saveMessage}</p> : null}
+    {frozen && draftContext && <p className="absence-report-screen-only mb-3 text-sm font-semibold" role="status">
+      {t(`supervisorSheet.${draftState === 'finalized' ? 'finalized' : draftState === 'saved' ? 'draftSaved' : 'draftUnsaved'}`)}
+      {draftContext.updated_at && draftState !== 'unsaved' ? <> · {t('supervisorSheet.lastDraftSave')}: <span dir="ltr">{kinshasaClock(new Date(draftContext.updated_at)).time.slice(0, 5)}</span></> : null}
+    </p>}
     {reconstructed && <p role="status" className="mb-4 text-sm font-semibold text-amber-800">{({ ar: 'قائمة تاريخية معاد بناؤها — قد لا تطابق الورقة النهائية الأصلية', en: 'Reconstructed historical list — may not match the original final sheet', fr: 'Liste historique reconstruite — peut différer de la feuille finale originale' })[language]}</p>}
     {!locked && (historical || !finalWindow || frozen) && <p className="absence-report-screen-only mb-4 text-sm font-semibold text-(--muted)" role="status">
       {historical ? ({ ar: 'مراجعة تاريخ سابق', en: 'Historical date review', fr: 'Révision d’une date passée' })[language] : frozen ? t('supervisorSheet.frozen') : finalWindow ? t('supervisorSheet.finalChecking') : t('supervisorSheet.refreshingUntil11')}
       {historical && readOnly ? ({ ar: ' — للقراءة فقط: سجل تاريخي غير متاح أو فترة رواتب معتمدة/مدفوعة', en: ' — Read-only: historical roster unavailable or payroll finalized/paid', fr: ' — Lecture seule : historique indisponible ou paie finalisée/payée' })[language] : ''}
-      {frozen && !saved && allSheet.workerCount > 0 ? ` · ${t('supervisorSheet.missingSelections', { count: missingSelections.length })}` : ''}
+      {frozen && !saved && missingSelections.length > 0 ? ` · ${t('supervisorSheet.missingSelections', { count: missingSelections.length })}` : ''}
     </p>}
     {locked ? <div className="surface-card border border-amber-200 bg-amber-50 px-6 py-10 text-center" role="status">
       <h3 className="text-xl font-extrabold text-amber-900">{t('attendance.operationalLockTitle')}</h3>
@@ -231,7 +282,7 @@ export default function SupervisorSheet() {
           <tbody>{group.workers.map((worker) => <tr key={worker.id}>
             <td>{worker.name}</td><td dir="ltr">{worker.employeeCode || '—'}</td><td dir="ltr">{worker.biometricId}</td>
             <td><div className="supervisor-sheet-screen-only supervisor-sheet-choices" role="group" aria-label={`${worker.name} ${t('supervisorSheet.result')}`}>
-              {RESULTS.map((value) => <button key={value} type="button" className="supervisor-sheet-choice" disabled={!frozen || readOnly || saving} aria-pressed={results[worker.id] === value} title={t(`supervisorSheet.${value}`)} onClick={() => { setSaved(false); setResults((current) => ({ ...current, [worker.id]: value })) }}>{value}</button>)}
+              {RESULTS.map((value) => <button key={value} type="button" className="supervisor-sheet-choice" disabled={!frozen || readOnly || saving || Boolean(error) || draftConflict} aria-pressed={results[worker.id] === value} title={t(`supervisorSheet.${value}`)} onClick={() => { editingRef.current = true; setSaved(false); setDraftState('unsaved'); setResults((current) => ({ ...current, [worker.id]: value })) }}>{value}</button>)}
               {saved && results[worker.id] && <span className="text-xs font-bold">{t(`attendance.${supervisorChoiceOutcome(results[worker.id])?.status}`)}{supervisorChoiceOutcome(results[worker.id])?.reason ? ` - ${t(`supervisorSheet.${supervisorChoiceOutcome(results[worker.id]).reason}`)}` : ''}</span>}
             </div><span className="supervisor-sheet-print-only" data-testid={`printed-result-${worker.id}`}>{printMode === 'blank' ? '________' : results[worker.id] || '—'}</span></td>
           </tr>)}</tbody>

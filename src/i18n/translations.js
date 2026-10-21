@@ -622,7 +622,13 @@ Object.assign(translations.en.teams, {
 })
 Object.assign(translations.ar.supervisorSheet, {
   description: 'مراجعة بصمة الصباح النهائية عند 11:00، ثم حفظ قرارات المشرف الرسمية.',
-  saveResults: 'حفظ نتيجة الحضور', saveConfirm: 'سيتم حفظ قرارات جميع العمال في القائمة النهائية كحضور رسمي محمي. هل تريد المتابعة؟',
+  saveResults: 'اعتماد النتيجة النهائية', saveConfirm: 'سيتم حفظ قرارات جميع العمال في القائمة النهائية كحضور رسمي محمي. هل تريد المتابعة؟',
+  saveDraft: 'حفظ كمسودة', draftSaved: 'تم حفظ المسودة', draftUnsaved: 'مسودة غير محفوظة', finalized: 'تم الاعتماد النهائي', lastDraftSave: 'آخر حفظ',
+  draftSaveFailed: 'تعذر حفظ المسودة — اختياراتك ما زالت ظاهرة. حاول الحفظ مرة أخرى قبل مغادرة الصفحة.',
+  finalFailedDraftSafe: 'تعذر الاعتماد النهائي — المسودة محفوظة ويمكنك المحاولة مرة أخرى',
+  draftConflict: 'تغيرت المسودة أو القرارات أو قائمة المراجعة في جلسة أخرى. اختياراتك لم تُمسح؛ حمّل أحدث نسخة للمراجعة.',
+  reloadDraft: 'تحميل أحدث مسودة', reloadDraftConfirm: 'سيتم تحميل أحدث قائمة ومسودة محفوظة. قد تُستبدل التعديلات المحلية غير المحفوظة. هل تريد المتابعة؟',
+  populationChanged: 'تغيرت قائمة المراجعة منذ حفظ المسودة. راجع العمال والاختيارات قبل الحفظ أو الاعتماد.',
   missingSelections: 'عمال بلا نتيجة: {count}', saveSuccess: 'تم حفظ نتائج {count} عامل رسميًا.',
   frozen: 'قائمة مراجعة الصباح النهائية ثابتة بعد اكتمال التحقق من البصمات.',
   finalChecking: 'جاري إكمال التحقق من البصمات...',
@@ -632,7 +638,13 @@ Object.assign(translations.ar.supervisorSheet, {
 })
 Object.assign(translations.en.supervisorSheet, {
   description: 'Review the final morning list at 11:00, then save official supervisor decisions.',
-  saveResults: 'Save Attendance Results', saveConfirm: 'Save every final-list decision as protected official attendance?',
+  saveResults: 'Finalize Results', saveConfirm: 'Save every final-list decision as protected official attendance?',
+  saveDraft: 'Save Draft', draftSaved: 'Draft saved', draftUnsaved: 'Unsaved draft', finalized: 'Results finalized', lastDraftSave: 'Last saved',
+  draftSaveFailed: 'Draft save failed — your choices are still visible. Retry before leaving the page.',
+  finalFailedDraftSafe: 'Final submission failed — your draft is saved and you can retry.',
+  draftConflict: 'The draft, official decisions or review population changed in another session. Your choices remain visible; load the latest version to review.',
+  reloadDraft: 'Load Latest Draft', reloadDraftConfirm: 'Load the latest review and saved draft? Unsaved local changes may be replaced.',
+  populationChanged: 'The review population changed since this draft was saved. Review the workers and choices before saving or finalizing.',
   missingSelections: 'Workers without a result: {count}', saveSuccess: 'Saved official results for {count} workers.',
   frozen: 'The final morning review list is frozen after biometric verification completes.',
   finalChecking: 'Completing biometric verification...',
@@ -642,7 +654,13 @@ Object.assign(translations.en.supervisorSheet, {
 })
 Object.assign(translations.fr.supervisorSheet, {
   description: 'Vérifiez la liste matinale finale à 11 h, puis enregistrez les décisions officielles.',
-  saveResults: 'Enregistrer les résultats', saveConfirm: 'Enregistrer toutes les décisions comme présence officielle protégée ?',
+  saveResults: 'Valider les résultats définitifs', saveConfirm: 'Enregistrer toutes les décisions comme présence officielle protégée ?',
+  saveDraft: 'Enregistrer le brouillon', draftSaved: 'Brouillon enregistré', draftUnsaved: 'Brouillon non enregistré', finalized: 'Résultats validés', lastDraftSave: 'Dernier enregistrement',
+  draftSaveFailed: 'Échec de l’enregistrement du brouillon — vos choix restent visibles. Réessayez avant de quitter.',
+  finalFailedDraftSafe: 'Échec de la validation — votre brouillon est enregistré, vous pouvez réessayer.',
+  draftConflict: 'Le brouillon, les décisions ou la liste ont changé dans une autre session. Vos choix restent visibles ; rechargez pour vérifier.',
+  reloadDraft: 'Charger le dernier brouillon', reloadDraftConfirm: 'Charger la dernière liste et le brouillon enregistré ? Les modifications locales non enregistrées pourront être remplacées.',
+  populationChanged: 'La liste a changé depuis l’enregistrement du brouillon. Vérifiez les travailleurs et les choix avant de valider.',
   missingSelections: 'Travailleurs sans résultat : {count}', saveSuccess: 'Résultats officiels enregistrés pour {count} travailleurs.',
   frozen: 'La liste matinale finale est figée après vérification des pointages.',
   finalChecking: 'Vérification des pointages en cours...',

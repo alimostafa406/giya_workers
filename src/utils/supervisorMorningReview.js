@@ -18,6 +18,10 @@ export const isSupervisorFinalWindow = (date, now = new Date()) => {
 export const supervisorReviewWorkerIds = (groups = []) => groups
   .flatMap((group) => group.workers.map((worker) => String(worker.id)))
 
+// Loading precedence only. User edits after loading remain intentional edits.
+export const initialSupervisorChoices = (workerIds, official = {}, draft = {}) => Object.fromEntries(workerIds.map((id) => [String(id),
+  SUPERVISOR_CHOICES.includes(official[id]) ? official[id] : SUPERVISOR_CHOICES.includes(draft[id]) ? draft[id] : 'A']))
+
 export const unselectedSupervisorWorkerIds = (groups = [], results = {}) =>
   supervisorReviewWorkerIds(groups).filter((id) => !SUPERVISOR_CHOICES.includes(results[id]))
 
