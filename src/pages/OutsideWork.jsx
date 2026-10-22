@@ -108,7 +108,9 @@ export default function OutsideWork() {
   }
   const l = { ...(labelSets[language] || labelSets.en), ...(flowLabels[language] || flowLabels.en), ...(reportLabels[language] || reportLabels.en), ...(outsideWorkUiLabels[language] || outsideWorkUiLabels.en) }
   const [params, setParams] = useSearchParams()
-  const resumeId = useRef(params.get('draft') || sessionStorage.getItem('outside_work_resume_draft'))
+  const requestedDraftId = params.get('draft')
+  const resumeId = useRef(sessionStorage.getItem('outside_work_resume_draft'))
+  const hydratedDraftId = useRef(null)
   const [anchor, setAnchor] = useState(() => kinshasaClock().date)
   const days = useMemo(() => weekDays(anchor), [anchor])
   const [movements, setMovements] = useState([])
@@ -153,15 +155,19 @@ export default function OutsideWork() {
     return () => { requests.current++ }
   }, [load])
   useEffect(() => {
-    if (loading || !resumeId.current) return
-    const draft = movements.find((row) => row.id === resumeId.current && row.status === 'draft')
+    const id = requestedDraftId || resumeId.current
+    if (!id) { hydratedDraftId.current = null; return }
+    if (loading || hydratedDraftId.current === id) return
+    const draft = movements.find((row) => row.id === id && row.status === 'draft')
     if (!draft) return
+    hydratedDraftId.current = id
     resumeId.current = null
     sessionStorage.removeItem('outside_work_resume_draft')
     setForm({ ...outsideWorkForm(draft), team: draft.team })
     if (draft.work_date) setAnchor(draft.work_date)
     setTab('drafts')
-  }, [loading, movements])
+    if (!requestedDraftId) setParams({ draft: draft.id }, { replace: true })
+  }, [loading, movements, requestedDraftId, setParams])
   const finals = useMemo(() => movements.filter(isFinalOutsideWorkMovement), [movements])
   const drafts = useMemo(() => movements.filter((row) => row.status === 'draft')
     .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || ''))), [movements])
@@ -169,12 +175,22 @@ export default function OutsideWork() {
   const workersById = useMemo(() => new Map(workers.map((worker) => [String(worker.id), worker])), [workers])
   const teamName = (movement) => !movement.team_id ? l.noPrimaryTeam : movement.team?.name || teams.find((team) => team.id === movement.team_id)?.name || '—'
   const edit = (movement) => {
+    hydratedDraftId.current = movement.id
+    resumeId.current = null
+    sessionStorage.removeItem('outside_work_resume_draft')
     setForm({ ...outsideWorkForm(movement), team: movement.team })
     if (movement.work_date) setAnchor(movement.work_date)
     setTab(movement.status === 'draft' ? 'drafts' : 'movements')
     setError('')
     setSuccess('')
-    if (movement.status === 'draft') setParams({ draft: movement.id }, { replace: true })
+    setParams(movement.status === 'draft' ? { draft: movement.id } : {}, { replace: true })
+  }
+  const startNew = () => {
+    resumeId.current = null
+    sessionStorage.removeItem('outside_work_resume_draft')
+    setForm(newOutsideWorkForm(form?.work_date || anchor))
+    setParams({}, { replace: true })
+    setError('')
   }
   const save = async (status) => {
     if (busy || !form) return
@@ -194,6 +210,7 @@ export default function OutsideWork() {
       setAnchor(form.work_date || anchor)
       setForm(newOutsideWorkForm(form.work_date || anchor))
       setParams({}, { replace: true })
+      resumeId.current = null
       sessionStorage.removeItem('outside_work_resume_draft')
       setTab(status === 'draft' ? 'drafts' : 'movements')
       setSuccess(l.saved)
@@ -238,7 +255,7 @@ export default function OutsideWork() {
     {success && <p role="status" className="mb-4 text-sm font-bold text-emerald-700">{success}</p>}
     {tab !== 'report' ? <div id="outside-work-entry-view" role="tabpanel" aria-labelledby="outside-work-entry-tab" className="outside-work-entry-layout">
       <div ref={entryRef}><OutsideWorkEntryForm key={form?.id || 'new'} value={form || newOutsideWorkForm(selectedDate)} onChange={setForm} workers={workers} teams={teams} biometricIds={biometricIds} labels={l} busy={busy || loading} showDate={false}
-        onSave={save} onCancel={() => { setForm(newOutsideWorkForm(selectedDate)); setParams({}, { replace: true }); setError('') }} /></div>
+        onSave={save} onCancel={startNew} /></div>
       <section className="outside-work-daily-panel" aria-label={l.todayMovements}>
         <div className="outside-work-panel-heading"><div><h2>{l.todayMovements}</h2><p>{dateLabel(selectedDate)}</p></div><span className="outside-work-count">{selectedMovements.length}</span></div>
         <div className="outside-work-list-switch"><button type="button" aria-pressed={tab === 'movements'} onClick={() => setTab('movements')}>{l.movements} ({selectedMovements.length})</button>
