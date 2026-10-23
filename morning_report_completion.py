@@ -58,22 +58,9 @@ def processing(operation, date_from=None, date_to=None, *, identity=False, clien
     if not hasattr(client, 'base_url'):
         yield {}
         return
-    job = rpc(client, 'agent_morning_processing', {'p_id': None, 'p_operation': operation,
-        'p_date_from': str(date_from) if date_from else None,
-        'p_date_to': str(date_to or date_from) if date_from else None,
-        'p_identity': identity, 'p_status': 'running', 'p_error': None})
-    outcome = {}
-    try:
+    from morning_processing_lifecycle import managed_processing
+    with managed_processing(client, rpc, operation, date_from, date_to, identity) as outcome:
         yield outcome
-    except BaseException as error:
-        rpc(client, 'agent_morning_processing', {'p_id': job, 'p_operation': operation,
-            'p_date_from': None, 'p_date_to': None, 'p_identity': identity,
-            'p_status': 'failed', 'p_error': type(error).__name__})
-        raise
-    else:
-        rpc(client, 'agent_morning_processing', {'p_id': job, 'p_operation': operation,
-            'p_date_from': None, 'p_date_to': None, 'p_identity': identity,
-            'p_status': 'failed' if outcome.get('failed') else 'complete', 'p_error': outcome.get('failed')})
 
 
 def tracked(operation, scope, *, enabled=lambda *args, **kwargs: True):
