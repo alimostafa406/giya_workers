@@ -130,11 +130,18 @@ begin
           else
             select a.* into v_attendance from public.attendance a
               where a.worker_id = v_worker_id and a.attendance_date = p_date for update;
-            if v_attendance.id is null or v_attendance.check_in is null
-              or v_attendance.status in ('absent', 'pending') then
+            if p_mode = 'manual_overtime_duration'
+              and v_attendance.biometric_sync_metadata #>> '{supervisor_morning_review,choice}' in ('A','M') then
+              v_outcome := 'skipped'; v_message := 'protected_manual_attendance';
+            elsif v_attendance.id is null or (
+              not (p_mode = 'manual_overtime_duration' and v_attendance.status = 'present'
+                and coalesce(v_attendance.attendance_day_fraction,0) = 1)
+              and (v_attendance.check_in is null or v_attendance.status in ('absent', 'pending'))) then
               v_outcome := 'skipped'; v_message := 'valid_check_in_required';
             elsif v_attendance.manual_override is true
-              and v_attendance.emergency_overtime_mode is null then
+              and v_attendance.emergency_overtime_mode is null
+              and not (p_mode = 'manual_overtime_duration' and v_attendance.status = 'present'
+                and coalesce(v_attendance.attendance_day_fraction,0) = 1) then
               v_outcome := 'skipped'; v_message := 'protected_manual_attendance';
             elsif (v_entry ->> 'expected_updated_at') is null
               or v_attendance.updated_at is distinct from

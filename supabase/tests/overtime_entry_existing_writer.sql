@@ -4,7 +4,7 @@ select set_config('request.jwt.claim.sub',(select id::text from public.admins wh
 do $$
 declare d date:='2000-01-03'; ids uuid[]; request uuid:=gen_random_uuid(); result jsonb; stamp timestamptz;
   run_id uuid; rule_id uuid; before_row jsonb; after_row jsonb; audit_count integer;
-  event_id uuid; event_before jsonb;
+  event_id uuid; event_before jsonb; choice text;
 begin
   select array_agg(id order by id) into ids from (
     select w.id from public.workers w join public.teams t on t.id=w.team_id
@@ -58,10 +58,46 @@ begin
   assert result->'results'->0->>'reason'='existing_real_checkout','Duration override unlocked real checkout editing';
   assert after_row=(select to_jsonb(a) from attendance a where worker_id=ids[3] and attendance_date=d);
   -- A real manual attendance protection remains distinct from a checkout.
-  update public.attendance set manual_override=true,emergency_overtime_mode=null,emergency_overtime_minutes=null where worker_id=ids[3] and attendance_date=d;
+  update public.attendance set manual_override=true,emergency_overtime_mode=null,emergency_overtime_minutes=null,
+    biometric_sync_metadata=jsonb_build_object('supervisor_morning_review',jsonb_build_object('choice','M'))
+    where worker_id=ids[3] and attendance_date=d;
   result:=public.admin_apply_bulk_emergency_overtime(gen_random_uuid(),d,'manual_overtime_duration','Protected manual attendance',null,
     jsonb_build_array(jsonb_build_object('worker_id',ids[3],'minutes',120,'expected_updated_at',(select updated_at from attendance where worker_id=ids[3] and attendance_date=d))));
   assert result->'results'->0->>'reason'='protected_manual_attendance';
+  -- Canonical full-day presence is sufficient, even with no biometric times.
+  -- P/O attendance decisions and their full audit metadata must remain intact.
+  foreach choice in array array['P','O','canonical'] loop
+    update public.attendance set status='present',attendance_day_fraction=1,
+      check_in=null,check_out=null,manual_override=(choice<>'canonical'),
+      attendance_source=case when choice='canonical' then 'outside_work' else 'manual' end,
+      emergency_overtime_mode=null,emergency_overtime_minutes=null,
+      biometric_sync_metadata=case when choice='canonical' then '{}'::jsonb else
+        jsonb_build_object('supervisor_morning_review',jsonb_build_object('choice',choice,'source','supervisor_sheet')) end
+      where worker_id=ids[1] and attendance_date=d;
+    select to_jsonb(a) into before_row from attendance a where worker_id=ids[1] and attendance_date=d;
+    result:=public.admin_apply_bulk_emergency_overtime(gen_random_uuid(),d,'manual_overtime_duration','Canonical present null punches',null,
+      jsonb_build_array(jsonb_build_object('worker_id',ids[1],'minutes',120,'expected_updated_at',before_row->>'updated_at')));
+    assert result->>'updated'='1', 'Canonical present rejected: '||choice||' '||result::text;
+    select to_jsonb(a) into after_row from attendance a where worker_id=ids[1] and attendance_date=d;
+    assert (after_row-'manual_override'-'emergency_overtime_mode'-'emergency_overtime_minutes'-'updated_at')
+      =(before_row-'manual_override'-'emergency_overtime_mode'-'emergency_overtime_minutes'-'updated_at'), 'Protected decision/evidence changed';
+    assert (after_row->>'check_in') is null and (after_row->>'check_out') is null,'Fake punches';
+    -- The separate punch-editing workflow has not gained a null-checkin exception.
+    result:=public.admin_apply_bulk_emergency_overtime(gen_random_uuid(),d,'manual_checkout','No fabricated punch editing',null,
+      jsonb_build_array(jsonb_build_object('worker_id',ids[1],'checkout','20:00','expected_updated_at',after_row->>'updated_at')));
+    assert result->'results'->0->>'reason'='valid_check_in_required';
+  end loop;
+  foreach choice in array array['A','M'] loop
+    update public.attendance set status='absent',attendance_day_fraction=0,check_in=null,check_out=null,
+      manual_override=true,emergency_overtime_mode=null,emergency_overtime_minutes=null,
+      biometric_sync_metadata=jsonb_build_object('supervisor_morning_review',jsonb_build_object('choice',choice))
+      where worker_id=ids[1] and attendance_date=d;
+    select to_jsonb(a) into before_row from attendance a where worker_id=ids[1] and attendance_date=d;
+    result:=public.admin_apply_bulk_emergency_overtime(gen_random_uuid(),d,'manual_overtime_duration','Protect absence/medical',null,
+      jsonb_build_array(jsonb_build_object('worker_id',ids[1],'minutes',120,'expected_updated_at',before_row->>'updated_at')));
+    assert result->'results'->0->>'reason'='protected_manual_attendance';
+    assert before_row=(select to_jsonb(a) from attendance a where worker_id=ids[1] and attendance_date=d);
+  end loop;
   -- Punch editing mode must still refuse an existing real checkout.
   update public.attendance set manual_override=false where worker_id=ids[3] and attendance_date=d;
   result:=public.admin_apply_bulk_emergency_overtime(gen_random_uuid(),d,'manual_checkout','Do not change punch',null,

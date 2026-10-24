@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { LanguageProvider } from '../i18n/LanguageContext'
 import OvertimeEntry from './OvertimeEntry'
 import { readFileSync } from 'node:fs'
-import { parseOvertimeDuration } from '../utils/overtimeEntry'
+import { overtimeEntryBlock, parseOvertimeDuration } from '../utils/overtimeEntry'
 
 globalThis.React = React
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), clear: vi.fn() }))
@@ -185,4 +185,46 @@ it('ignores a stale date load when a newer selected date has already loaded', as
   await waitFor(() => expect(screen.getByLabelText('Team').disabled).toBe(false))
   expect(screen.getByRole('option', { name: 'Peinture' })).toBeTruthy()
   expect(screen.getByLabelText('Date').value).toBe('2026-10-23')
+})
+
+it.each([
+  ['biometric two punches', { check_in: '08:00', check_out: '19:00' }],
+  ['biometric one punch', { check_in: '08:00', check_out: null }],
+  ['canonical present without punches', {}],
+  ['outside-work present', { attendance_source: 'outside_work' }],
+  ['supervisor P', { attendance_source: 'manual', manual_override: true, biometric_sync_metadata: { supervisor_morning_review: { choice: 'P' } } }],
+  ['supervisor O', { attendance_source: 'manual', manual_override: true, biometric_sync_metadata: { supervisor_morning_review: { choice: 'O' } } }],
+])('allows %s without mutating protected attendance evidence', async (_, fields) => {
+  Object.assign(source.attendance[0], { status: 'present', attendance_day_fraction: '1.0', check_in: null, check_out: null, ...fields })
+  const before = structuredClone(source)
+  open(); await team()
+  expect(screen.getByRole('checkbox', { name: 'ALPHA' }).disabled).toBe(false)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'ALPHA' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
+  await previewSave()
+  const entry = mocks.save.mock.calls[0][0].entries[0]
+  expect(entry).not.toHaveProperty('check_in')
+  expect(entry).not.toHaveProperty('check_out')
+  expect(source).toEqual(before)
+})
+
+it('keeps absent, missing, protected medical and locked full-present workers blocked', () => {
+  const present = { id: 'a', status: 'present', attendance_day_fraction: 1, updated_at: 'stamp', check_in: null }
+  expect(overtimeEntryBlock(present, '2026-10-19', true)).toBe('payroll_finalized_or_paid')
+  expect(overtimeEntryBlock(undefined, '2026-10-19')).toBe('valid_check_in_required')
+  expect(overtimeEntryBlock({ ...present, status: 'absent', attendance_day_fraction: 0 }, '2026-10-19')).toBe('valid_check_in_required')
+  for (const choice of ['A', 'M']) expect(overtimeEntryBlock({ ...present, manual_override: true,
+    biometric_sync_metadata: { supervisor_morning_review: { choice } } }, '2026-10-19')).toBe('protected_manual_attendance')
+})
+
+it('matches Siraj October 19 canonical count: thirteen present, one protected A and one missing', async () => {
+  source.workers = Array.from({ length: 15 }, (_, i) => worker(String(i), `Siraj ${i}`))
+  source.attendance = source.workers.slice(0, 14).map((w, i) => ({ id: `att-${i}`, worker_id: w.id,
+    status: i === 13 ? 'absent' : 'present', attendance_day_fraction: i === 13 ? 0 : 1,
+    check_in: i === 13 ? null : '08:00', manual_override: i === 13, updated_at: '2026-10-19T17:00:00Z' }))
+  open(); await team()
+  fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-19' } })
+  await waitFor(() => expect(screen.getByLabelText('Team').disabled).toBe(false))
+  expect(screen.getAllByRole('checkbox').filter((input) => !input.disabled)).toHaveLength(13)
+  expect(screen.getAllByRole('checkbox').filter((input) => input.disabled)).toHaveLength(2)
 })
