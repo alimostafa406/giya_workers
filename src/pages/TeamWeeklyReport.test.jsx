@@ -106,10 +106,20 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(screen.queryByRole('combobox')).toBeNull()
   const teams = screen.getAllByRole('region', { name: /^تقرير الفريق:/ })
   expect(teams).toHaveLength(2)
-  const summaryColumns = ['العامل', 'كود العامل', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي اليدوي', 'الأجر الأساسي المستحق', 'مبلغ الإضافي', 'إجمالي القبض']
+  const summaryColumns = ['العامل', 'الكود', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'إجمالي القبض']
   for (const team of teams) {
     expect(within(team).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(summaryColumns)
-    expect(within(team).getByText('إجمالي القبض للفريق')).toBeTruthy()
+    const table = within(team).getByRole('table')
+    const totalRow = within(table).getByRole('row', { name: /^إجمالي الفرقة/ })
+    expect(totalRow.parentElement.tagName).toBe('TFOOT')
+    expect(totalRow.children).toHaveLength(8)
+    expect(table.tFoot.rows).toHaveLength(1)
+    expect(team.querySelector('.team-report-totals')).toBeNull()
+    const expectedGroup = teamWeeklyReport(fixture, week).groups.find((g) => team.getAttribute('aria-label') === `تقرير الفريق: ${g.name}`)
+    expect(table.tBodies[0].rows).toHaveLength(expectedGroup.lines.length)
+    expect(totalRow.children[1].textContent).toBe(`${expectedGroup.lines.length} عمال`)
+    expect(totalRow.children[2].textContent).toBe(String(expectedGroup.totals.workDays))
+    expect(totalRow.children[3].textContent).toBe(String(expectedGroup.totals.absentDays))
     for (const forbidden of ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'إضافي صباحي', 'إضافي مسائي'])
       expect(within(team).queryByRole('columnheader', { name: forbidden, exact: true })).toBeNull()
   }
@@ -117,7 +127,7 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(teams[1].textContent).toContain('Worker b'); expect(teams[1].textContent).not.toContain('Worker a')
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   let html = popup.document.write.mock.calls.at(-1)[0]
-  expect(html).toContain('Worker a'); expect(html).toContain('Worker c'); expect(html).toContain('Worker b'); expect(html).toContain('إجمالي القبض للفريق')
+  expect(html).toContain('Worker a'); expect(html).toContain('Worker c'); expect(html).toContain('Worker b'); expect(html).toContain('إجمالي الفرقة')
   for (const worker of ['Worker a', 'Worker b', 'Worker c']) expect(html.split(worker)).toHaveLength(2)
   expect(html).toContain('class="team-report-content team-report-summary"')
   expect(html.lastIndexOf('ملخص أجور جميع الفرق')).toBeGreaterThan(html.lastIndexOf('Worker b'))
@@ -131,6 +141,12 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(teamReportPrintCss).toContain('A4 landscape'); expect(teamReportPrintCss).toContain('table-header-group')
   expect(teamReportPrintCss).toContain('.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}')
   expect(teamReportPrintCss).toContain('.team-report-header{break-inside:avoid')
+  expect(teamReportPrintCss).toContain('tfoot{display:table-row-group;break-inside:avoid')
+  const summary = screen.getByRole('region', { name: 'ملخص أجور جميع الفرق' })
+  const summaryTable = within(summary).getByRole('table')
+  expect(within(summaryTable).getAllByRole('columnheader').map((h) => h.textContent).slice(0, 7))
+    .toEqual(['الفريق', 'عدد العمال', 'أيام العمل', 'ساعات الإضافي', 'مبلغ الإضافي', 'أجر أيام العمل', 'إجمالي القبض'])
+  expect(within(summaryTable).getByRole('row', { name: /^الإجمالي العام/ }).parentElement.tagName).toBe('TFOOT')
 })
 it('print popup failure is reported and the admin route/navigation are wired', () => {
   vi.spyOn(window, 'open').mockReturnValue(null)
