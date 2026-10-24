@@ -361,3 +361,63 @@ it('FINAL outside-work overtime is rendered in worker, team, grand totals and th
   expect(html).toContain('2.5 h'); expect(html).toContain('50.00'); expect(html).toContain('160.00')
   await waitFor(() => expect(popup.print).toHaveBeenCalled())
 })
+
+it.each([[30, 1.25], [300, 12.5], [1500, 62.5]])('monthly weekly override %s minutes is included before any money/attendance filtering', (minutes, amount) => {
+  const d = data(); d.workers = [monthlyWorker()]; d.attendance = []
+  d.weeklyOvertimeOverrides = [{ worker_id: 'm', week_start: week, minutes, version: 1 }]
+  const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
+  expect(report.lines).toHaveLength(1)
+  expect(report.lines[0]).toMatchObject({ minutes, monthlyOvertimeOnly: true, basePay: 0, overtimeAmount: amount, finalAmount: amount })
+  expect(report.groups[0].totals).toMatchObject({ workers: 1, minutes, currencies: { CDF: { basePay: 0, overtimeAmount: amount, finalAmount: amount } } })
+  expect(report.totals).toMatchObject({ workers: 1, minutes, currencies: { CDF: { basePay: 0, overtimeAmount: amount, finalAmount: amount } } })
+  expect(JSON.stringify(d)).toBe(before)
+})
+it('all monthly overtime sources join weekly workers and reconcile every team and all-team total', () => {
+  const d = data([row('a')]), originalWeekly = teamWeeklyReport(d, week).lines.find((line) => line.worker.id === 'a')
+  d.workers = [worker('a'), monthlyWorker('half'), monthlyWorker('five'), monthlyWorker('twentyfive', { team_id: 'Zarour', team_name: 'Zarour' }),
+    monthlyWorker('outside', { team_id: 'Zarour', team_name: 'Zarour' }), monthlyWorker('zero')]
+  d.weeklyOvertimeOverrides = [{ worker_id: 'half', minutes: 30 }, { worker_id: 'five', minutes: 300 }, { worker_id: 'twentyfive', minutes: 1500 }, { worker_id: 'zero', minutes: 0 }]
+  d.outsideWorkMovements = [{ id: 'final-outside', status: 'final', work_date: week,
+    outside_work_movement_workers: [{ worker_id: 'outside', start_time: '08:00', end_time: '19:30' }, { worker_id: 'zero', start_time: '08:00', end_time: '23:00' }] }]
+  const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
+  expect(report.lines.map((line) => line.worker.id).sort()).toEqual(['a', 'five', 'half', 'outside', 'twentyfive'])
+  expect(report.lines.find((line) => line.worker.id === 'a')).toEqual(originalWeekly)
+  expect(report.groups.find((group) => group.id === 'Siraj').totals).toMatchObject({ workers: 3, minutes: 330,
+    currencies: { CDF: { basePay: 110, overtimeAmount: 13.75, finalAmount: 123.75 } } })
+  expect(report.groups.find((group) => group.id === 'Zarour').totals).toMatchObject({ workers: 2, minutes: 1650,
+    currencies: { CDF: { basePay: 0, overtimeAmount: 68.75, finalAmount: 68.75 } } })
+  expect(report.totals).toMatchObject({ workers: 5, minutes: 1980,
+    currencies: { CDF: { basePay: 110, overtimeAmount: 82.5, finalAmount: 192.5 } } })
+  for (const line of report.lines.filter((line) => line.monthlyOvertimeOnly)) {
+    expect(line.basePay).toBe(0); expect(line.finalAmount).toBe(line.overtimeAmount)
+  }
+  expect(JSON.stringify(d)).toBe(before)
+})
+it('monthly FINAL outside-work participant remains included when compensation/rate is missing', () => {
+  const d = data(); d.workers = [monthlyWorker('m', { payroll_compensation: null })]; d.attendance = []
+  d.outsideWorkMovements = [{ id: 'final', status: 'final', work_date: week, outside_work_movement_workers: [{ worker_id: 'm', start_time: '08:00', end_time: '19:30' }] }]
+  const report = teamWeeklyReport(d, week)
+  expect(report.lines[0]).toMatchObject({ minutes: 150, monthlyOvertimeOnly: true, basePay: 0, overtimeAmount: null, finalAmount: null, unresolved: true })
+  expect(report.totals.workers).toBe(1); expect(report.totals.minutes).toBe(150)
+})
+it('monthly 5h row appears on screen and print with six daily columns and no salary', async () => {
+  window.history.replaceState({}, '', `/?date=${week}`)
+  const d = data(); d.workers = [monthlyWorker()]; d.attendance = []
+  d.weeklyOvertimeOverrides = [{ worker_id: 'm', minutes: 300 }]
+  mocks.load.mockResolvedValue(d)
+  const popup = { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: Promise.resolve() } }, focus: vi.fn(), print: vi.fn() }
+  vi.spyOn(window, 'open').mockReturnValue(popup)
+  render(<TeamWeeklyReport />)
+  const team = await screen.findByRole('region', { name: 'تقرير الفريق: Siraj' })
+  const workerRow = within(team).getByRole('row', { name: /^Worker m/ })
+  expect(workerRow.querySelectorAll('.team-report-day')).toHaveLength(6)
+  expect(workerRow.children[10].textContent).toBe('5 h')
+  expect(workerRow.children[11].textContent).toContain('0.00')
+  expect(workerRow.children[12].textContent).toContain('12.50')
+  expect(workerRow.children[13].textContent).toContain('12.50')
+  expect(within(team).getByText('شهري — إضافي فقط')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
+  const html = popup.document.write.mock.calls[0][0]
+  expect(html).toContain('Worker m'); expect(html).toContain('5 h'); expect(html).toContain('12.50'); expect(html).not.toContain('600.00')
+  await waitFor(() => expect(popup.print).toHaveBeenCalled())
+})
