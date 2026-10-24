@@ -82,7 +82,7 @@ export default function OvertimeEntry() {
     finally { setSaving(false) }
   }
   return <section className="overtime-entry" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-    <header><h1 className="text-2xl font-extrabold">{l.title}</h1><p className="text-sm text-(--muted)">{l.subtitle}</p></header>
+    <header><h1 className="text-2xl font-extrabold">{l.title}</h1><p className="text-sm text-(--muted)">{l.subtitle}</p><a className="btn-secondary mt-3" href={`/payroll/team-weekly-report?date=${date}`}>عرض وطباعة أجور الأسبوع</a></header>
     <fieldset disabled={saving} className="overtime-entry-controls surface-card">
       <label>{l.date}<input className="input-base" type="date" max={today} value={date} onChange={(event) => changeDate(event.target.value)} /></label>
       <label>{l.team}<select className="input-base" value={teamId} disabled={!ready} onChange={(event) => selectTeam(event.target.value)}><option value="">{l.chooseTeam}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>

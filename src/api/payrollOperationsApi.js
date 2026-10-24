@@ -59,9 +59,12 @@ const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
   worker_name_snapshot: line.worker.full_name || '-', payment_type_snapshot: line.paymentType, currency_code_snapshot: payrollLineCurrencySnapshot(line),
   monthly_payroll_cycle_start_date_snapshot: line.term?.monthly_payroll_cycle_start_date || null,
   compensation_snapshot: line.term || {}, rule_snapshot: line.rules || {},
-  attendance_summary_snapshot: { present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
+  attendance_summary_snapshot: { manual_overtime_source_version: 1, present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
     date: detail.date,
     status: detail.status,
+    manual_override: detail.row?.manual_override === true,
+    emergency_overtime_mode: detail.row?.emergency_overtime_mode || null,
+    emergency_overtime_minutes: detail.row?.emergency_overtime_minutes ?? null,
     check_in: detail.row?.check_in || null,
     check_out: detail.row?.check_out || null,
     // Preserve the evidence date for a real 00:00–02:00 checkout. A bare
