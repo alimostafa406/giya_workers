@@ -44,7 +44,7 @@ const weeklyLinesFor = (data, monday) => {
       holidayDates: holidays,
       paymentType: 'weekly',
       futureDatesAreNeutral: true,
-      }), (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id))), sundayDate, sundayPayment }
+      }), (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id)), data.outsideWorkMovements || []), sundayDate, sundayPayment }
     })
 }
 
@@ -80,6 +80,8 @@ export default function PayrollOperations() {
       worker,
       manualOvertimeOnly: summary.manual_overtime_only === true,
       weeklyManualOverrideMinutes: summary.weekly_manual_overtime_override_minutes ?? null,
+      payableOvertimeSourceVersion: summary.payable_overtime_source_version || null,
+      payableOvertimeDays: summary.payable_overtime_days || [],
       term: stored.compensation_snapshot || {},
       rules: stored.rule_snapshot || {},
       paymentType: stored.payment_type_snapshot,

@@ -109,7 +109,7 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(screen.queryByRole('combobox')).toBeNull()
   const teams = screen.getAllByRole('region', { name: /^تقرير الفريق:/ })
   expect(teams).toHaveLength(2)
-  const summaryColumns = ['العامل', 'الكود', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي اليدوي', 'أجر أيام العمل', 'مبلغ الإضافي', 'إجمالي القبض']
+  const summaryColumns = ['العامل', 'الكود', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'إجمالي القبض']
   for (const team of teams) {
     expect(within(team).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(summaryColumns)
     const table = within(team).getByRole('table')
@@ -150,7 +150,7 @@ it('all eligible teams render together; one print includes every worker and the 
   const summary = screen.getByRole('region', { name: 'ملخص أجور جميع الفرق' })
   const summaryTable = within(summary).getByRole('table')
   expect(within(summaryTable).getAllByRole('columnheader').map((h) => h.textContent).slice(0, 8))
-    .toEqual(['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي اليدوي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي القبض'])
+    .toEqual(['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي القبض'])
   expect(within(summaryTable).getByRole('row', { name: /^الإجمالي العام/ }).parentElement.tagName).toBe('TFOOT')
 })
 it('print popup failure is reported and the admin route/navigation are wired', () => {
@@ -340,4 +340,24 @@ it('report translation dictionaries have the same nonempty keys in Arabic, Frenc
     expect(Object.keys(teamWeeklyReportTranslations[language]).sort()).toEqual(Object.keys(teamWeeklyReportTranslations.en).sort())
     expect(Object.values(teamWeeklyReportTranslations[language]).every((value) => typeof value === 'string' && value.length > 0)).toBe(true)
   }
+})
+
+it('FINAL outside-work overtime is rendered in worker, team, grand totals and the same printed report', async () => {
+  window.history.replaceState({}, '', `/?date=${week}`)
+  const d = data(); d.workers = [worker('a')]
+  d.outsideWorkMovements = [{ id: 'outside', work_date: week, status: 'final', outside_work_movement_workers: [{ worker_id: 'a', start_time: '08:00', end_time: '19:30' }] }]
+  mocks.load.mockResolvedValue(d)
+  const popup = { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: Promise.resolve() } }, focus: vi.fn(), print: vi.fn() }
+  vi.spyOn(window, 'open').mockReturnValue(popup)
+  render(<TeamWeeklyReport />)
+  const team = await screen.findByRole('region', { name: 'تقرير الفريق: Siraj' })
+  const workerRow = within(team).getByRole('row', { name: /^Worker a/ })
+  expect(workerRow.children[10].textContent).toBe('2.5 h')
+  expect(workerRow.children[12].textContent).toContain('50.00')
+  expect(workerRow.children[13].textContent).toContain('160.00')
+  expect(team.querySelector('tfoot').textContent).toContain('2.5 h')
+  fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
+  const html = popup.document.write.mock.calls[0][0]
+  expect(html).toContain('2.5 h'); expect(html).toContain('50.00'); expect(html).toContain('160.00')
+  await waitFor(() => expect(popup.print).toHaveBeenCalled())
 })

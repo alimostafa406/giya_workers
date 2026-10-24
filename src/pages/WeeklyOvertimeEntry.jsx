@@ -4,7 +4,7 @@ import { saveWeeklyOvertime } from '../api/weeklyOvertimeApi'
 import { getErrorMessage } from '../api/axios'
 import { mondayFor, weeklyDates } from '../utils/payrollCalculations'
 import { isWeeklyPayrollEligibleWorker } from '../utils/weeklyPayrollEligibility'
-import { manualReportMinutes, parseWeeklyDuration } from '../utils/weeklyManualOvertime'
+import { applyManualWeeklyOvertime, manualReportMinutes, parseWeeklyDuration } from '../utils/weeklyManualOvertime'
 import { overtimeDuration } from '../utils/overtimeEntry'
 
 export default function WeeklyOvertimeEntry() {
@@ -24,6 +24,10 @@ export default function WeeklyOvertimeEntry() {
   const locked = (data?.runs || []).some((r) => r.payment_type === 'weekly' && r.weekly_period_start === week && ['reviewed', 'finalized', 'paid'].includes(r.status))
   const override = (id) => (data?.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(id))
   const daily = (id) => (data?.attendance || []).filter((r) => String(r.worker_id) === String(id) && r.attendance_date >= week && r.attendance_date <= end).reduce((sum, r) => sum + manualReportMinutes(r), 0)
+  const effective = (worker) => applyManualWeeklyOvertime({ worker, term: worker.payroll_compensation, finalAmount: 0, overtimeAmount: 0,
+    details: weeklyDates(week).filter((date) => !worker.operational_start_date || date >= worker.operational_start_date).map((date) => ({ date,
+      row: (data?.attendance || []).find((r) => String(r.worker_id) === String(worker.id) && r.attendance_date === date) })) },
+  override(worker.id), data?.outsideWorkMovements || []).eveningOvertimeMinutes
   const reset = () => { setSelected([]); setValues({}); setPreview(null); setMessage('') }
   const prepare = (clear = false) => {
     if (loading || locked || !selected.length) return
@@ -52,7 +56,7 @@ export default function WeeklyOvertimeEntry() {
       }}>تطبيق على المختارين</button></div>
       <div className="overflow-x-auto"><table className="overtime-entry-table"><thead><tr><th>اختيار</th><th>العامل</th><th>الإضافي اليومي المجمع</th><th>الإجمالي الأسبوعي اليدوي</th><th>الإضافي المعتمد</th><th>القيمة الجديدة</th></tr></thead><tbody>{visible.map((w) => {
         const id = String(w.id), saved = override(id), sum = daily(id)
-        return <tr key={id}><td><input type="checkbox" aria-label={w.full_name} checked={selected.includes(id)} onChange={() => { setSelected((old) => old.includes(id) ? old.filter((v) => v !== id) : [...old, id]); setPreview(null) }} /></td><td>{w.full_name}<small className="block">{w.employee_code}</small></td><td><bdi dir="ltr">{overtimeDuration(sum)}</bdi></td><td><bdi dir="ltr">{saved?.minutes == null ? '—' : overtimeDuration(saved.minutes)}</bdi></td><td><bdi dir="ltr">{overtimeDuration(saved?.minutes ?? sum)}</bdi></td><td><input className="input-base overtime-entry-duration" aria-label={`القيمة الجديدة: ${w.full_name}`} dir="ltr" value={values[id] ?? ''} disabled={!selected.includes(id)} onChange={(e) => { const value = e.target.value; setValues((old) => ({ ...old, [id]: value })); setPreview(null) }} /></td></tr>
+        return <tr key={id}><td><input type="checkbox" aria-label={w.full_name} checked={selected.includes(id)} onChange={() => { setSelected((old) => old.includes(id) ? old.filter((v) => v !== id) : [...old, id]); setPreview(null) }} /></td><td>{w.full_name}<small className="block">{w.employee_code}</small></td><td><bdi dir="ltr">{overtimeDuration(sum)}</bdi></td><td><bdi dir="ltr">{saved?.minutes == null ? '—' : overtimeDuration(saved.minutes)}</bdi></td><td><bdi dir="ltr">{overtimeDuration(effective(w))}</bdi></td><td><input className="input-base overtime-entry-duration" aria-label={`القيمة الجديدة: ${w.full_name}`} dir="ltr" value={values[id] ?? ''} disabled={!selected.includes(id)} onChange={(e) => { const value = e.target.value; setValues((old) => ({ ...old, [id]: value })); setPreview(null) }} /></td></tr>
       })}{!visible.length && <tr><td colSpan={6}>اختر فريقاً لعرض العمال</td></tr>}</tbody></table></div>
       <div className="overtime-entry-toolbar"><button type="button" className="btn-primary" disabled={!selected.length} onClick={() => prepare()}>معاينة الإجمالي الأسبوعي</button><button type="button" className="btn-secondary" disabled={!selected.length} onClick={() => prepare(true)}>مسح التجاوز الأسبوعي للمختارين</button></div>
     </fieldset>
