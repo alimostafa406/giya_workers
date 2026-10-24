@@ -64,10 +64,10 @@ test('monthly draft lines are not reinterpreted by weekly eligibility', () => {
 test('weekly selection, validation, persistence, and counts use the shared rule', () => {
   const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
   const api = readFileSync('./src/api/payrollOperationsApi.js', 'utf8')
-  assert.match(operations, /\.filter\(isWeeklyPayrollEligibleWorker\)/)
+  assert.match(operations, /\.filter\(\(worker\) => isWeeklyPayrollEligibleWorker\(worker, saturday\)\)/)
   assert.match(operations, /const currentWeeklyWorkerIds = new Set\(calculatedLines\.map/)
   assert.match(operations, /const teamGroups = useMemo[\s\S]*lines\.forEach/)
-  assert.match(api, /eligibleLines = payrollDraftEligibleLines\(paymentType, lines\)/)
+  assert.match(api, /eligibleLines = payrollDraftEligibleLines\(paymentType, lines, periodEnd\)/)
   assert.match(api, /assertPayrollLineCurrencies\(eligibleLines\)/)
   assert.match(api, /const payload = eligibleLines\.map/)
   assert.match(api, /removableStaleLineIds/)

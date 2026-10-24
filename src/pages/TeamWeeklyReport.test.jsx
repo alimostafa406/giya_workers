@@ -120,3 +120,82 @@ it('print popup failure is reported and the admin route/navigation are wired', (
   expect(readFileSync('src/routes/AppRouter.jsx', 'utf8')).toContain('<Route path="/payroll/team-weekly-report" element={<TeamWeeklyReport />} />')
   expect(readFileSync('src/pages/OvertimeEntry.jsx', 'utf8')).toContain('عرض وطباعة أجور الأسبوع')
 })
+
+const monthlyWorker = (id = 'm', extra = {}) => worker(id, 'Siraj', {
+  payment_type: 'monthly', monthly_salary: 600,
+  payroll_compensation: { monthly_salary: 600, monthly_payroll_cycle_start_date: '2026-10-07',
+    daily_rate: 999, daily_transport_allowance: 999, overtime_rate_per_hour: 2.5, currency_code: 'CDF' }, ...extra,
+})
+it('monthly manual overtime appears with zero base and overtime-only total alongside normal weekly pay', () => {
+  const d = data([row('a', manual(120)), row('m', manual(360))]); d.workers = [worker('a'), monthlyWorker()]
+  const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
+  expect(report.lines.find((l) => l.worker.id === 'a')).toMatchObject({ basePay: 110, overtimeAmount: 40, finalAmount: 150 })
+  expect(report.lines.find((l) => l.worker.id === 'm')).toMatchObject({ monthlyOvertimeOnly: true, minutes: 360, basePay: 0, overtimeAmount: 15, finalAmount: 15 })
+  expect(report.groups[0].totals.currencies.CDF).toEqual({ basePay: 110, overtimeAmount: 55, finalAmount: 165 })
+  expect(report.totals.currencies.CDF).toEqual({ basePay: 110, overtimeAmount: 55, finalAmount: 165 })
+  expect(JSON.stringify(d)).toBe(before)
+})
+it('monthly zero manual overtime and biometric-only overtime are excluded; weekly base-only remains', () => {
+  const d = data([row('a'), row('m', { check_out: '23:00' })]); d.workers = [worker('a'), monthlyWorker()]
+  const report = teamWeeklyReport(d, week)
+  expect(report.lines).toHaveLength(1)
+  expect(report.lines[0]).toMatchObject({ basePay: 110, overtimeAmount: 0, finalAmount: 110 })
+})
+it('monthly override replaces daily sum, zero excludes, and clearing restores daily sum', () => {
+  const d = data([row('m', manual(360))]); d.workers = [monthlyWorker()]
+  d.weeklyOvertimeOverrides = [{ worker_id: 'm', minutes: 1500 }]
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ minutes: 1500, basePay: 0, overtimeAmount: 62.5, finalAmount: 62.5 })
+  d.weeklyOvertimeOverrides[0].minutes = 0
+  expect(teamWeeklyReport(d, week).lines).toHaveLength(0)
+  d.weeklyOvertimeOverrides[0].minutes = null
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ minutes: 360, basePay: 0, finalAmount: 15 })
+})
+it('monthly salary, daily wage, transport, holiday multipliers and adjustments cannot leak into weekly payout', () => {
+  const d = data([row('m', manual(360))]); d.workers = [monthlyWorker()]
+  d.holidays = [{ holiday_date: week }]; d.rules = { weekly_holiday_multiplier: 2 }
+  d.payrollAdjustments = [{ payroll_line_id: 'monthly-line', adjustment_type: 'bonus', amount: 10000 }]
+  const first = teamWeeklyReport(d, week).lines[0]
+  d.workers[0].monthly_salary = 900000; d.workers[0].payroll_compensation.monthly_salary = 900000
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ basePay: 0, overtimeAmount: first.overtimeAmount, finalAmount: first.finalAmount })
+})
+it('all-team summary includes monthly OT money only and keeps currencies separate', () => {
+  const d = data([row('a', manual(120)), row('m', manual(360))]); d.workers = [worker('a'), monthlyWorker('m', { team_id: 'Zarour', team_name: 'Zarour' })]
+  const report = teamWeeklyReport(d, week)
+  expect(report.groups.find((g) => g.name === 'Zarour').totals.currencies.CDF).toEqual({ basePay: 0, overtimeAmount: 15, finalAmount: 15 })
+  expect(report.totals.currencies.CDF.finalAmount).toBe(165)
+})
+it('inactive, future-start and special-staff monthly workers remain excluded', () => {
+  const d = data(); d.workers = [monthlyWorker('inactive', { is_active: false }), monthlyWorker('future', { operational_start_date: '2026-11-01' }), monthlyWorker('foreign', { staff_classification: 'special_staff' })]
+  d.attendance = d.workers.map((w) => row(w.id, manual(360)))
+  expect(teamWeeklyReport(d, week).lines).toHaveLength(0)
+})
+it('monthly payroll cycle, deductions and finalized salary snapshots remain untouched', () => {
+  const d = data([row('m', manual(360))]); d.workers = [monthlyWorker()]
+  d.runs = [{ id: 'monthly-run', payment_type: 'monthly', status: 'paid' }]
+  d.payrollLines = [{ id: 'monthly-line', payroll_run_id: 'monthly-run', worker_id: 'm', payment_type_snapshot: 'monthly',
+    final_amount: 550, base_amount: 600, absent_days: 2, calculation_snapshot: { absence_deduction: 50 } }]
+  const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
+  expect(report.lines[0].finalAmount).toBe(15); expect(JSON.stringify(d)).toBe(before)
+})
+it('monthly OT supplement does not recalculate a locked weekly salary snapshot', () => {
+  const d = data([row('m', manual(360))]); d.workers = [worker('a'), monthlyWorker()]
+  d.runs = [{ id: 'weekly-run', payment_type: 'weekly', status: 'paid', weekly_period_start: week, weekly_period_end: '2026-10-24' }]
+  d.payrollLines = [{ payroll_run_id: 'weekly-run', worker_id: 'a', worker_name_snapshot: 'Frozen A', overtime_hours: 0, overtime_amount: 0,
+    final_amount: 999, present_days: 6, half_days: 0, absent_days: 0, currency_code_snapshot: 'CDF' }]
+  const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
+  expect(report.lines[0].finalAmount).toBe(999); expect(report.lines[1].finalAmount).toBe(15)
+  expect(report.totals.currencies.CDF.finalAmount).toBe(1014)
+  expect(report.hasLiveMonthlyOvertime).toBe(true); expect(JSON.stringify(d)).toBe(before)
+})
+it('monthly OT-only label and zero base are present on screen and in team print', async () => {
+  window.history.replaceState({}, '', `/?date=${week}`)
+  const d = data([row('m', manual(360))]); d.workers = [monthlyWorker()]
+  mocks.load.mockResolvedValue(d)
+  const popup = { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: Promise.resolve() } }, focus: vi.fn(), print: vi.fn() }
+  vi.spyOn(window, 'open').mockReturnValue(popup)
+  render(<TeamWeeklyReport />)
+  await screen.findByText('شهري — إضافي فقط')
+  fireEvent.click(screen.getByRole('button', { name: 'طباعة الفريق', exact: true }))
+  const html = popup.document.write.mock.calls[0][0]
+  expect(html).toContain('شهري — إضافي فقط'); expect(html).toContain('0.00'); expect(html).toContain('15.00'); expect(html).not.toContain('600.00')
+})
