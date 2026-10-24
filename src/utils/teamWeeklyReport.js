@@ -87,7 +87,7 @@ export function teamWeeklyReport(data, monday) {
   return { lines, groups, totals: reportTotals(lines), run, locked, hasLiveMonthlyOvertime: locked && monthlyLines.length > 0 }
 }
 
-export const teamReportPrintCss = `@page{size:A4 landscape;margin:10mm}body{font:12px Arial,Tahoma,sans-serif;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:7px;text-align:start}th{background:#f1f5f9}thead{display:table-header-group}tr{break-inside:avoid}bdi{white-space:nowrap}.team-report-totals{display:flex;flex-wrap:wrap;gap:20px;margin-top:16px}.team-report-totals div{padding:8px;border:1px solid #cbd5e1}.team-report-totals strong{display:block}h1,h2{break-after:avoid}`
+export const teamReportPrintCss = `@page{size:A4 landscape;margin:10mm}body{font:12px Arial,Tahoma,sans-serif;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:7px;text-align:start}th{background:#f1f5f9}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}bdi{white-space:nowrap}.team-report-totals{display:flex;flex-wrap:wrap;gap:20px;margin-top:16px;break-inside:avoid;page-break-inside:avoid;break-before:avoid;page-break-before:avoid}.team-report-totals div{padding:8px;border:1px solid #cbd5e1}.team-report-totals strong{display:block}h1,h2{break-after:avoid}.team-report-header{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}tbody tr:last-child{break-after:avoid;page-break-after:avoid}`
 export function printTeamReport(element) {
   if (!element) return false
   const popup = window.open('', '_blank')

@@ -93,26 +93,44 @@ it('matches the production KAMANGO week: five days, one absent, base 87500, paya
   d.attendance = weeklyDates(week).map((date, i) => row('a', { attendance_date: date, status: i === 1 ? 'absent' : 'present', check_in: i === 1 ? null : '07:56', check_out: i === 1 || i === 5 ? null : '19:30' }))
   expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ workDays: 5, absentDays: 1, basePay: 87500, overtimeAmount: 0, finalAmount: 87500 })
 })
-it('visible team selection needs no reload; team and standalone summary printing include required rows/totals only', async () => {
+it('all eligible teams render together; one print includes every worker and the final standalone summary', async () => {
   window.history.replaceState({}, '', `/?date=${week}`)
   const fixture = data([row('a', manual(120)), row('b', manual(180))]); fixture.workers.push(worker('c'))
+  fixture.workers.push(worker('inactive', 'Siraj', { is_active: false, full_name: 'INACTIVE' }))
   mocks.load.mockResolvedValue(fixture)
   const popup = { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: Promise.resolve() } }, focus: vi.fn(), print: vi.fn() }
   vi.spyOn(window, 'open').mockReturnValue(popup)
   render(<TeamWeeklyReport />)
   await screen.findByRole('heading', { name: 'الفريق: Siraj' })
-  fireEvent.click(screen.getByRole('button', { name: 'طباعة الفريق', exact: true }))
+  expect(screen.getByRole('heading', { name: 'الفريق: Zarour' })).toBeTruthy()
+  expect(screen.queryByRole('combobox')).toBeNull()
+  const teams = screen.getAllByRole('region', { name: /^تقرير الفريق:/ })
+  expect(teams).toHaveLength(2)
+  const summaryColumns = ['العامل', 'كود العامل', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي اليدوي', 'الأجر الأساسي المستحق', 'مبلغ الإضافي', 'إجمالي القبض']
+  for (const team of teams) {
+    expect(within(team).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(summaryColumns)
+    expect(within(team).getByText('إجمالي القبض للفريق')).toBeTruthy()
+    for (const forbidden of ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'إضافي صباحي', 'إضافي مسائي'])
+      expect(within(team).queryByRole('columnheader', { name: forbidden, exact: true })).toBeNull()
+  }
+  expect(teams[0].textContent).toContain('Worker a'); expect(teams[0].textContent).toContain('Worker c')
+  expect(teams[1].textContent).toContain('Worker b'); expect(teams[1].textContent).not.toContain('Worker a')
+  fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   let html = popup.document.write.mock.calls.at(-1)[0]
-  expect(html).toContain('Worker a'); expect(html).toContain('Worker c'); expect(html).not.toContain('Worker b'); expect(html).toContain('إجمالي القبض للفريق')
+  expect(html).toContain('Worker a'); expect(html).toContain('Worker c'); expect(html).toContain('Worker b'); expect(html).toContain('إجمالي القبض للفريق')
+  for (const worker of ['Worker a', 'Worker b', 'Worker c']) expect(html.split(worker)).toHaveLength(2)
+  expect(html).toContain('class="team-report-content team-report-summary"')
+  expect(html.lastIndexOf('ملخص أجور جميع الفرق')).toBeGreaterThan(html.lastIndexOf('Worker b'))
+  expect(html).not.toContain('إضافي صباحي'); expect(html).not.toContain('إضافي مسائي')
+  expect(html).not.toContain('INACTIVE')
   expect(html).toContain('الاثنين 19/10/2026'); expect(html).toContain('السبت 24/10/2026'); expect(html).not.toContain('<button')
-  fireEvent.change(screen.getByLabelText('الفريق'), { target: { value: 'Zarour' } })
-  expect(screen.getByRole('heading', { name: 'الفريق: Zarour' })).toBeTruthy(); expect(mocks.load).toHaveBeenCalledTimes(1)
   fireEvent.click(screen.getByRole('button', { name: 'طباعة ملخص كل الفرق' }))
   html = popup.document.write.mock.calls.at(-1)[0]
   expect(html).toContain('ملخص أجور جميع الفرق'); expect(html).toContain('الإجمالي العام'); expect(html).toContain('Siraj'); expect(html).toContain('Zarour'); expect(html).not.toContain('Worker a')
   await waitFor(() => expect(popup.print).toHaveBeenCalledTimes(2))
   expect(teamReportPrintCss).toContain('A4 landscape'); expect(teamReportPrintCss).toContain('table-header-group')
-  expect(within(screen.getByRole('combobox')).getAllByRole('option')).toHaveLength(2)
+  expect(teamReportPrintCss).toContain('.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}')
+  expect(teamReportPrintCss).toContain('.team-report-header{break-inside:avoid')
 })
 it('print popup failure is reported and the admin route/navigation are wired', () => {
   vi.spyOn(window, 'open').mockReturnValue(null)
@@ -187,7 +205,7 @@ it('monthly OT supplement does not recalculate a locked weekly salary snapshot',
   expect(report.totals.currencies.CDF.finalAmount).toBe(1014)
   expect(report.hasLiveMonthlyOvertime).toBe(true); expect(JSON.stringify(d)).toBe(before)
 })
-it('monthly OT-only label and zero base are present on screen and in team print', async () => {
+it('monthly OT-only label and zero base are present on screen and in all-teams print', async () => {
   window.history.replaceState({}, '', `/?date=${week}`)
   const d = data([row('m', manual(360))]); d.workers = [monthlyWorker()]
   mocks.load.mockResolvedValue(d)
@@ -195,7 +213,15 @@ it('monthly OT-only label and zero base are present on screen and in team print'
   vi.spyOn(window, 'open').mockReturnValue(popup)
   render(<TeamWeeklyReport />)
   await screen.findByText('شهري — إضافي فقط')
-  fireEvent.click(screen.getByRole('button', { name: 'طباعة الفريق', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]
   expect(html).toContain('شهري — إضافي فقط'); expect(html).toContain('0.00'); expect(html).toContain('15.00'); expect(html).not.toContain('600.00')
+})
+it('comprehensive grand totals never add CDF and USD payouts together', () => {
+  const d = data([row('a', manual(120)), row('b', manual(60))])
+  d.workers[1].payroll_compensation = { ...d.workers[1].payroll_compensation, currency_code: 'USD', overtime_rate_per_hour: 10 }
+  const report = teamWeeklyReport(d, week)
+  expect(report.totals.currencies).toEqual({ CDF: { basePay: 110, overtimeAmount: 40, finalAmount: 150 }, USD: { basePay: 110, overtimeAmount: 10, finalAmount: 120 } })
+  for (const currency of ['CDF', 'USD']) expect(report.totals.currencies[currency].finalAmount)
+    .toBe(report.groups.reduce((sum, g) => sum + (g.totals.currencies[currency]?.finalAmount || 0), 0))
 })

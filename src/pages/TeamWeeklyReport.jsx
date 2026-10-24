@@ -16,8 +16,8 @@ function SummaryRow({ name, totals }) { return <tr><th>{name}</th><td>{totals.wo
 export default function TeamWeeklyReport() {
   const initialDate = new URLSearchParams(window.location.search).get('date')
   const [week, setWeek] = useState(() => mondayFor(initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? `${initialDate}T12:00:00` : new Date()))
-  const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [team, setTeam] = useState('')
-  const teamRef = useRef(null), summaryRef = useRef(null)
+  const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState('')
+  const allRef = useRef(null), summaryRef = useRef(null)
   const end = weeklyDates(week).at(-1)
   useEffect(() => {
     let active = true; setLoading(true); setError(''); setData(null)
@@ -26,23 +26,25 @@ export default function TeamWeeklyReport() {
     return () => { active = false }
   }, [week, end])
   const report = useMemo(() => data ? teamWeeklyReport(data, week) : null, [data, week])
-  const selected = report?.groups.find((g) => g.id === team) || report?.groups[0]
   const period = <bdi dir="ltr">الاثنين {dateLabel(week)} → السبت {dateLabel(end)}</bdi>
   const print = (ref) => { if (!printTeamReport(ref.current)) setError('تعذر فتح الطباعة — اسمح بالنوافذ المنبثقة') }
   const title = (summary = false) => <><h1>{summary ? 'ملخص أجور جميع الفرق' : 'تقرير أجور الفريق الأسبوعي'}</h1><p>الفترة: {period}</p><p>الوقت الإضافي في هذا التقرير يعتمد على الإدخال اليدوي المعتمد.</p><p>{report?.locked ? 'لقطة رواتب محفوظة — للقراءة فقط' : 'حساب حالي — غير معتمد نهائياً'}</p>{report?.hasLiveMonthlyOvertime && <p>إضافي العمال الشهريين من الإدخال اليدوي للفترة؛ ليس جزءاً من لقطة الأجور الأسبوعية المحفوظة.</p>}</>
   return <section dir="rtl" className="team-weekly-report">
     <h1 className="text-2xl font-bold">تقرير أجور الفرق الأسبوعي</h1>
     <div className="team-report-controls surface-card"><label>الأسبوع<input className="input-base" type="date" value={week} onChange={(e) => { if (e.target.value) setWeek(mondayFor(`${e.target.value}T12:00:00`)) }} /></label>
-      <label>الفريق<select className="input-base" value={selected?.id || ''} disabled={loading || !report?.groups.length} onChange={(e) => setTeam(e.target.value)}>{report?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
-      <button type="button" className="btn-primary" disabled={!selected || loading} onClick={() => print(teamRef)}>طباعة الفريق</button>
+      <button type="button" className="btn-primary" disabled={!report?.groups.length || loading} onClick={() => print(allRef)}>طباعة كل الفرق</button>
       <button type="button" className="btn-secondary" disabled={!report?.groups.length || loading} onClick={() => print(summaryRef)}>طباعة ملخص كل الفرق</button></div>
     {loading && <p role="status">جاري التحميل...</p>}{error && <p role="alert">{error}</p>}
     {report?.unavailable && <p role="alert">{report.unavailable}</p>}
     {report && !report.unavailable && !report.groups.length && <p>لا يوجد عمال رواتب أسبوعية مؤهلون</p>}
-    {selected && <><div ref={teamRef} className="team-report-content">{title()}<h2 className="text-xl font-bold">الفريق: {selected.name}</h2><p>عدد العمال: {selected.lines.length}</p>
-      {selected.lines.some((l) => l.unresolved) && <p>تنبيه: توجد إعدادات أجر أو حضور غير مكتملة. — تعني أن المبلغ غير محسوم؛ الإجماليات المتأثرة غير محسومة أيضاً.</p>}
-      <div className="overflow-x-auto"><table><thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{selected.lines.map((line) => <tr key={line.worker.id}><td>{line.worker.full_name}{line.monthlyOvertimeOnly && <small className="block text-(--muted)">شهري — إضافي فقط</small>}</td><td>{line.worker.employee_code || '—'}</td><td>{line.workDays}</td><td>{line.absentDays}</td><td><bdi dir="ltr">{hours(line.minutes)}</bdi></td><td><bdi dir="ltr">{money(line.basePay, line.currency)}</bdi></td><td><bdi dir="ltr">{money(line.overtimeAmount, line.currency)}</bdi></td><td><strong><bdi dir="ltr">{money(line.finalAmount, line.currency)}</bdi></strong></td></tr>)}</tbody></table></div>
-      <div className="team-report-totals"><div>إجمالي أيام العمل للفريق<strong>{selected.totals.workDays}</strong></div><div>إجمالي ساعات الإضافي للفريق<strong><bdi dir="ltr">{hours(selected.totals.minutes)}</bdi></strong></div><div>إجمالي مبلغ الإضافي<Amounts totals={selected.totals} field="overtimeAmount" /></div><div>إجمالي الأجور الأساسية<Amounts totals={selected.totals} field="basePay" /></div><div>إجمالي القبض للفريق<strong><Amounts totals={selected.totals} field="finalAmount" /></strong></div></div></div>
-      <div ref={summaryRef} className="team-report-content">{title(true)}<div className="overflow-x-auto"><table><thead><tr>{summaryHeaders.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{report.groups.map((g) => <SummaryRow key={g.id} name={g.name} totals={g.totals} />)}</tbody><tfoot><SummaryRow name="الإجمالي العام" totals={report.totals} /></tfoot></table></div></div></>}
+    {!!report?.groups.length && <><p>عدد الفرق: {report.groups.length} · عدد العمال: {report.totals.workers}</p><div ref={allRef} className="team-report-all">
+      {report.groups.map((group) => <section key={group.id} className="team-report-content team-report-team" aria-label={`تقرير الفريق: ${group.name}`}>
+        <header className="team-report-header">{title()}<h2 className="text-xl font-bold">الفريق: {group.name}</h2><p>عدد العمال: {group.lines.length}</p></header>
+        {group.lines.some((l) => l.unresolved) && <p>تنبيه: توجد إعدادات أجر أو حضور غير مكتملة. — تعني أن المبلغ غير محسوم؛ الإجماليات المتأثرة غير محسومة أيضاً.</p>}
+        <div className="overflow-x-auto"><table><thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{group.lines.map((line) => <tr key={line.worker.id}><td>{line.worker.full_name}{line.monthlyOvertimeOnly && <small className="block text-(--muted)">شهري — إضافي فقط</small>}</td><td>{line.worker.employee_code || '—'}</td><td>{line.workDays}</td><td>{line.absentDays}</td><td><bdi dir="ltr">{hours(line.minutes)}</bdi></td><td><bdi dir="ltr">{money(line.basePay, line.currency)}</bdi></td><td><bdi dir="ltr">{money(line.overtimeAmount, line.currency)}</bdi></td><td><strong><bdi dir="ltr">{money(line.finalAmount, line.currency)}</bdi></strong></td></tr>)}</tbody></table></div>
+        <div className="team-report-totals"><div>إجمالي أيام العمل للفريق<strong>{group.totals.workDays}</strong></div><div>إجمالي ساعات الإضافي اليدوي للفريق<strong><bdi dir="ltr">{hours(group.totals.minutes)}</bdi></strong></div><div>إجمالي مبلغ الإضافي<Amounts totals={group.totals} field="overtimeAmount" /></div><div>إجمالي الأجور الأساسية<Amounts totals={group.totals} field="basePay" /></div><div>إجمالي القبض للفريق<strong><Amounts totals={group.totals} field="finalAmount" /></strong></div></div>
+      </section>)}
+      <section ref={summaryRef} className="team-report-content team-report-summary" aria-label="ملخص أجور جميع الفرق">{title(true)}<div className="overflow-x-auto"><table><thead><tr>{summaryHeaders.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{report.groups.map((g) => <SummaryRow key={g.id} name={g.name} totals={g.totals} />)}</tbody><tfoot><SummaryRow name="الإجمالي العام" totals={report.totals} /></tfoot></table></div></section>
+    </div></>}
   </section>
 }
