@@ -89,11 +89,13 @@ export function teamWeeklyReport(data, monday) {
 }
 
 export const teamReportPrintCss = `@page{size:A4 landscape;margin:10mm}body{font:12px Arial,Tahoma,sans-serif;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:7px;text-align:start}td:not(:first-child),thead th:not(:first-child){text-align:center}th{background:#f1f5f9}thead{display:table-header-group}tfoot{display:table-row-group;break-inside:avoid;page-break-inside:avoid}tfoot th,tfoot td{font-weight:800;background:#e2e8f0;border-top:2px solid #64748b}tfoot bdi{display:block}tr{break-inside:avoid;page-break-inside:avoid}bdi{white-space:nowrap}h1,h2{break-after:avoid}.team-report-header{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}tbody tr:last-child{break-after:avoid;page-break-after:avoid}`
-export function printTeamReport(element) {
+export function printTeamReport(element, { language = document.documentElement.lang || 'ar', title = element?.querySelector?.('h1')?.textContent || '' } = {}) {
   if (!element) return false
   const popup = window.open('', '_blank')
   if (!popup) return false
-  popup.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير أجور الفرق الأسبوعي</title><style>${teamReportPrintCss}.team-report-team table{font-size:10px}.team-report-team th,.team-report-team td{padding:5px 3px}.team-report-day{white-space:nowrap}</style></head><body>${element.innerHTML}</body></html>`)
+  const locale = ['ar', 'fr', 'en'].includes(language) ? language : 'en'
+  const escapedTitle = String(title).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]))
+  popup.document.write(`<!doctype html><html lang="${locale}" dir="${locale === 'ar' ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${escapedTitle}</title><style>${teamReportPrintCss}.team-report-team table{font-size:10px}.team-report-team th,.team-report-team td{padding:5px 3px}.team-report-day{white-space:nowrap}</style></head><body>${element.innerHTML}</body></html>`)
   popup.document.close()
   Promise.resolve(popup.document.fonts?.ready).then(() => { popup.focus(); popup.print() })
   return true

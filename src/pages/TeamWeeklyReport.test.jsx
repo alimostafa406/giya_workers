@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import TeamWeeklyReport from './TeamWeeklyReport'
 import { manualReportMinutes, printTeamReport, teamReportPrintCss, teamWeeklyReport } from '../utils/teamWeeklyReport'
 import { calculatePayrollLine, weeklyDates } from '../utils/payrollCalculations'
+import { LanguageProvider, useTranslation } from '../i18n/LanguageContext'
+import { teamWeeklyReportTranslations } from '../i18n/teamWeeklyReportTranslations'
 globalThis.React = React
+const render = (ui) => renderBase(<LanguageProvider>{ui}</LanguageProvider>)
 const mocks = vi.hoisted(() => ({ load: vi.fn() }))
 vi.mock('../api/payrollOperationsApi', () => ({ getPayrollOperationsDataRequest: mocks.load }))
 const week = '2026-10-19'
@@ -17,7 +20,7 @@ const row = (id, extra = {}) => ({ worker_id: id, attendance_date: week, status:
   attendance_source: 'biometric', check_in: '08:00', check_out: '19:30', ...extra })
 const manual = (minutes) => ({ manual_override: true, emergency_overtime_mode: 'manual_overtime_duration', emergency_overtime_minutes: minutes })
 const data = (rows = [row('a')]) => ({ workers: [worker('a'), worker('b', 'Zarour')], attendance: rows, rules: {}, holidays: [], runs: [], payrollLines: [], payrollAdjustments: [] })
-afterEach(() => { cleanup(); vi.restoreAllMocks(); window.history.replaceState({}, '', '/') })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); window.history.replaceState({}, '', '/') })
 
 it('biometric overtime alone is zero payable OT', () => {
   const line = teamWeeklyReport(data(), week).lines[0]
@@ -277,4 +280,64 @@ it('non-eligible dates are neutral and frozen snapshot daily statuses never use 
     present_days: 0, half_days: 0, absent_days: 1, attendance_summary_snapshot: { days: [{ date: week, status: 'absent' }] } }]
   const frozen = teamWeeklyReport(d, week).lines[0]
   expect(frozen.details).toEqual([{ date: week, status: 'absent' }]); expect(frozen.finalAmount).toBe(999)
+})
+
+function LocaleSwitch() {
+  const { setLanguage } = useTranslation()
+  return <nav>{['ar', 'fr', 'en'].map((language) => <button type="button" key={language} onClick={() => setLanguage(language)}>lang-{language}</button>)}</nav>
+}
+it.each([
+  ['ar', 'rtl', 'طباعة كل الفرق', 'طباعة ملخص كل الفرق', 'الاثنين', 'حاضر', 'إجمالي القبض', 'ملخص أجور جميع الفرق', 'شهري — إضافي فقط'],
+  ['fr', 'ltr', 'Imprimer toutes les équipes', 'Imprimer le résumé de toutes les équipes', 'Lundi', 'Présent', 'Total à payer', 'Résumé des salaires de toutes les équipes', 'Mensuel — heures supplémentaires uniquement'],
+  ['en', 'ltr', 'Print All Teams', 'Print all-team summary', 'Monday', 'Present', 'Total payable', 'All-team wage summary', 'Monthly — overtime only'],
+])('current %s language controls visible report AND actual generated all-team/summary print DOM', async (language, direction, printAll, printSummary, monday, present, total, summaryTitle, monthlyLabel) => {
+  localStorage.setItem('workers_app_language', 'ar')
+  window.history.replaceState({}, '', `/?date=${week}`)
+  const d = data([row('a', manual(120)), row('m', manual(360))]); d.workers = [worker('a'), monthlyWorker('m', { team_id: 'Zarour', team_name: 'Zarour' })]
+  const before = JSON.stringify(d)
+  mocks.load.mockResolvedValue(d)
+  const popup = { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: Promise.resolve() } }, focus: vi.fn(), print: vi.fn() }
+  vi.spyOn(window, 'open').mockReturnValue(popup)
+  render(<><LocaleSwitch /><TeamWeeklyReport /></>)
+  await screen.findByRole('region', { name: 'تقرير الفريق: Siraj' })
+  const financialCells = () => [...document.querySelectorAll('.team-report-team tbody tr')].map((tr) => [...tr.children].slice(8).map((td) => td.textContent))
+  const amounts = financialCells()
+  if (language === 'ar') fireEvent.click(screen.getByRole('button', { name: 'lang-fr' }))
+  fireEvent.click(screen.getByRole('button', { name: `lang-${language}` }))
+  const report = document.querySelector('.team-weekly-report')
+  expect(report.lang).toBe(language); expect(report.dir).toBe(direction)
+  expect(screen.getByText(monthlyLabel)).toBeTruthy()
+  expect(financialCells()).toEqual(amounts)
+  fireEvent.click(screen.getByRole('button', { name: printAll, exact: true }))
+  const html = popup.document.write.mock.calls.at(-1)[0]
+  const printed = new DOMParser().parseFromString(html, 'text/html')
+  expect(printed.documentElement.lang).toBe(language); expect(printed.documentElement.dir).toBe(direction)
+  expect(printed.title).toBe(teamWeeklyReportTranslations[language].title)
+  expect(printed.querySelectorAll('.team-report-team')).toHaveLength(2)
+  for (const team of printed.querySelectorAll('.team-report-team')) {
+    expect(team.querySelector('thead').textContent).toContain(monday)
+    expect(team.querySelector('thead').textContent).toContain(total)
+    expect(team.textContent).toContain(present)
+  }
+  expect(printed.body.textContent).toContain(summaryTitle)
+  expect(printed.body.textContent).toContain(teamWeeklyReportTranslations[language].grandTotal)
+  expect(printed.body.textContent).toContain(monthlyLabel)
+  if (language !== 'ar') {
+    expect(printed.body.textContent).not.toMatch(/[\u0600-\u06ff]/)
+    expect(report.textContent).not.toMatch(/[\u0600-\u06ff]/)
+  }
+  fireEvent.click(screen.getByRole('button', { name: printSummary, exact: true }))
+  const summary = new DOMParser().parseFromString(popup.document.write.mock.calls.at(-1)[0], 'text/html')
+  expect(summary.title).toBe(summaryTitle); expect(summary.documentElement.dir).toBe(direction)
+  expect(summary.querySelectorAll('table')).toHaveLength(1)
+  expect(summary.body.textContent).toContain(teamWeeklyReportTranslations[language].grandTotal)
+  if (language !== 'ar') expect(summary.body.textContent).not.toMatch(/[\u0600-\u06ff]/)
+  expect(JSON.stringify(d)).toBe(before)
+  await waitFor(() => expect(popup.print).toHaveBeenCalledTimes(2))
+})
+it('report translation dictionaries have the same nonempty keys in Arabic, French and English', () => {
+  for (const language of ['ar', 'fr', 'en']) {
+    expect(Object.keys(teamWeeklyReportTranslations[language]).sort()).toEqual(Object.keys(teamWeeklyReportTranslations.en).sort())
+    expect(Object.values(teamWeeklyReportTranslations[language]).every((value) => typeof value === 'string' && value.length > 0)).toBe(true)
+  }
 })

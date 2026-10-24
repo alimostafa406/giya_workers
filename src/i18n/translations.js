@@ -1,4 +1,5 @@
 import { emergencyOvertimeTranslations } from './emergencyOvertimeTranslations.js'
+import { teamWeeklyReportTranslations } from './teamWeeklyReportTranslations.js'
 
 export const translations = {
   ar: {
@@ -573,6 +574,7 @@ Object.assign(translations.ar.payroll, { refreshFromAttendance: 'تحديث ال
 Object.assign(translations.en.payroll, { refreshFromAttendance: 'Refresh draft from attendance', draftRefreshedFromAttendance: 'Draft refreshed from current attendance.', refreshDraftRequired: 'Attendance or overtime changed after the draft was saved. Refresh it before review.' })
 Object.assign(translations.fr.payroll, { refreshFromAttendance: 'Actualiser la paie depuis la présence', draftRefreshedFromAttendance: 'Le brouillon a été actualisé depuis la présence actuelle.', refreshDraftRequired: 'La présence ou les heures supplémentaires ont changé depuis l’enregistrement. Actualisez le brouillon avant validation.' })
 for (const language of ['ar', 'en', 'fr']) translations[language].emergencyOvertime = emergencyOvertimeTranslations[language]
+for (const language of ['ar', 'en', 'fr']) translations[language].teamWeeklyReport = teamWeeklyReportTranslations[language]
 
 translations.ar.workerControlHistory = {
   title: 'سجل الحضور والغياب', dateFrom: 'من', dateTo: 'إلى', apply: 'تطبيق', loading: 'جارٍ تحميل سجل العامل...', invalidRange: 'اختر فترة صحيحة لا تتجاوز اليوم.', loadError: 'تعذر تحميل سجل الحضور.', empty: 'لا توجد أيام مطابقة.',
