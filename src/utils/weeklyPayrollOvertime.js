@@ -123,6 +123,7 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
 export const weeklyPayrollOvertimeForLine = (line) => (
   isChauffeurNormalOvertimeExcluded(line)
     ? { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
+    : line?.manualOvertimeOnly === true ? { morningOvertimeMinutes: 0, eveningOvertimeMinutes: Number(line.eveningOvertimeMinutes || 0) }
     : (line?.details || []).reduce((totals, detail) => {
     const overtime = weeklyPayrollOvertimeForDetail(detail)
     return {

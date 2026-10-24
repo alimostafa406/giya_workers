@@ -8,6 +8,7 @@ export const staleWeeklyPayrollWorkerIds = (storedLines = [], canonicalLines = [
     const saved = savedByWorker.get(String(line.worker?.id))
     if (!saved || saved.details?.length !== line.details?.length) return true
     if (Number(saved.eveningOvertimeMinutes || 0) !== Number(line.eveningOvertimeMinutes || 0)) return true
+    if ((saved.weeklyManualOverrideMinutes ?? null) !== (line.weeklyManualOverrideMinutes ?? null)) return true
     const days = new Map(saved.details.map(detail => [detail.date, detail]))
     return line.details.some(detail => {
       const old = days.get(detail.date)

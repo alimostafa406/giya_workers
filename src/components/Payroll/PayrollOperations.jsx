@@ -17,10 +17,12 @@ import WeeklyPayrollTeamSummary from './WeeklyPayrollTeamSummary'
 import PayrollWorkerSearch from './PayrollWorkerSearch'
 import PayrollNotes from './PayrollNotes'
 import { findPayrollTeam } from '../../utils/payrollTeamSelection'
-import { applyWeeklyOvertimePay, formatEveningOvertimeMinutes } from '../../utils/weeklyPayrollOvertime'
+import { formatEveningOvertimeMinutes } from '../../utils/weeklyPayrollOvertime'
 import { positiveWeeklyPayrollFooterAmounts, weeklyPayrollTeamFooter } from '../../utils/weeklyPayrollTeamFooter'
 import { staleWeeklyPayrollWorkerIds } from '../../utils/weeklyPayrollDraftFreshness'
 import { payrollConfigurationWarnings } from '../../utils/payrollWarnings'
+import { applyManualWeeklyOvertime } from '../../utils/weeklyManualOvertime'
+import { saveWeeklyOvertime } from '../../api/weeklyOvertimeApi'
 
 const money = (amount, currency) => formatPayrollMoney(amount, { currency, paymentType: 'weekly' })
 
@@ -33,7 +35,7 @@ const weeklyLinesFor = (data, monday) => {
     .filter((worker) => isWeeklyPayrollEligibleWorker(worker, saturday))
     .map((worker) => {
       const sundayPayment = (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(worker.id) && payment.work_date === sundayDate) || null
-      return { ...applyWeeklyOvertimePay(calculatePayrollLine({
+      return { ...applyManualWeeklyOvertime(calculatePayrollLine({
       worker,
       term: worker.payroll_compensation,
       attendanceByDate: attendance,
@@ -42,7 +44,7 @@ const weeklyLinesFor = (data, monday) => {
       holidayDates: holidays,
       paymentType: 'weekly',
       futureDatesAreNeutral: true,
-      })), sundayDate, sundayPayment }
+      }), (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id))), sundayDate, sundayPayment }
     })
 }
 
@@ -68,7 +70,7 @@ export default function PayrollOperations() {
   }, [data])
   const calculatedLines = useMemo(() => weeklyLinesFor(data, monday).map((line) => {
     const payrollLine = payrollLineByWorkerId.get(String(line.worker.id))
-    return payrollLine ? applyPayrollAdjustments(line, adjustmentsByLineId.get(String(payrollLine.id)) || []) : line
+    return payrollLine ? applyPayrollAdjustments(line, (adjustmentsByLineId.get(String(payrollLine.id)) || []).filter((a) => a.adjustment_type !== 'overtime_correction')) : line
   }), [adjustmentsByLineId, data, monday, payrollLineByWorkerId])
   const storedLines = useMemo(() => (data?.payrollLines || []).filter((line) => line.payroll_run_id === weeklyRun?.id).map((stored) => {
     const worker = (data?.workers || []).find((item) => String(item.id) === String(stored.worker_id)) || { id: stored.worker_id, full_name: stored.worker_name_snapshot, employee_code: null, team_id: null, team_name: null }
@@ -76,6 +78,8 @@ export default function PayrollOperations() {
     const calculation = stored.calculation_snapshot || {}
     return {
       worker,
+      manualOvertimeOnly: summary.manual_overtime_only === true,
+      weeklyManualOverrideMinutes: summary.weekly_manual_overtime_override_minutes ?? null,
       term: stored.compensation_snapshot || {},
       rules: stored.rule_snapshot || {},
       paymentType: stored.payment_type_snapshot,
@@ -261,19 +265,20 @@ export default function PayrollOperations() {
       return
     }
     const changedDetails = line.details.filter((detail) => values.statuses[detail.date] !== detail.status)
-    const overtimeDifference = numeric((targetOvertimeHours - Number(line.overtimeHours || 0)) * Number(line.overtimeRate || 0))
+    const overtimeChanged = targetOvertimeHours !== Number(line.overtimeHours || 0)
+    if (overtimeChanged && (!Number.isInteger(targetOvertimeHours * 60) || targetOvertimeHours > 144)) { setError('Weekly overtime requires whole minutes, up to 144 hours'); return }
     const transportDifference = numeric(targetTransportAmount - Number(line.transportAmount || 0))
     const changes = [
-      ['overtime_correction', overtimeDifference],
       ['transport_correction', transportDifference],
       [values.adjustmentType, adjustmentAmount],
     ].filter(([, amount]) => amount !== 0)
-    if (!changedDetails.length && !changes.length && !compensationChanged && !sundayChanged) { setEditingWorkerId(''); return }
+    if (!changedDetails.length && !changes.length && !compensationChanged && !sundayChanged && !overtimeChanged) { setEditingWorkerId(''); return }
     if (changes.length && (!draftRun || !payrollLineByWorkerId.get(String(line.worker.id)))) { setError(t('payroll.adjustmentDraftRequired')); return }
     if (changes.length && !String(values.reason || '').trim()) { setError(t('payroll.adjustmentRequired')); return }
     setSavingSheetWorkerId(String(line.worker.id))
     setError('')
     try {
+      if (overtimeChanged) await saveWeeklyOvertime({ week: monday, entries: [{ worker_id: line.worker.id, minutes: targetOvertimeHours * 60, expected_version: line.weeklyManualOverrideVersion || 0 }] })
       if (compensationChanged) {
         await saveWorkerPayrollSettingsRequest(line.worker, {
           payment_type: selectedPaymentType,

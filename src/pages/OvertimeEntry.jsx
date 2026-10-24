@@ -8,8 +8,13 @@ import { weekDays } from '../utils/outsideWork'
 import { outsideWorkDateLabel } from '../utils/outsideWorkDateLabels'
 import { currentEntryOvertime, overtimeDuration, overtimeEntryBlock, overtimeEntryLabels, overtimeEntryWorkers, parseOvertimeDuration } from '../utils/overtimeEntry'
 import './OvertimeEntry.css'
+import WeeklyOvertimeEntry from './WeeklyOvertimeEntry'
 
 export default function OvertimeEntry() {
+  const [mode, setMode] = useState('daily')
+  return <><nav className="overtime-week-strip" aria-label="طريقة إدخال الإضافي"><button type="button" aria-pressed={mode === 'daily'} onClick={() => setMode('daily')}>إدخال يومي</button><button type="button" aria-pressed={mode === 'weekly'} onClick={() => setMode('weekly')}>إجمالي أسبوعي</button></nav>{mode === 'weekly' ? <WeeklyOvertimeEntry /> : <DailyOvertimeEntry />}</>
+}
+function DailyOvertimeEntry() {
   const { language } = useTranslation()
   const l = overtimeEntryLabels[language] || overtimeEntryLabels.en
   const today = kinshasaClock().date

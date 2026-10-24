@@ -4,6 +4,7 @@ import { getPayrollSettingsWorkersRequest } from './payrollSettingsApi'
 import { applyPayrollAdjustments } from '../utils/payrollCalculations'
 import { assertPayrollLineCurrencies, payrollLineCurrencySnapshot } from '../utils/payrollLineCurrency'
 import { payrollDraftEligibleLines, removableStaleWeeklyPayrollLineIds } from '../utils/weeklyPayrollEligibility'
+import { getWeeklyOvertimeOverrides } from './weeklyOvertimeApi'
 
 const isMissingSundayPaymentsError = (error) => (
   error?.code === '42P01'
@@ -37,7 +38,7 @@ const readSundayPayments = async (client) => {
 
 export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => {
   const client = getSupabaseClient()
-  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult] = await Promise.all([
+  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult, weeklyOvertimeOverrides] = await Promise.all([
     getPayrollSettingsWorkersRequest(), getAttendanceRequest(attendanceParams),
     client.from('payroll_rule_set').select('*').eq('is_active', true).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
     client.from('company_holiday').select('holiday_date,name').eq('is_active', true),
@@ -45,13 +46,14 @@ export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => 
     client.from('payroll_line').select('id,payroll_run_id,worker_id,attendance_period_start,attendance_period_end,payment_due_date,worker_name_snapshot,payment_type_snapshot,currency_code_snapshot,compensation_snapshot,rule_snapshot,attendance_summary_snapshot,calculation_snapshot,present_days,half_days,absent_days,base_amount,transport_amount,overtime_hours,overtime_amount,holiday_amount,bonus_amount,deduction_amount,advance_amount,manual_adjustment_amount,final_amount'),
     client.from('payroll_adjustment').select('id,payroll_line_id,adjustment_type,amount,reason,created_at,created_by,voided_at,voided_by,void_reason').order('created_at', { ascending: false }),
     readSundayPayments(client),
+    attendanceParams.date_from ? getWeeklyOvertimeOverrides(attendanceParams.date_from) : Promise.resolve([]),
   ])
   if (rulesResult.error) throw rulesResult.error
   if (holidaysResult.error) throw holidaysResult.error
   if (runsResult.error) throw runsResult.error
   if (linesResult.error) throw linesResult.error
   if (adjustmentsResult.error) throw adjustmentsResult.error
-  return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [], sundayPayments: sundayResult.data, sundayPaymentsAvailable: sundayResult.available }
+  return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [], sundayPayments: sundayResult.data, sundayPaymentsAvailable: sundayResult.available, weeklyOvertimeOverrides }
 }
 
 const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
@@ -59,7 +61,7 @@ const linePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
   worker_name_snapshot: line.worker.full_name || '-', payment_type_snapshot: line.paymentType, currency_code_snapshot: payrollLineCurrencySnapshot(line),
   monthly_payroll_cycle_start_date_snapshot: line.term?.monthly_payroll_cycle_start_date || null,
   compensation_snapshot: line.term || {}, rule_snapshot: line.rules || {},
-  attendance_summary_snapshot: { manual_overtime_source_version: 1, present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
+  attendance_summary_snapshot: { manual_overtime_source_version: 1, weekly_manual_overtime_override_minutes: line.weeklyManualOverrideMinutes ?? null, manual_overtime_only: line.manualOvertimeOnly === true, present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
     date: detail.date,
     status: detail.status,
     manual_override: detail.row?.manual_override === true,
@@ -122,7 +124,8 @@ export const persistPayrollDraftRequest = async ({ paymentType, periodStart = nu
   })
   const payload = eligibleLines.map((line) => {
     const existingLineId = lineIdByWorkerId.get(String(line.worker.id))
-    const adjustedLine = applyPayrollAdjustments(line, existingLineId ? adjustmentsByLineId.get(String(existingLineId)) || [] : [])
+    const adjustments = existingLineId ? adjustmentsByLineId.get(String(existingLineId)) || [] : []
+    const adjustedLine = applyPayrollAdjustments(line, line.manualOvertimeOnly ? adjustments.filter((a) => a.adjustment_type !== 'overtime_correction') : adjustments)
     return linePayload(run.id, adjustedLine, line.cycle?.start || periodStart, line.cycle?.end || periodEnd, line.cycle?.due || dueDate)
   })
   const { data: savedLines, error: lineError } = await client.from('payroll_line').upsert(payload, { onConflict: 'payroll_run_id,worker_id' }).select('id,worker_id')

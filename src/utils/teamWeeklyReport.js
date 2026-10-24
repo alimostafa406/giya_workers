@@ -1,12 +1,10 @@
 import { applyPayrollAdjustments, calculatePayrollLine, weeklyDates } from './payrollCalculations.js'
 import { isWeeklyPayrollEligibleWorker } from './weeklyPayrollEligibility.js'
-import { calculateWeeklyOvertimePay, isChauffeurNormalOvertimeExcluded } from './weeklyPayrollOvertime.js'
+import { calculateWeeklyOvertimePay } from './weeklyPayrollOvertime.js'
+import { applyManualWeeklyOvertime, manualReportMinutes } from './weeklyManualOvertime.js'
+export { manualReportMinutes } from './weeklyManualOvertime.js'
 
 const round = (n) => Math.round(n * 100) / 100
-export const manualReportMinutes = (row) => row?.manual_override === true
-  && row.emergency_overtime_mode === 'manual_overtime_duration'
-  && Number.isInteger(Number(row.emergency_overtime_minutes)) && Number(row.emergency_overtime_minutes) >= 0
-  ? Number(row.emergency_overtime_minutes) : 0
 
 export const reportTotals = (lines) => lines.reduce((total, line) => {
   total.workers += 1; total.workDays += line.workDays; total.absentDays += line.absentDays; total.minutes += line.minutes
@@ -32,7 +30,7 @@ export function teamWeeklyReport(data, monday) {
   const attendance = new Map((data.attendance || []).map((r) => [`${r.worker_id}|${r.attendance_date}`, r]))
   const holidays = new Set((data.holidays || []).map((h) => h.holiday_date))
   const lines = locked ? stored.map((s) => {
-    const minutes = (s.attendance_summary_snapshot?.days || []).filter((d) => dates.includes(d.date)).reduce((sum, day) => sum + manualReportMinutes(day), 0)
+    const minutes = s.attendance_summary_snapshot?.weekly_manual_overtime_override_minutes ?? (s.attendance_summary_snapshot?.days || []).filter((d) => dates.includes(d.date)).reduce((sum, day) => sum + manualReportMinutes(day), 0)
     const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: s.compensation_snapshot?.overtime_rate_per_hour })
     const basePay = round(Number(s.final_amount) - Number(s.overtime_amount || 0))
     const overtimeAmount = overtime.missingRateBlocker ? null : overtime.overtimePay ?? 0
@@ -50,7 +48,8 @@ export function teamWeeklyReport(data, monday) {
     // Non-OT canonical adjustments still form part of base payable. OT
     // corrections outside the manual-entry path are not payable in this report.
     const adjusted = applyPayrollAdjustments(line, (data.payrollAdjustments || []).filter((a) => a.payroll_line_id === saved?.id && a.adjustment_type !== 'overtime_correction'))
-    const minutes = isChauffeurNormalOvertimeExcluded(worker) ? 0 : line.details.reduce((sum, detail) => sum + manualReportMinutes(detail.row), 0)
+    const effective = applyManualWeeklyOvertime(line, (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id)))
+    const minutes = effective.eveningOvertimeMinutes
     const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: line.term?.overtime_rate_per_hour })
     const configured = line.term?.daily_rate != null && line.term.daily_rate !== '' && line.term?.daily_transport_allowance != null && line.currency
     const basePay = configured ? round(adjusted.finalAmount - adjusted.overtimeAmount) : null
