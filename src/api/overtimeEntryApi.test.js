@@ -4,6 +4,7 @@ const mock = vi.hoisted(() => ({ rpc: vi.fn(), workers: vi.fn(), attendance: vi.
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: () => ({ from: mock.from, rpc: mock.rpc }) }))
 vi.mock('./workersApi', () => ({ getWorkersRequest: mock.workers }))
 vi.mock('./attendanceApi', () => ({ getAttendanceRowsRequest: mock.attendance }))
+vi.mock('./biometricMappingApi', () => ({ getWorkerBiometricSearchIndexRequest: vi.fn(async () => ({ data: [{ worker_id: 'w1', device_employee_no: '025', is_active: true, mapping_review_state: 'confirmed' }] })) }))
 import { getOvertimeEntryData, saveOvertimeEntry } from './overtimeEntryApi'
 beforeEach(() => {
   mock.rpc.mockReset().mockResolvedValue({ data: { updated: 1 }, error: null })
@@ -22,6 +23,8 @@ it('uses the canonical RPC, SET duration, version token and no fake times or ext
 it('bulk-loads date attendance and finalized/paid payroll locks, not one request per worker', async () => {
   const data = await getOvertimeEntryData('2026-10-23')
   expect(data.lockedIds).toEqual(['w1'])
+  expect(data.mappings[0].device_employee_no).toBe('025')
+  expect(mock.workers).toHaveBeenCalledWith()
   expect(mock.attendance).toHaveBeenCalledWith({ date: '2026-10-23', paginate: true })
   expect(mock.query.in).toHaveBeenCalledWith('payroll_run.status', ['finalized','paid'])
   expect(mock.query.lte).toHaveBeenCalledWith('attendance_period_start', '2026-10-23')

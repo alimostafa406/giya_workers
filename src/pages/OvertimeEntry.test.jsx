@@ -41,6 +41,33 @@ const previewSave = async () => {
   await waitFor(() => expect(mocks.save).toHaveBeenCalled())
 }
 
+it.each([' beta ', '315', '025', 'et'])('daily search %s finds monthly worker using canonical biometric strings', async (query) => {
+  source.workers[1] = { ...source.workers[1], employee_code: '315', payment_type: 'monthly' }
+  source.mappings = [{ worker_id: 'b', device_employee_no: '025', is_active: true, mapping_review_state: 'confirmed' }]
+  open(); await team()
+  fireEvent.change(screen.getByPlaceholderText('بحث بالاسم أو الكود أو رقم البصمة...'), { target: { value: query } })
+  expect(screen.getByRole('checkbox', { name: 'BETA' })).toBeTruthy()
+  expect(screen.queryByRole('checkbox', { name: 'ALPHA' })).toBeNull()
+  expect(screen.getByText('Monthly')).toBeTruthy()
+  expect(screen.getByText('#025')).toBeTruthy()
+})
+it('daily filtered select-all preserves hidden selections and monthly worker uses normal bulk/individual save', async () => {
+  source.workers[1].payment_type = 'monthly'
+  source.mappings = [{ worker_id: 'b', device_employee_no: '025', is_active: true, mapping_review_state: 'confirmed' }]
+  open(); await team()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'ALPHA' }))
+  const search = screen.getByPlaceholderText('بحث بالاسم أو الكود أو رقم البصمة...')
+  fireEvent.change(search, { target: { value: '025' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Select all', exact: true }))
+  fireEvent.change(search, { target: { value: '' } })
+  expect(screen.getByRole('checkbox', { name: 'ALPHA' }).checked).toBe(true)
+  expect(screen.getByRole('checkbox', { name: 'BETA' }).checked).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
+  fireEvent.change(screen.getByLabelText('New duration: BETA'), { target: { value: '3:00' } })
+  await previewSave()
+  expect(mocks.save.mock.calls[0][0].entries.map((entry) => [entry.worker_id, entry.minutes])).toEqual([['a',120],['b',180]])
+})
+
 it('applies visible quick controls and independent row edits under production StrictMode', async () => {
   render(<React.StrictMode><LanguageProvider><OvertimeEntry /></LanguageProvider></React.StrictMode>)
   await team()

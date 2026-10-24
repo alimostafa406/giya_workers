@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), daily: vi.fn() }
 vi.mock('../api/payrollOperationsApi', () => ({ getPayrollOperationsDataRequest: mocks.load }))
 vi.mock('../api/weeklyOvertimeApi', () => ({ saveWeeklyOvertime: mocks.save }))
 vi.mock('../api/overtimeEntryApi', () => ({ getOvertimeEntryData: mocks.daily, saveOvertimeEntry: vi.fn() }))
+vi.mock('../api/biometricMappingApi', () => ({ getWorkerBiometricSearchIndexRequest: vi.fn(async () => ({ data: [
+  { worker_id: 'B', device_employee_no: '025', is_active: true, mapping_review_state: 'confirmed' },
+  { worker_id: 'A', device_employee_no: '25', is_active: true, mapping_review_state: 'confirmed' },
+] })) }))
 const week = '2026-10-19', end = '2026-10-24'
 const worker = (id, team = 'Siraj') => ({ id, full_name: id, employee_code: id, team_id: team, team_name: team, payment_type: 'weekly', is_active: true,
   payroll_compensation: { daily_rate: 100, daily_transport_allowance: 0, overtime_rate_per_hour: 20, currency_code: 'CDF' } })
@@ -91,4 +95,45 @@ it.each([0, 1500])('finalized snapshot freezes weekly override %s despite later 
   const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
   expect(report.lines[0]).toMatchObject({ minutes, overtimeAmount: minutes / 60 * 20, finalAmount: 300 + minutes / 60 * 20 })
   expect(JSON.stringify(d)).toBe(before)
+})
+
+it.each([' beta ', '315', '025', 'et'])('weekly search %s finds monthly worker in selected team only', async (query) => {
+  const d = fixture(); d.workers[0] = { ...d.workers[0], full_name: 'ALPHA', employee_code: '207' }
+  d.workers[1] = { ...d.workers[1], full_name: 'BETA', employee_code: '315', payment_type: 'monthly' }
+  await open(d)
+  fireEvent.change(screen.getByPlaceholderText('بحث بالاسم أو الكود أو رقم البصمة...'), { target: { value: query } })
+  expect(screen.getByRole('checkbox', { name: 'BETA' })).toBeTruthy()
+  expect(screen.queryByRole('checkbox', { name: 'ALPHA' })).toBeNull()
+  expect(screen.queryByRole('checkbox', { name: 'C' })).toBeNull()
+  expect(screen.getByText('شهري')).toBeTruthy()
+})
+it('weekly filtered select-all unions hidden selections and monthly worker saves 25h with independent adjustment', async () => {
+  const d = fixture(); d.workers[1].payment_type = 'monthly'
+  await open(d)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A' }))
+  const search = screen.getByPlaceholderText('بحث بالاسم أو الكود أو رقم البصمة...')
+  fireEvent.change(search, { target: { value: '025' } })
+  fireEvent.click(screen.getByRole('button', { name: 'اختيار الكل', exact: true }))
+  fireEvent.change(search, { target: { value: '' } })
+  expect(screen.getByRole('checkbox', { name: 'A' }).checked).toBe(true)
+  expect(screen.getByRole('checkbox', { name: 'B' }).checked).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'تطبيق على المختارين' }))
+  expect(screen.getByLabelText('القيمة الجديدة: B').value).toBe('25:00')
+  fireEvent.change(screen.getByLabelText('القيمة الجديدة: A'), { target: { value: '27:00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'معاينة الإجمالي الأسبوعي' }))
+  fireEvent.click(screen.getByRole('button', { name: 'حفظ الإجمالي الأسبوعي' }))
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ week, entries: [
+    { worker_id: 'A', minutes: 1620, expected_version: 0 }, { worker_id: 'B', minutes: 1500, expected_version: 0 },
+  ] }))
+})
+it.each([false, true])('monthly override can be edited/cleared through versioned weekly writer: clear=%s', async (clear) => {
+  const d = fixture(); d.workers[1].payment_type = 'monthly'; d.weeklyOvertimeOverrides = [{ worker_id: 'B', minutes: 1500, version: 2 }]
+  await open(d); fireEvent.click(screen.getByRole('checkbox', { name: 'B' }))
+  if (clear) fireEvent.click(screen.getByRole('button', { name: 'مسح التجاوز الأسبوعي للمختارين' }))
+  else {
+    fireEvent.change(screen.getByLabelText('القيمة الجديدة: B'), { target: { value: '30:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'معاينة الإجمالي الأسبوعي' }))
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'حفظ الإجمالي الأسبوعي' }))
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ week, entries: [{ worker_id: 'B', minutes: clear ? null : 1800, expected_version: 2 }] }))
 })

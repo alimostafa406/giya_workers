@@ -1,6 +1,7 @@
 import { getWorkersRequest } from './workersApi'
 import { getAttendanceRowsRequest } from './attendanceApi'
 import { getSupabaseClient } from '../lib/supabase'
+import { getWorkerBiometricSearchIndexRequest } from './biometricMappingApi'
 
 // Bulk reads only; no request per worker or per search keystroke.
 export async function getOvertimeEntryPayrollLocks(date) {
@@ -16,10 +17,10 @@ export async function getOvertimeEntryPayrollLocks(date) {
   }
 }
 export async function getOvertimeEntryData(date) {
-  const [workers, attendance, lockedIds] = await Promise.all([
-    getWorkersRequest({ includePayrollProfiles: false }), getAttendanceRowsRequest({ date, paginate: true }), getOvertimeEntryPayrollLocks(date),
+  const [workers, attendance, lockedIds, mappings] = await Promise.all([
+    getWorkersRequest(), getAttendanceRowsRequest({ date, paginate: true }), getOvertimeEntryPayrollLocks(date), getWorkerBiometricSearchIndexRequest(),
   ])
-  return { date, workers: workers.data || [], attendance: attendance.data || [], lockedIds }
+  return { date, workers: workers.data || [], attendance: attendance.data || [], lockedIds, mappings: mappings.data || [] }
 }
 export async function saveOvertimeEntry({ requestId, date, entries }) {
   if (!entries.length || entries.length > 200 || new Set(entries.map((row) => row.worker_id)).size !== entries.length

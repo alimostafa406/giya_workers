@@ -9,6 +9,8 @@ import { outsideWorkDateLabel } from '../utils/outsideWorkDateLabels'
 import { currentEntryOvertime, overtimeDuration, overtimeEntryBlock, overtimeEntryLabels, overtimeEntryWorkers, parseOvertimeDuration } from '../utils/overtimeEntry'
 import './OvertimeEntry.css'
 import WeeklyOvertimeEntry from './WeeklyOvertimeEntry'
+import { matchesOvertimeWorker, overtimeBiometricIds, overtimeSearchPlaceholder, unionSelectedWorkers } from '../utils/overtimeWorkerScope'
+import OvertimeWorkerIdentity from '../components/Payroll/OvertimeWorkerIdentity'
 
 export default function OvertimeEntry() {
   const [mode, setMode] = useState('daily')
@@ -49,7 +51,8 @@ function DailyOvertimeEntry() {
   const rows = useMemo(() => new Map((data?.attendance || []).map((row) => [String(row.worker_id), row])), [data])
   const locked = new Set(data?.lockedIds || [])
   const teamWorkers = workers.filter((worker) => String(worker.team_id) === teamId)
-  const visible = teamWorkers.filter((worker) => !search.trim() || `${worker.full_name} ${worker.employee_code || ''}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
+  const biometricIds = useMemo(() => overtimeBiometricIds(data?.mappings || []), [data])
+  const visible = teamWorkers.filter((worker) => matchesOvertimeWorker(worker, search, biometricIds))
   const blocked = (worker) => overtimeEntryBlock(rows.get(String(worker.id)), date, locked.has(String(worker.id)))
   const resetSelection = () => { setSelected([]); setValues({}); setPreview(null); setError(''); setApplied(0) }
   const changeDate = (next) => {
@@ -102,8 +105,8 @@ function DailyOvertimeEntry() {
     {error && <p role="alert" className="alert alert--error">{error}</p>}
     {!teamId && <p>{l.choose}</p>}
     {teamId && <fieldset disabled={saving || !ready} className="surface-card overtime-entry-roster">
-      <div className="overtime-entry-toolbar"><label>{l.search}<input className="input-base" type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-        <button type="button" className="btn-secondary" onClick={() => { setSelected(teamWorkers.filter((worker) => !blocked(worker)).map((worker) => String(worker.id))); setPreview(null) }}>{l.selectAll}</button>
+      <div className="overtime-entry-toolbar"><label>{l.search}<input className="input-base" type="search" placeholder={overtimeSearchPlaceholder} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+        <button type="button" className="btn-secondary" onClick={() => { setSelected((current) => unionSelectedWorkers(current, visible.filter((worker) => !blocked(worker)))); setPreview(null) }}>{l.selectAll}</button>
         <button type="button" className="btn-secondary" onClick={resetSelection}>{l.clear}</button><strong>{l.selected}: {selectedWorkers.length}</strong></div>
       <div className="overtime-entry-common"><label>{l.common}<input className="input-base" dir="ltr" inputMode="numeric" placeholder="2:00" value={common} onChange={(event) => changeCommon(event.target.value)} /></label>
         <div className="overtime-entry-quick"><button type="button" className="btn-secondary" onClick={() => changeCommon(overtimeDuration(Math.min(1440, (parseOvertimeDuration(common) || 0) + 30)))}>{l.plus30}</button>
@@ -115,7 +118,7 @@ function DailyOvertimeEntry() {
           const id = String(worker.id), row = rows.get(id), reason = blocked(worker)
           return <tr key={id}><td><input type="checkbox" aria-label={worker.full_name} disabled={Boolean(reason)} checked={selected.includes(id)} onChange={() => {
             setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]); setPreview(null); setApplied(0)
-          }} /></td><td><strong>{worker.full_name}</strong>{row?.check_out && <small className="block text-(--muted)">{l.checkout}: <bdi dir="ltr">{String(row.check_out).slice(0, 5)}</bdi></small>}{reason && <small className="block text-amber-800">{l.reasons[reason] || reason}</small>}</td>
+          }} /></td><td><OvertimeWorkerIdentity worker={worker} biometricId={biometricIds.get(id)} showCode={false} />{row?.check_out && <small className="block text-(--muted)">{l.checkout}: <bdi dir="ltr">{String(row.check_out).slice(0, 5)}</bdi></small>}{reason && <small className="block text-amber-800">{l.reasons[reason] || reason}</small>}</td>
             <td><bdi>{worker.employee_code || '—'}</bdi></td><td><bdi dir="ltr">{overtimeDuration(currentEntryOvertime(worker, row, date))}</bdi><small className="block text-(--muted)">{row?.emergency_overtime_mode ? l.manual : l.biometric}</small></td>
             <td><input aria-label={`${l.next}: ${worker.full_name}`} className="input-base overtime-entry-duration" dir="ltr" inputMode="numeric" placeholder="0:00" disabled={Boolean(reason) || !selected.includes(id)} value={values[id] || ''} onChange={(event) => { const value = event.target.value; setValues((current) => ({ ...current, [id]: value })); setPreview(null); setApplied(0) }} /></td></tr>
         })}{!visible.length && <tr><td colSpan={5}>{l.empty}</td></tr>}</tbody></table></div>
