@@ -39,6 +39,7 @@ export function teamWeeklyReport(data, monday) {
       worker: { ...(data.workers || []).find((w) => String(w.id) === String(s.worker_id)), id: s.worker_id, full_name: s.worker_name_snapshot },
       currency: s.currency_code_snapshot, workDays: Number(s.present_days) + Number(s.half_days) * Number(s.rule_snapshot?.half_day_multiplier ?? .5),
       absentDays: Number(s.absent_days), minutes, overtimeAmount, basePay, monthlyOvertimeOnly,
+      details: s.attendance_summary_snapshot?.days || [],
       finalAmount: overtimeAmount == null ? null : round(basePay + overtimeAmount), unresolved: overtime.missingRateBlocker,
     }
   }).filter((line) => !line.monthlyOvertimeOnly || line.minutes > 0) : (data.workers || []).filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
@@ -56,7 +57,7 @@ export function teamWeeklyReport(data, monday) {
     const basePay = configured ? round(adjusted.finalAmount - adjusted.overtimeAmount) : null
     const overtimeAmount = overtime.missingRateBlocker ? null : overtime.overtimePay ?? 0
     return { worker, currency: line.currency, workDays: line.presentDays + line.halfDays * Number(data.rules?.half_day_multiplier ?? .5),
-      absentDays: line.absentDays, minutes, basePay, overtimeAmount,
+      absentDays: line.absentDays, minutes, basePay, overtimeAmount, details: line.details,
       finalAmount: basePay == null || overtimeAmount == null ? null : round(basePay + overtimeAmount),
       unresolved: !configured || overtime.missingRateBlocker || line.unresolvedDays > 0 }
   })
@@ -76,7 +77,7 @@ export function teamWeeklyReport(data, monday) {
     const overtimeAmount = effective.missingRateBlocker || !term.currency_code ? null : effective.overtimeAmount
     return { worker, currency: term.currency_code, monthlyOvertimeOnly: true,
       workDays: attendanceLine.presentDays + attendanceLine.halfDays * Number(data.rules?.half_day_multiplier ?? .5),
-      absentDays: attendanceLine.absentDays, minutes: effective.eveningOvertimeMinutes,
+      absentDays: attendanceLine.absentDays, minutes: effective.eveningOvertimeMinutes, details: attendanceLine.details,
       basePay: 0, overtimeAmount, finalAmount: overtimeAmount, unresolved: effective.missingRateBlocker || !term.currency_code }
   }).filter((line) => line.minutes > 0)
   lines.push(...monthlyLines)
@@ -92,7 +93,7 @@ export function printTeamReport(element) {
   if (!element) return false
   const popup = window.open('', '_blank')
   if (!popup) return false
-  popup.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير أجور الفرق الأسبوعي</title><style>${teamReportPrintCss}</style></head><body>${element.innerHTML}</body></html>`)
+  popup.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير أجور الفرق الأسبوعي</title><style>${teamReportPrintCss}.team-report-team table{font-size:10px}.team-report-team th,.team-report-team td{padding:5px 3px}.team-report-day{white-space:nowrap}</style></head><body>${element.innerHTML}</body></html>`)
   popup.document.close()
   Promise.resolve(popup.document.fonts?.ready).then(() => { popup.focus(); popup.print() })
   return true

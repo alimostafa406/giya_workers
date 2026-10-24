@@ -106,21 +106,22 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(screen.queryByRole('combobox')).toBeNull()
   const teams = screen.getAllByRole('region', { name: /^تقرير الفريق:/ })
   expect(teams).toHaveLength(2)
-  const summaryColumns = ['العامل', 'الكود', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'إجمالي القبض']
+  const summaryColumns = ['العامل', 'الكود', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي اليدوي', 'أجر أيام العمل', 'مبلغ الإضافي', 'إجمالي القبض']
   for (const team of teams) {
     expect(within(team).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(summaryColumns)
     const table = within(team).getByRole('table')
     const totalRow = within(table).getByRole('row', { name: /^إجمالي الفرقة/ })
     expect(totalRow.parentElement.tagName).toBe('TFOOT')
-    expect(totalRow.children).toHaveLength(8)
+    expect(totalRow.children).toHaveLength(14)
     expect(table.tFoot.rows).toHaveLength(1)
     expect(team.querySelector('.team-report-totals')).toBeNull()
     const expectedGroup = teamWeeklyReport(fixture, week).groups.find((g) => team.getAttribute('aria-label') === `تقرير الفريق: ${g.name}`)
     expect(table.tBodies[0].rows).toHaveLength(expectedGroup.lines.length)
     expect(totalRow.children[1].textContent).toBe(`${expectedGroup.lines.length} عمال`)
-    expect(totalRow.children[2].textContent).toBe(String(expectedGroup.totals.workDays))
-    expect(totalRow.children[3].textContent).toBe(String(expectedGroup.totals.absentDays))
-    for (const forbidden of ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'إضافي صباحي', 'إضافي مسائي'])
+    expect(totalRow.children[8].textContent).toBe(String(expectedGroup.totals.workDays))
+    expect(totalRow.children[9].textContent).toBe(String(expectedGroup.totals.absentDays))
+    for (const tr of table.tBodies[0].rows) expect(tr.querySelectorAll('.team-report-day')).toHaveLength(6)
+    for (const forbidden of ['إضافي صباحي', 'إضافي مسائي'])
       expect(within(team).queryByRole('columnheader', { name: forbidden, exact: true })).toBeNull()
   }
   expect(teams[0].textContent).toContain('Worker a'); expect(teams[0].textContent).toContain('Worker c')
@@ -133,6 +134,7 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(html.lastIndexOf('ملخص أجور جميع الفرق')).toBeGreaterThan(html.lastIndexOf('Worker b'))
   expect(html).not.toContain('إضافي صباحي'); expect(html).not.toContain('إضافي مسائي')
   expect(html).not.toContain('INACTIVE')
+  expect(html).not.toContain('08:00'); expect(html).not.toContain('19:30')
   expect(html).toContain('الاثنين 19/10/2026'); expect(html).toContain('السبت 24/10/2026'); expect(html).not.toContain('<button')
   fireEvent.click(screen.getByRole('button', { name: 'طباعة ملخص كل الفرق' }))
   html = popup.document.write.mock.calls.at(-1)[0]
@@ -144,8 +146,8 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(teamReportPrintCss).toContain('tfoot{display:table-row-group;break-inside:avoid')
   const summary = screen.getByRole('region', { name: 'ملخص أجور جميع الفرق' })
   const summaryTable = within(summary).getByRole('table')
-  expect(within(summaryTable).getAllByRole('columnheader').map((h) => h.textContent).slice(0, 7))
-    .toEqual(['الفريق', 'عدد العمال', 'أيام العمل', 'ساعات الإضافي', 'مبلغ الإضافي', 'أجر أيام العمل', 'إجمالي القبض'])
+  expect(within(summaryTable).getAllByRole('columnheader').map((h) => h.textContent).slice(0, 8))
+    .toEqual(['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي اليدوي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي القبض'])
   expect(within(summaryTable).getByRole('row', { name: /^الإجمالي العام/ }).parentElement.tagName).toBe('TFOOT')
 })
 it('print popup failure is reported and the admin route/navigation are wired', () => {
@@ -240,4 +242,39 @@ it('comprehensive grand totals never add CDF and USD payouts together', () => {
   expect(report.totals.currencies).toEqual({ CDF: { basePay: 110, overtimeAmount: 40, finalAmount: 150 }, USD: { basePay: 110, overtimeAmount: 10, finalAmount: 120 } })
   for (const currency of ['CDF', 'USD']) expect(report.totals.currencies[currency].finalAmount)
     .toBe(report.groups.reduce((sum, g) => sum + (g.totals.currencies[currency]?.finalAmount || 0), 0))
+})
+
+it('Monday-Saturday cells use canonical payroll statuses and reconcile work/absence totals', async () => {
+  const oldWeek = '2026-09-21'
+  window.history.replaceState({}, '', `/?date=${oldWeek}`)
+  const d = data(); d.workers = [worker('a')]
+  d.attendance = [
+    row('a', { attendance_date: '2026-09-21' }),
+    row('a', { attendance_date: '2026-09-22', status: 'half_day', attendance_day_fraction: .5, check_out: null }),
+    row('a', { attendance_date: '2026-09-23', status: 'absent', attendance_day_fraction: 0, check_in: null, check_out: null }),
+    row('a', { attendance_date: '2026-09-24', status: 'pending', check_in: null, check_out: null }),
+    row('a', { attendance_date: '2026-09-25', status: 'late', attendance_day_fraction: 1, check_out: '17:00' }),
+  ]
+  mocks.load.mockResolvedValue(d); render(<TeamWeeklyReport />)
+  const team = await screen.findByRole('region', { name: 'تقرير الفريق: Siraj' })
+  const tr = within(team).getByRole('row', { name: /^Worker a/ })
+  const statuses = [...tr.querySelectorAll('.team-report-day')].map((cell) => cell.textContent)
+  expect(statuses).toEqual(['حاضر', '½', 'غائب', '—', 'حاضر', 'غائب'])
+  expect(tr.children[8].textContent).toBe('2.5'); expect(tr.children[9].textContent).toBe('2')
+  expect(statuses.filter((s) => s === 'حاضر').length + statuses.filter((s) => s === '½').length / 2).toBe(2.5)
+  expect(statuses.filter((s) => s === 'غائب')).toHaveLength(2)
+  const total = within(team).getByRole('row', { name: /^إجمالي الفرقة/ })
+  expect(total.children[8].textContent).toBe('2.5'); expect(total.children[9].textContent).toBe('2')
+})
+
+it('non-eligible dates are neutral and frozen snapshot daily statuses never use current live attendance', () => {
+  const d = data(); d.workers = [worker('a', 'Siraj', { operational_start_date: '2026-09-23' })]
+  const live = teamWeeklyReport(d, '2026-09-21').lines[0]
+  expect(live.details.map((day) => day.date)).toEqual(['2026-09-23','2026-09-24','2026-09-25','2026-09-26'])
+  expect(live.absentDays).toBe(4)
+  d.runs = [{ id: 'frozen', payment_type: 'weekly', status: 'paid', weekly_period_start: week, weekly_period_end: '2026-10-24' }]
+  d.payrollLines = [{ payroll_run_id: 'frozen', worker_id: 'a', overtime_hours: 0, overtime_amount: 0, final_amount: 999,
+    present_days: 0, half_days: 0, absent_days: 1, attendance_summary_snapshot: { days: [{ date: week, status: 'absent' }] } }]
+  const frozen = teamWeeklyReport(d, week).lines[0]
+  expect(frozen.details).toEqual([{ date: week, status: 'absent' }]); expect(frozen.finalAmount).toBe(999)
 })

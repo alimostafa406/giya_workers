@@ -4,22 +4,26 @@ import { getErrorMessage } from '../api/axios'
 import { mondayFor, weeklyDates } from '../utils/payrollCalculations'
 import { formatPayrollMoney } from '../utils/payrollCurrency'
 import { printTeamReport, teamWeeklyReport } from '../utils/teamWeeklyReport'
+import { weeklyPayrollDisplayStatus } from '../utils/weeklyPayrollOvertime'
 import './TeamWeeklyReport.css'
 
 const money = (value, currency) => value == null ? '—' : formatPayrollMoney(value, { currency, paymentType: 'weekly' })
 const hours = (minutes) => `${Number((minutes / 60).toFixed(4))} h`
 const dateLabel = (date) => `${date.slice(8)}/${date.slice(5, 7)}/${date.slice(0, 4)}`
-const headers = ['العامل', 'الكود', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'إجمالي القبض']
-const summaryHeaders = ['الفريق', 'عدد العمال', 'أيام العمل', 'ساعات الإضافي', 'مبلغ الإضافي', 'أجر أيام العمل', 'إجمالي القبض']
+const dayHeaders = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+const headers = ['العامل', 'الكود', ...dayHeaders, 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي اليدوي', 'أجر أيام العمل', 'مبلغ الإضافي', 'إجمالي القبض']
+const summaryHeaders = ['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي اليدوي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي القبض']
+const dayStatus = (detail) => ({ present: 'حاضر', absent: 'غائب', half_day: '½', neutral: '—' })[weeklyPayrollDisplayStatus(detail)]
 function Amounts({ totals, field }) { return Object.entries(totals.currencies).map(([currency, values]) => <bdi dir="ltr" className="block" key={currency}>{money(values[field], currency)}</bdi>) }
-function TeamTotalRow({ totals }) { return <tr className="team-report-total-row"><th scope="row">إجمالي الفرقة</th><td>{totals.workers} عمال</td><td>{totals.workDays}</td><td>{totals.absentDays}</td><td><bdi dir="ltr">{hours(totals.minutes)}</bdi></td><td><Amounts totals={totals} field="basePay" /></td><td><Amounts totals={totals} field="overtimeAmount" /></td><td><Amounts totals={totals} field="finalAmount" /></td></tr> }
-function SummaryRow({ name, totals }) { return <tr><th>{name}</th><td>{totals.workers}</td><td>{totals.workDays}</td><td><bdi dir="ltr">{hours(totals.minutes)}</bdi></td><td><Amounts totals={totals} field="overtimeAmount" /></td><td><Amounts totals={totals} field="basePay" /></td><td><strong><Amounts totals={totals} field="finalAmount" /></strong></td></tr> }
+function TeamTotalRow({ totals }) { return <tr className="team-report-total-row"><th scope="row">إجمالي الفرقة</th><td>{totals.workers} عمال</td>{dayHeaders.map((day) => <td key={day}>—</td>)}<td>{totals.workDays}</td><td>{totals.absentDays}</td><td><bdi dir="ltr">{hours(totals.minutes)}</bdi></td><td><Amounts totals={totals} field="basePay" /></td><td><Amounts totals={totals} field="overtimeAmount" /></td><td><Amounts totals={totals} field="finalAmount" /></td></tr> }
+function SummaryRow({ name, totals }) { return <tr><th>{name}</th><td>{totals.workers}</td><td>{totals.workDays}</td><td>{totals.absentDays}</td><td><bdi dir="ltr">{hours(totals.minutes)}</bdi></td><td><Amounts totals={totals} field="overtimeAmount" /></td><td><Amounts totals={totals} field="basePay" /></td><td><strong><Amounts totals={totals} field="finalAmount" /></strong></td></tr> }
 export default function TeamWeeklyReport() {
   const initialDate = new URLSearchParams(window.location.search).get('date')
   const [week, setWeek] = useState(() => mondayFor(initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? `${initialDate}T12:00:00` : new Date()))
   const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState('')
   const allRef = useRef(null), summaryRef = useRef(null)
   const end = weeklyDates(week).at(-1)
+  const dates = weeklyDates(week)
   useEffect(() => {
     let active = true; setLoading(true); setError(''); setData(null)
     getPayrollOperationsDataRequest({ date_from: week, date_to: end, paginate: true }).then((next) => { if (active) setData(next) })
@@ -42,7 +46,7 @@ export default function TeamWeeklyReport() {
       {report.groups.map((group) => <section key={group.id} className="team-report-content team-report-team" aria-label={`تقرير الفريق: ${group.name}`}>
         <header className="team-report-header">{title()}<h2 className="text-xl font-bold">الفريق: {group.name}</h2><p>عدد العمال: {group.lines.length}</p></header>
         {group.lines.some((l) => l.unresolved) && <p>تنبيه: توجد إعدادات أجر أو حضور غير مكتملة. — تعني أن المبلغ غير محسوم؛ الإجماليات المتأثرة غير محسومة أيضاً.</p>}
-        <div className="overflow-x-auto"><table><thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{group.lines.map((line) => <tr key={line.worker.id}><td>{line.worker.full_name}{line.monthlyOvertimeOnly && <small className="block text-(--muted)">شهري — إضافي فقط</small>}</td><td>{line.worker.employee_code || '—'}</td><td>{line.workDays}</td><td>{line.absentDays}</td><td><bdi dir="ltr">{hours(line.minutes)}</bdi></td><td><bdi dir="ltr">{money(line.basePay, line.currency)}</bdi></td><td><bdi dir="ltr">{money(line.overtimeAmount, line.currency)}</bdi></td><td><strong><bdi dir="ltr">{money(line.finalAmount, line.currency)}</bdi></strong></td></tr>)}</tbody><tfoot><TeamTotalRow totals={group.totals} /></tfoot></table></div>
+        <div className="overflow-x-auto"><table><thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{group.lines.map((line) => <tr key={line.worker.id}><td>{line.worker.full_name}{line.monthlyOvertimeOnly && <small className="block text-(--muted)">شهري — إضافي فقط</small>}</td><td>{line.worker.employee_code || '—'}</td>{dates.map((date) => <td className="team-report-day" key={date}>{dayStatus(line.details?.find((detail) => detail.date === date))}</td>)}<td>{line.workDays}</td><td>{line.absentDays}</td><td><bdi dir="ltr">{hours(line.minutes)}</bdi></td><td><bdi dir="ltr">{money(line.basePay, line.currency)}</bdi></td><td><bdi dir="ltr">{money(line.overtimeAmount, line.currency)}</bdi></td><td><strong><bdi dir="ltr">{money(line.finalAmount, line.currency)}</bdi></strong></td></tr>)}</tbody><tfoot><TeamTotalRow totals={group.totals} /></tfoot></table></div>
       </section>)}
       <section ref={summaryRef} className="team-report-content team-report-summary" aria-label="ملخص أجور جميع الفرق">{title(true)}<div className="overflow-x-auto"><table><thead><tr>{summaryHeaders.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{report.groups.map((g) => <SummaryRow key={g.id} name={g.name} totals={g.totals} />)}</tbody><tfoot><SummaryRow name="الإجمالي العام" totals={report.totals} /></tfoot></table></div></section>
     </div></>}
