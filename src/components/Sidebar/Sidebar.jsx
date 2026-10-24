@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from '../../i18n/LanguageContext'
+import { overtimeEntryLabels } from '../../utils/overtimeEntry'
 
 function NavIcon({ name }) {
   const paths = {
@@ -27,6 +28,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/', label: t('navigation.dashboard'), icon: 'dashboard' },
     { to: '/attendance', label: t('navigation.attendance'), icon: 'attendance' },
     { to: '/attendance/emergency-overtime', label: t('emergencyOvertime.title'), icon: 'attendance' },
+    { to: '/attendance/overtime-entry', label: (overtimeEntryLabels[language] || overtimeEntryLabels.en).title, icon: 'attendance' },
     { to: '/workers', label: t('navigation.workers'), icon: 'workers' },
     { to: '/inactive-workers', label: t('navigation.inactiveWorkers'), icon: 'inactiveWorkers' },
     { to: '/worker-control-center', label: 'مركز مراقبة العمال', icon: 'alert' },
