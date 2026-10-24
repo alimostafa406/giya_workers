@@ -87,6 +87,8 @@ begin
     raise exception 'Invalid emergency overtime request' using errcode = '22023';
   end if;
 
+  lock table public.payroll_run in share mode;
+
   for v_entry in select value from jsonb_array_elements(p_entries) loop
     v_outcome := 'failed';
     v_message := null;
@@ -152,7 +154,7 @@ begin
                   when v_team_name = 'Maison' then time '16:00'
                   else time '16:30' end;
                 if v_attendance.check_out is not null
-                  and v_attendance.emergency_overtime_mode is null then
+                  and v_attendance.emergency_overtime_mode is distinct from 'manual_checkout' then
                   v_outcome := 'skipped'; v_message := 'existing_real_checkout';
                 elsif v_checkout <= v_attendance.check_in
                   or v_checkout < v_checkout_threshold then
@@ -173,17 +175,13 @@ begin
                 if v_minutes is null or v_minutes < 1 or v_minutes > 1440 then
                   raise exception 'Invalid overtime duration';
                 end if;
-                if v_attendance.check_out is not null then
-                  v_outcome := 'skipped'; v_message := 'existing_real_checkout';
-                else
-                  update public.attendance a set
-                    attendance_source = 'manual', manual_override = true,
-                    emergency_overtime_mode = 'manual_overtime_duration',
-                    emergency_overtime_minutes = v_minutes,
-                    recorded_by = v_actor, note = coalesce(nullif(btrim(p_note), ''), a.note), updated_at = now()
-                  where a.id = v_attendance.id returning a.* into v_after;
-                  v_outcome := 'updated';
-                end if;
+                update public.attendance a set
+                  manual_override = true,
+                  emergency_overtime_mode = 'manual_overtime_duration',
+                  emergency_overtime_minutes = v_minutes,
+                  updated_at = now()
+                where a.id = v_attendance.id returning a.* into v_after;
+                v_outcome := 'updated';
               end if;
               if v_outcome = 'updated' then
                 insert into public.attendance_emergency_overtime_audit

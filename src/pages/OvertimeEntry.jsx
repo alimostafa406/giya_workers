@@ -102,7 +102,7 @@ export default function OvertimeEntry() {
           const id = String(worker.id), row = rows.get(id), reason = blocked(worker)
           return <tr key={id}><td><input type="checkbox" aria-label={worker.full_name} disabled={Boolean(reason)} checked={selected.includes(id)} onChange={() => {
             setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]); setPreview(null)
-          }} /></td><td><strong>{worker.full_name}</strong>{reason && <small className="block text-amber-800">{l.reasons[reason] || reason}</small>}</td>
+          }} /></td><td><strong>{worker.full_name}</strong>{row?.check_out && <small className="block text-(--muted)">{l.checkout}: <bdi dir="ltr">{String(row.check_out).slice(0, 5)}</bdi></small>}{reason && <small className="block text-amber-800">{l.reasons[reason] || reason}</small>}</td>
             <td><bdi>{worker.employee_code || '—'}</bdi></td><td><bdi dir="ltr">{overtimeDuration(currentEntryOvertime(worker, row, date))}</bdi><small className="block text-(--muted)">{row?.emergency_overtime_mode ? l.manual : l.biometric}</small></td>
             <td><input aria-label={`${l.next}: ${worker.full_name}`} className="input-base overtime-entry-duration" dir="ltr" inputMode="numeric" placeholder="0:00" disabled={Boolean(reason) || !selected.includes(id)} value={values[id] || ''} onChange={(event) => { setValues((current) => ({ ...current, [id]: event.target.value })); setPreview(null) }} /></td></tr>
         })}{!visible.length && <tr><td colSpan={5}>{l.empty}</td></tr>}</tbody></table></div>

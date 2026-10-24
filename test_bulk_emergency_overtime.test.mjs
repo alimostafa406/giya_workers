@@ -31,6 +31,19 @@ test('an unprotected row cannot claim direct emergency overtime', () => {
   assert.equal(weeklyPayrollOvertimeForDetail({ date, row, worker }).eveningOvertimeMinutes, 0)
 })
 
+test('manual duration overrides biometric overtime with a real checkout, never adds to it', () => {
+  const biometric = { status: 'present', check_in: '08:00:00', check_out: '19:00:00', attendance_source: 'biometric', manual_override: false }
+  assert.equal(weeklyPayrollOvertimeForDetail({ date, row: biometric, worker }).eveningOvertimeMinutes, 120)
+  const manual = { ...biometric, manual_override: true, emergency_overtime_mode: 'manual_overtime_duration', emergency_overtime_minutes: 180 }
+  const before = JSON.stringify(manual)
+  assert.equal(weeklyPayrollOvertimeForDetail({ date, row: manual, worker }).eveningOvertimeMinutes, 180)
+  assert.equal(line(manual).overtimeHours, 3)
+  assert.equal(line(manual).overtimeAmount, 5400)
+  assert.equal(JSON.stringify(manual), before)
+  assert.equal(manual.check_out, '19:00:00')
+  assert.equal(manual.attendance_source, 'biometric')
+})
+
 test('Chauffeur is excluded even when a manual duration is present', () => {
   const chauffeur = { ...worker, team_name: 'Chauffeur' }
   const row = { status: 'present', check_in: '07:30:00', check_out: null, manual_override: true, emergency_overtime_mode: 'manual_overtime_duration', emergency_overtime_minutes: 210 }
