@@ -41,6 +41,67 @@ const previewSave = async () => {
   await waitFor(() => expect(mocks.save).toHaveBeenCalled())
 }
 
+it('applies visible quick controls and independent row edits under production StrictMode', async () => {
+  render(<React.StrictMode><LanguageProvider><OvertimeEntry /></LanguageProvider></React.StrictMode>)
+  await team()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'ALPHA' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'BETA' }))
+  fireEvent.change(screen.getByLabelText('Overtime for selected workers'), { target: { value: '1:00' } })
+  fireEvent.click(screen.getByRole('button', { name: '2 hours', exact: true }))
+  expect(screen.getByLabelText('Overtime for selected workers').value).toBe('2:00')
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
+  expect(screen.getByLabelText('New duration: ALPHA').value).toBe('2:00')
+  expect(screen.getByLabelText('New duration: BETA').value).toBe('2:00')
+  expect(mocks.save).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('New duration: ALPHA'), { target: { value: '3:00' } })
+  expect(screen.getByLabelText('New duration: ALPHA').value).toBe('3:00')
+  expect(screen.getByLabelText('New duration: BETA').value).toBe('2:00')
+  await previewSave()
+  expect(mocks.save.mock.calls[0][0].entries).toEqual([
+    expect.objectContaining({ worker_id: 'a', minutes: 180 }), expect.objectContaining({ worker_id: 'b', minutes: 120 }),
+  ])
+})
+
+it('Arabic visible quick/apply controls update selected rows only and save individual adjustments', async () => {
+  localStorage.setItem('workers_app_language', 'ar')
+  open()
+  await waitFor(() => expect(screen.getByLabelText('الفريق').disabled).toBe(false))
+  fireEvent.change(screen.getByLabelText('الفريق'), { target: { value: 'paint' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'ALPHA' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'BETA' }))
+  const common = screen.getByLabelText('الوقت الإضافي للمختارين')
+  for (const [label, value] of [['1 ساعة','1:00'], ['1:30','1:30'], ['2 ساعات','2:00'], ['3 ساعات','3:00'], ['4 ساعات','4:00'], ['+30 دقيقة','4:30']]) {
+    const button = screen.getByRole('button', { name: label, exact: true })
+    expect(button.type).toBe('button')
+    fireEvent.click(button)
+    expect(common.value).toBe(value)
+  }
+  fireEvent.click(screen.getByRole('button', { name: '2 ساعات', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'تطبيق على المختارين' }))
+  expect(screen.getByLabelText('الوقت الجديد: ALPHA').value).toBe('2:00')
+  expect(screen.getByLabelText('الوقت الجديد: BETA').value).toBe('2:00')
+  expect(screen.getByRole('status').textContent).toContain('تم تطبيق المدة على المختارين: 2')
+  expect(mocks.save).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('الوقت الجديد: ALPHA'), { target: { value: '3:00' } })
+  expect(screen.getByLabelText('الوقت الجديد: BETA').value).toBe('2:00')
+  fireEvent.click(screen.getByRole('button', { name: 'معاينة التعيين', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'حفظ الوقت الإضافي', exact: true }))
+  await waitFor(() => expect(mocks.save).toHaveBeenCalled())
+  expect(mocks.save.mock.calls[0][0].entries.map(({ worker_id, minutes }) => ({ worker_id, minutes })))
+    .toEqual([{ worker_id: 'a', minutes: 180 }, { worker_id: 'b', minutes: 120 }])
+})
+
+it('applies Arabic-digit common duration and leaves unselected rows empty without saving', async () => {
+  open(); await team()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'ALPHA' }))
+  fireEvent.change(screen.getByLabelText('Overtime for selected workers'), { target: { value: '٢:٠٠' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
+  expect(screen.getByLabelText('New duration: ALPHA').value).toBe('2:00')
+  expect(screen.getByLabelText('New duration: BETA').value).toBe('')
+  expect(mocks.save).not.toHaveBeenCalled()
+  expect(parseOvertimeDuration('۲:۳۰')).toBe(150)
+})
+
 it('shows weekday, blocks future dates and offers a Monday–Saturday strip', async () => {
   open(); await team()
   fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-23' } })

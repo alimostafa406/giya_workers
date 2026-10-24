@@ -7,7 +7,9 @@ export const overtimeEntryWorkers = (workers, date) => workers.filter((worker) =
   && (worker.team?.name || worker.team_name) !== 'Chauffeur')
 
 export const parseOvertimeDuration = (value) => {
-  const match = String(value).trim().match(/^(\d{1,2}):([0-5]\d)$/)
+  const normalized = String(value).trim().replace(/[٠-٩۰-۹]/g, (digit) =>
+    String('٠١٢٣٤٥٦٧٨٩'.includes(digit) ? '٠١٢٣٤٥٦٧٨٩'.indexOf(digit) : '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+  const match = normalized.match(/^(\d{1,2}):([0-5]\d)$/)
   if (!match) return null
   const minutes = Number(match[1]) * 60 + Number(match[2])
   return minutes >= 1 && minutes <= 1440 ? minutes : null
@@ -44,6 +46,7 @@ export const overtimeEntryLabels = {
     manual: 'يدوي', biometric: 'محسوب من الحضور', updated: 'تم الحفظ', skipped: 'تم التخطي', failed: 'تعذر الحفظ',
     perWorker: 'الحفظ مستقل لكل عامل؛ قد ينجح بعض العمال ويتم تخطي آخرين. تظهر نتيجة كل عامل أدناه.',
     saving: 'جاري الحفظ...', plus30: '+30 دقيقة', hour: 'ساعة', hours: 'ساعة',
+    quick: ['1 ساعة', '1:30', '2 ساعات', '3 ساعات', '4 ساعات'], applied: 'تم تطبيق المدة على المختارين',
     reasons: { payroll_finalized_or_paid: 'فترة الرواتب نهائية / مدفوعة — للقراءة فقط', valid_check_in_required: 'يلزم سجل حضور بدخول صالح',
       protected_manual_attendance: 'حضور يدوي محمي',
       attendance_changed_since_preview: 'تغير الحضور — أعد التحميل والمعاينة', sunday_not_eligible: 'الأحد غير مؤهل حسب القاعدة الحالية',
@@ -60,6 +63,7 @@ export const overtimeEntryLabels = {
     manual: 'Manual', biometric: 'Calculated from attendance', updated: 'Saved', skipped: 'Skipped', failed: 'Failed',
     perWorker: 'Each worker is saved independently; some may succeed while others are skipped. Every result is shown below.',
     saving: 'Saving...', plus30: '+30 minutes', hour: 'hour', hours: 'hours',
+    quick: ['1 hour', '1:30', '2 hours', '3 hours', '4 hours'], applied: 'Duration applied to selected workers',
     reasons: { payroll_finalized_or_paid: 'Finalized / paid payroll — read-only', valid_check_in_required: 'Valid attendance check-in required',
       protected_manual_attendance: 'Protected manual attendance',
       attendance_changed_since_preview: 'Attendance changed — reload and preview again', sunday_not_eligible: 'Sunday is not eligible under current rules',
@@ -76,6 +80,7 @@ export const overtimeEntryLabels = {
     manual: 'Manuel', biometric: 'Calculé depuis la présence', updated: 'Enregistrés', skipped: 'Ignorés', failed: 'Échecs',
     perWorker: 'Enregistrement indépendant par travailleur ; les résultats et exclusions sont détaillés ci-dessous.',
     saving: 'Enregistrement...', plus30: '+30 minutes', hour: 'heure', hours: 'heures',
+    quick: ['1 heure', '1:30', '2 heures', '3 heures', '4 heures'], applied: 'Durée appliquée aux travailleurs sélectionnés',
     reasons: { payroll_finalized_or_paid: 'Paie finalisée / payée — lecture seule', valid_check_in_required: 'Entrée de présence valide requise',
       protected_manual_attendance: 'Présence manuelle protégée',
       attendance_changed_since_preview: 'Présence modifiée — recharger et vérifier', sunday_not_eligible: 'Dimanche non admissible selon les règles actuelles',

@@ -24,6 +24,7 @@ export default function OvertimeEntry() {
   const [selected, setSelected] = useState([])
   const [values, setValues] = useState({})
   const [common, setCommon] = useState('2:00')
+  const [applied, setApplied] = useState(0)
   const [preview, setPreview] = useState(null)
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState(null)
@@ -45,13 +46,22 @@ export default function OvertimeEntry() {
   const teamWorkers = workers.filter((worker) => String(worker.team_id) === teamId)
   const visible = teamWorkers.filter((worker) => !search.trim() || `${worker.full_name} ${worker.employee_code || ''}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
   const blocked = (worker) => overtimeEntryBlock(rows.get(String(worker.id)), date, locked.has(String(worker.id)))
-  const resetSelection = () => { setSelected([]); setValues({}); setPreview(null); setError('') }
+  const resetSelection = () => { setSelected([]); setValues({}); setPreview(null); setError(''); setApplied(0) }
   const changeDate = (next) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(next) || next > today || saving) return
     resetSelection(); setResult(null); setDate(next)
   }
   const selectTeam = (next) => { resetSelection(); setTeamId(next); setSearch('') }
   const selectedWorkers = teamWorkers.filter((worker) => selected.includes(String(worker.id)))
+  const changeCommon = (value) => { setCommon(value); setApplied(0) }
+  const applyCommon = () => {
+    const minutes = parseOvertimeDuration(common)
+    if (minutes == null) { setApplied(0); setError(l.invalid); return }
+    const duration = overtimeDuration(minutes)
+    const updates = Object.fromEntries(selectedWorkers.map((worker) => [String(worker.id), duration]))
+    setValues((current) => ({ ...current, ...updates }))
+    setCommon(duration); setApplied(selectedWorkers.length); setPreview(null); setError('')
+  }
   const prepare = () => {
     if (!ready || !selectedWorkers.length || selectedWorkers.some((worker) => blocked(worker) || parseOvertimeDuration(values[worker.id]) == null)) { setError(l.invalid); return }
     const entries = selectedWorkers.map((worker) => ({ worker_id: worker.id,
@@ -83,28 +93,26 @@ export default function OvertimeEntry() {
     </button>)}</nav>
     <p className="text-sm">{l.mode}</p><p className="text-xs text-(--muted)">{l.policy}</p>
     {loading && <p role="status">{l.loading}</p>}
-    {loadError && <div role="alert">{loadError}<button className="btn-secondary" onClick={() => setReload((count) => count + 1)}>{l.retry}</button></div>}
+    {loadError && <div role="alert">{loadError}<button type="button" className="btn-secondary" onClick={() => setReload((count) => count + 1)}>{l.retry}</button></div>}
     {error && <p role="alert" className="alert alert--error">{error}</p>}
     {!teamId && <p>{l.choose}</p>}
     {teamId && <fieldset disabled={saving || !ready} className="surface-card overtime-entry-roster">
       <div className="overtime-entry-toolbar"><label>{l.search}<input className="input-base" type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
         <button type="button" className="btn-secondary" onClick={() => { setSelected(teamWorkers.filter((worker) => !blocked(worker)).map((worker) => String(worker.id))); setPreview(null) }}>{l.selectAll}</button>
         <button type="button" className="btn-secondary" onClick={resetSelection}>{l.clear}</button><strong>{l.selected}: {selectedWorkers.length}</strong></div>
-      <div className="overtime-entry-common"><label>{l.common}<input className="input-base" dir="ltr" inputMode="numeric" placeholder="2:00" value={common} onChange={(event) => setCommon(event.target.value)} /></label>
-        <div className="overtime-entry-quick"><button type="button" className="btn-secondary" onClick={() => setCommon(overtimeDuration(Math.min(1440, (parseOvertimeDuration(common) || 0) + 30)))}>{l.plus30}</button>
-          {[60, 90, 120, 180, 240].map((minutes) => <button type="button" className="btn-secondary" key={minutes} onClick={() => setCommon(overtimeDuration(minutes))}><bdi dir="ltr">{overtimeDuration(minutes)}</bdi></button>)}</div>
-        <button type="button" className="btn-primary" disabled={!selectedWorkers.length} onClick={() => {
-          if (parseOvertimeDuration(common) == null) { setError(l.invalid); return }
-          setValues((current) => ({ ...current, ...Object.fromEntries(selectedWorkers.map((worker) => [worker.id, common])) })); setPreview(null); setError('')
-        }}>{l.apply}</button></div>
+      <div className="overtime-entry-common"><label>{l.common}<input className="input-base" dir="ltr" inputMode="numeric" placeholder="2:00" value={common} onChange={(event) => changeCommon(event.target.value)} /></label>
+        <div className="overtime-entry-quick"><button type="button" className="btn-secondary" onClick={() => changeCommon(overtimeDuration(Math.min(1440, (parseOvertimeDuration(common) || 0) + 30)))}>{l.plus30}</button>
+          {[60, 90, 120, 180, 240].map((minutes, index) => <button type="button" className="btn-secondary" key={minutes} onClick={() => changeCommon(overtimeDuration(minutes))}>{l.quick[index]}</button>)}</div>
+        <button type="button" className="btn-primary" disabled={!selectedWorkers.length} onClick={applyCommon}>{l.apply}</button></div>
+      {applied > 0 && <p role="status">{l.applied}: {applied} · <bdi dir="ltr">{common}</bdi></p>}
       <div className="overflow-x-auto"><table className="overtime-entry-table"><thead><tr><th aria-label={l.selected}></th><th>{l.worker}</th><th>{l.code}</th><th>{l.current}</th><th>{l.next}</th></tr></thead>
         <tbody>{visible.map((worker) => {
           const id = String(worker.id), row = rows.get(id), reason = blocked(worker)
           return <tr key={id}><td><input type="checkbox" aria-label={worker.full_name} disabled={Boolean(reason)} checked={selected.includes(id)} onChange={() => {
-            setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]); setPreview(null)
+            setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]); setPreview(null); setApplied(0)
           }} /></td><td><strong>{worker.full_name}</strong>{row?.check_out && <small className="block text-(--muted)">{l.checkout}: <bdi dir="ltr">{String(row.check_out).slice(0, 5)}</bdi></small>}{reason && <small className="block text-amber-800">{l.reasons[reason] || reason}</small>}</td>
             <td><bdi>{worker.employee_code || '—'}</bdi></td><td><bdi dir="ltr">{overtimeDuration(currentEntryOvertime(worker, row, date))}</bdi><small className="block text-(--muted)">{row?.emergency_overtime_mode ? l.manual : l.biometric}</small></td>
-            <td><input aria-label={`${l.next}: ${worker.full_name}`} className="input-base overtime-entry-duration" dir="ltr" inputMode="numeric" placeholder="0:00" disabled={Boolean(reason) || !selected.includes(id)} value={values[id] || ''} onChange={(event) => { setValues((current) => ({ ...current, [id]: event.target.value })); setPreview(null) }} /></td></tr>
+            <td><input aria-label={`${l.next}: ${worker.full_name}`} className="input-base overtime-entry-duration" dir="ltr" inputMode="numeric" placeholder="0:00" disabled={Boolean(reason) || !selected.includes(id)} value={values[id] || ''} onChange={(event) => { const value = event.target.value; setValues((current) => ({ ...current, [id]: value })); setPreview(null); setApplied(0) }} /></td></tr>
         })}{!visible.length && <tr><td colSpan={5}>{l.empty}</td></tr>}</tbody></table></div>
       <button className="btn-primary" type="button" disabled={!selectedWorkers.length} onClick={prepare}>{l.preview}</button>
     </fieldset>}
