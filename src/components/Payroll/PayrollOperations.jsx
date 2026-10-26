@@ -23,6 +23,7 @@ import { staleWeeklyPayrollWorkerIds } from '../../utils/weeklyPayrollDraftFresh
 import { payrollConfigurationWarnings } from '../../utils/payrollWarnings'
 import { saveWeeklyOvertime } from '../../api/weeklyOvertimeApi'
 import { weeklyPayoutLines, weeklyPayoutSnapshotLines } from '../../utils/weeklyPayoutLines'
+import { unresolvedBiometricOvertime } from '../../utils/biometricOvertimeReview'
 
 const money = (amount, currency) => formatPayrollMoney(amount, { currency, paymentType: 'weekly' })
 
@@ -93,6 +94,7 @@ export default function PayrollOperations() {
   // when merely displaying a saved historical payroll line.
   const lines = weeklyRun && weeklyRun.status !== 'draft' ? weeklyPayoutSnapshotLines(storedLines) : calculatedLines
   const totals = totalLines(lines)
+  const biometricPending = data ? unresolvedBiometricOvertime(data, weeklyDates(monday)) : []
   const payrollWarnings = payrollConfigurationWarnings(lines, 'weekly')
   const runStatusLabel = !weeklyRun ? t('payroll.statusNotSaved') : weeklyRun.status === 'reviewed' ? t('payroll.statusReviewed') : weeklyRun.status === 'finalized' ? t('payroll.statusFinalized') : weeklyRun.status === 'paid' ? t('payroll.statusPaid') : t('payroll.statusDraft')
   const teamGroups = useMemo(() => {
@@ -347,6 +349,7 @@ export default function PayrollOperations() {
   }
   const exportButtons = (onExport) => <div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('print')}>{t('reports.print')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('pdf')}>{t('reports.pdf')}</button><button type="button" className="btn-secondary px-3 py-2" onClick={() => onExport('excel')}>{t('reports.excel')}</button></div>
   return <section>
+    {biometricPending.length>0 && <p role="alert" className="mb-3 rounded bg-amber-50 p-3">توجد مراجعات إضافي بصمة غير محسومة: {biometricPending.length}. <a className="underline" href={`/attendance/overtime-review?date=${monday}`}>مراجعة الوقت الإضافي من البصمة</a></p>}
     {error ? <p className="mb-3 rounded bg-red-50 p-3 text-red-700">{error}</p> : null}
     {message ? <p className="mb-3 rounded bg-emerald-50 p-3 text-emerald-700">{message}</p> : null}
     <div data-weekly-payroll-workflow className="surface-card mb-3 space-y-4 p-4">

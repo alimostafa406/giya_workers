@@ -1,5 +1,6 @@
 import { calculateWeeklyOvertimePay, isChauffeurNormalOvertimeExcluded } from './weeklyPayrollOvertime.js'
 import { outsideWorkOvertimeDays } from './outsideWorkPayableOvertime.js'
+import { approvedBiometricOvertime } from './biometricOvertimeReview.js'
 export const hasDailyManualOvertime = (row) => row?.manual_override === true
   && row.emergency_overtime_mode === 'manual_overtime_duration'
   && row.emergency_overtime_minutes != null && Number.isInteger(Number(row.emergency_overtime_minutes)) && Number(row.emergency_overtime_minutes) >= 0
@@ -13,14 +14,16 @@ export const parseWeeklyDuration = (value) => {
   const minutes = match ? Number(match[1]) * 60 + Number(match[2]) : NaN
   return Number.isInteger(minutes) && minutes >= 0 && minutes <= 8640 ? minutes : null
 }
-export function applyManualWeeklyOvertime(line, override, movements = []) {
+export function applyManualWeeklyOvertime(line, override, movements = [], biometricReviews = []) {
   const dailyManualMinutes = (line.details || []).reduce((sum, d) => sum + manualReportMinutes(d.row), 0)
   const outsideDays = outsideWorkOvertimeDays(line.worker || {}, (line.details || []).map((d) => d.date), movements)
   const payableOvertimeDays = (line.details || []).map((detail) => {
     const outside = outsideDays.find((day) => day.date === detail.date)
     const manual = hasDailyManualOvertime(detail.row)
-    return { date: detail.date, source: manual ? 'daily_manual' : outside?.minutes ? 'outside_work' : 'none',
-      minutes: manual ? manualReportMinutes(detail.row) : outside?.minutes || 0,
+    const approved = approvedBiometricOvertime(line.worker || {}, detail, biometricReviews)
+    return { date: detail.date, source: manual ? 'daily_manual' : approved ? 'approved_biometric' : outside?.minutes ? 'outside_work' : 'none',
+      minutes: manual ? manualReportMinutes(detail.row) : approved ? approved.minutes : outside?.minutes || 0,
+      ...(approved && !manual ? { biometric_approval: approved } : {}),
       outside_work_minutes: outside?.minutes || 0, movement_ids: outside?.movement_ids || [] }
   })
   const weeklyManualOverrideMinutes = override?.minutes ?? null

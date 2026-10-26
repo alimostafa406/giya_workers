@@ -14,7 +14,7 @@ export function calculateWeeklyPayoutLine(data, monday, worker) {
   const line = calculatePayrollLine({ worker, term, dates,
     attendanceByDate: new Map((data.attendance || []).map((row) => [`${row.worker_id}|${row.attendance_date}`, row])),
     rules: data.rules, holidayDates: new Set((data.holidays || []).map((day) => day.holiday_date)), paymentType: 'weekly', futureDatesAreNeutral: true })
-  const effective = applyManualWeeklyOvertime(line, (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id)), data.outsideWorkMovements || [])
+  const effective = applyManualWeeklyOvertime(line, (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id)), data.outsideWorkMovements || [], data.biometricOvertimeReviews || [])
   return monthly ? { ...effective, paymentType: 'monthly', monthlyOvertimeOnly: true,
     baseAmount: 0, attendanceWage: 0, transportAmount: 0, holidayAmount: 0,
     monthlySalary: 0, dailyValue: 0, absenceDeduction: 0, halfDayDeduction: 0,

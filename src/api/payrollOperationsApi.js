@@ -7,6 +7,9 @@ import { payrollDraftEligibleLines, removableStaleWeeklyPayrollLineIds } from '.
 import { getWeeklyOvertimeOverrides } from './weeklyOvertimeApi'
 import { getPayrollOutsideWork } from './payrollOutsideWorkApi'
 import { assertWeeklyPayoutDraftReady, assertWeeklyPayoutSnapshotComplete, weeklyPayoutLines, weeklyPayoutSourceSnapshot } from '../utils/weeklyPayoutLines'
+import { getBiometricOvertimeReviews } from './biometricOvertimeReviewApi'
+import { assertBiometricReviewsResolved } from '../utils/biometricOvertimeReview'
+import { weeklyDates } from '../utils/payrollCalculations'
 
 const isMissingSundayPaymentsError = (error) => (
   error?.code === '42P01'
@@ -40,7 +43,7 @@ const readSundayPayments = async (client) => {
 
 export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => {
   const client = getSupabaseClient()
-  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult, weeklyOvertimeOverrides, outsideWorkMovements] = await Promise.all([
+  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult, weeklyOvertimeOverrides, outsideWorkMovements, biometricOvertimeReviews] = await Promise.all([
     getPayrollSettingsWorkersRequest(), getAttendanceRequest(attendanceParams),
     client.from('payroll_rule_set').select('*').eq('is_active', true).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
     client.from('company_holiday').select('holiday_date,name').eq('is_active', true),
@@ -50,13 +53,14 @@ export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => 
     readSundayPayments(client),
     attendanceParams.date_from ? getWeeklyOvertimeOverrides(attendanceParams.date_from) : Promise.resolve([]),
     getPayrollOutsideWork(attendanceParams.date_from, attendanceParams.date_to),
+    getBiometricOvertimeReviews(attendanceParams.date_from, attendanceParams.date_to),
   ])
   if (rulesResult.error) throw rulesResult.error
   if (holidaysResult.error) throw holidaysResult.error
   if (runsResult.error) throw runsResult.error
   if (linesResult.error) throw linesResult.error
   if (adjustmentsResult.error) throw adjustmentsResult.error
-  return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [], sundayPayments: sundayResult.data, sundayPaymentsAvailable: sundayResult.available, weeklyOvertimeOverrides, outsideWorkMovements }
+  return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [], sundayPayments: sundayResult.data, sundayPaymentsAvailable: sundayResult.available, weeklyOvertimeOverrides, outsideWorkMovements, biometricOvertimeReviews }
 }
 
 export const payrollDraftLinePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
@@ -251,6 +255,7 @@ export const setWeeklyPayrollRunStatusRequest = async ({ runId, nextStatus }) =>
 
   if (run.payment_type === 'weekly' && nextStatus === 'reviewed') {
     const fresh = await getPayrollOperationsDataRequest({ date_from: run.weekly_period_start, date_to: run.weekly_period_end, paginate: true })
+    assertBiometricReviewsResolved(fresh, weeklyDates(run.weekly_period_start))
     const stored = (fresh.payrollLines || []).filter((line) => line.payroll_run_id === run.id)
     const calculated = weeklyPayoutLines(fresh, run.weekly_period_start).map((line) => {
       const old = stored.find((s) => String(s.worker_id) === String(line.worker.id))
@@ -259,6 +264,8 @@ export const setWeeklyPayrollRunStatusRequest = async ({ runId, nextStatus }) =>
     assertWeeklyPayoutDraftReady(stored, calculated)
   }
   if (run.payment_type === 'weekly' && nextStatus === 'finalized') {
+    const fresh = await getPayrollOperationsDataRequest({ date_from: run.weekly_period_start, date_to: run.weekly_period_end, paginate: true })
+    assertBiometricReviewsResolved(fresh, weeklyDates(run.weekly_period_start))
     const { data: snapshots, error } = await client.from('payroll_line').select('attendance_summary_snapshot,calculation_snapshot,compensation_snapshot,base_amount,transport_amount,holiday_amount,overtime_amount,final_amount').eq('payroll_run_id', run.id)
     if (error) throw error
     assertWeeklyPayoutSnapshotComplete(snapshots || [])

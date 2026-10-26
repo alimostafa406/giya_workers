@@ -32,7 +32,7 @@ export default function WeeklyOvertimeEntry() {
   const effective = (worker) => applyManualWeeklyOvertime({ worker, term: worker.payroll_compensation, finalAmount: 0, overtimeAmount: 0,
     details: weeklyDates(week).filter((date) => !worker.operational_start_date || date >= worker.operational_start_date).map((date) => ({ date,
       row: (data?.attendance || []).find((r) => String(r.worker_id) === String(worker.id) && r.attendance_date === date) })) },
-  override(worker.id), data?.outsideWorkMovements || []).eveningOvertimeMinutes
+  override(worker.id), data?.outsideWorkMovements || [], data?.biometricOvertimeReviews || []).eveningOvertimeMinutes
   const reset = () => { setSelected([]); setValues({}); setPreview(null); setMessage('') }
   const prepare = (clear = false) => {
     if (loading || locked || !selected.length) return

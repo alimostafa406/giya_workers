@@ -14,7 +14,7 @@ import OvertimeWorkerIdentity from '../components/Payroll/OvertimeWorkerIdentity
 
 export default function OvertimeEntry() {
   const [mode, setMode] = useState('daily')
-  return <><nav className="overtime-week-strip" aria-label="طريقة إدخال الإضافي"><button type="button" aria-pressed={mode === 'daily'} onClick={() => setMode('daily')}>إدخال يومي</button><button type="button" aria-pressed={mode === 'weekly'} onClick={() => setMode('weekly')}>إجمالي أسبوعي</button></nav>{mode === 'weekly' ? <WeeklyOvertimeEntry /> : <DailyOvertimeEntry />}</>
+  return <><a className="btn-secondary mb-3" href="/attendance/overtime-review">مراجعة الوقت الإضافي من البصمة</a><nav className="overtime-week-strip" aria-label="طريقة إدخال الإضافي"><button type="button" aria-pressed={mode === 'daily'} onClick={() => setMode('daily')}>إدخال يومي</button><button type="button" aria-pressed={mode === 'weekly'} onClick={() => setMode('weekly')}>إجمالي أسبوعي</button></nav>{mode === 'weekly' ? <WeeklyOvertimeEntry /> : <DailyOvertimeEntry />}</>
 }
 function DailyOvertimeEntry() {
   const { language } = useTranslation()
