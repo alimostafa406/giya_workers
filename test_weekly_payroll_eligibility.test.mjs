@@ -64,7 +64,10 @@ test('monthly draft lines are not reinterpreted by weekly eligibility', () => {
 test('weekly selection, validation, persistence, and counts use the shared rule', () => {
   const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
   const api = readFileSync('./src/api/payrollOperationsApi.js', 'utf8')
-  assert.match(operations, /\.filter\(\(worker\) => isWeeklyPayrollEligibleWorker\(worker, saturday\)\)/)
+  assert.match(operations, /weeklyPayoutLines\(data, monday\)/)
+  const payout = readFileSync('./src/utils/weeklyPayoutLines.js', 'utf8')
+  assert.match(payout, /isWeeklyPayrollEligibleWorker\(worker, end\)/)
+  assert.match(payout, /worker\.payment_type === 'monthly'/)
   assert.match(operations, /const currentWeeklyWorkerIds = new Set\(calculatedLines\.map/)
   assert.match(operations, /const teamGroups = useMemo[\s\S]*lines\.forEach/)
   assert.match(api, /eligibleLines = payrollDraftEligibleLines\(paymentType, lines, periodEnd\)/)
@@ -126,7 +129,7 @@ test('overall amount due reconciles exactly with team totals by currency', () =>
 test('finalized payroll display uses stored final amounts', () => {
   const operations = readFileSync('./src/components/Payroll/PayrollOperations.jsx', 'utf8')
   assert.match(operations, /finalAmount: Number\(stored\.final_amount \|\| 0\)/)
-  assert.match(operations, /weeklyRun && weeklyRun\.status !== 'draft' \? weeklyPayrollEligibleLines\(storedLines\) : calculatedLines/)
+  assert.match(operations, /weeklyRun && weeklyRun\.status !== 'draft' \? weeklyPayoutSnapshotLines\(storedLines\) : calculatedLines/)
   assert.match(operations, /amountDueByCurrency: weeklyPayrollTotalsByCurrency\(group\.lines\)/)
   assert.doesNotMatch(operations, /amountDueByCurrency:[^\n]*(daily_rate|transportAmount|overtimeAmount)/)
 })

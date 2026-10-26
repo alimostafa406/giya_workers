@@ -1,7 +1,8 @@
-import { applyPayrollAdjustments, calculatePayrollLine, weeklyDates } from './payrollCalculations.js'
+import { applyPayrollAdjustments, weeklyDates } from './payrollCalculations.js'
 import { isNormalPayrollWorkerOnDate, isWeeklyPayrollEligibleWorker } from './weeklyPayrollEligibility.js'
 import { calculateWeeklyOvertimePay } from './weeklyPayrollOvertime.js'
-import { applyManualWeeklyOvertime, manualReportMinutes } from './weeklyManualOvertime.js'
+import { manualReportMinutes } from './weeklyManualOvertime.js'
+import { calculateWeeklyPayoutLine } from './weeklyPayoutLines.js'
 export { manualReportMinutes } from './weeklyManualOvertime.js'
 
 const round = (n) => Math.round(n * 100) / 100
@@ -21,14 +22,13 @@ export function teamWeeklyReport(data, monday) {
   const run = data.runs?.find((r) => r.payment_type === 'weekly' && r.weekly_period_start === monday && r.weekly_period_end === end)
   const stored = (data.payrollLines || []).filter((line) => line.payroll_run_id === run?.id)
   const locked = run && run.status !== 'draft'
+  const frozenPopulation = stored.some((line) => line.attendance_summary_snapshot?.weekly_payout_source_version === 3)
   // Old snapshots do not retain manual-entry provenance. Never silently
   // substitute today's attendance or call biometric overtime "manual".
   if (locked && stored.some((s) => s.attendance_summary_snapshot?.manual_overtime_source_version !== 1
     && (Number(s.overtime_hours) !== 0 || Number(s.overtime_amount) !== 0))) {
     return { unavailable: 'هذا الأسبوع محفوظ وغير قابل للتغيير؛ اللقطة القديمة لا تتضمن تفصيل مصدر الإضافي اليدوي. لا يمكن إعادة احتسابها من البيانات الحالية.', groups: [], lines: [], run }
   }
-  const attendance = new Map((data.attendance || []).map((r) => [`${r.worker_id}|${r.attendance_date}`, r]))
-  const holidays = new Set((data.holidays || []).map((h) => h.holiday_date))
   const lines = locked ? stored.map((s) => {
     const minutes = s.attendance_summary_snapshot?.payable_overtime_source_version === 2
       ? Number(s.calculation_snapshot?.evening_overtime_minutes ?? Number(s.overtime_hours) * 60)
@@ -38,22 +38,19 @@ export function teamWeeklyReport(data, monday) {
     const basePay = monthlyOvertimeOnly ? 0 : round(Number(s.final_amount) - Number(s.overtime_amount || 0))
     const overtimeAmount = overtime.missingRateBlocker ? null : s.attendance_summary_snapshot?.payable_overtime_source_version === 2 ? Number(s.overtime_amount || 0) : overtime.overtimePay ?? 0
     return {
-      worker: { ...(data.workers || []).find((w) => String(w.id) === String(s.worker_id)), id: s.worker_id, full_name: s.worker_name_snapshot },
+      worker: { ...(data.workers || []).find((w) => String(w.id) === String(s.worker_id)), ...s.attendance_summary_snapshot?.worker_identity_snapshot, id: s.worker_id, full_name: s.worker_name_snapshot, payment_type: s.payment_type_snapshot },
       currency: s.currency_code_snapshot, workDays: Number(s.present_days) + Number(s.half_days) * Number(s.rule_snapshot?.half_day_multiplier ?? .5),
       absentDays: Number(s.absent_days), minutes, overtimeAmount, basePay, monthlyOvertimeOnly,
       details: s.attendance_summary_snapshot?.days || [],
       finalAmount: overtimeAmount == null ? null : round(basePay + overtimeAmount), unresolved: overtime.missingRateBlocker,
     }
   }).filter((line) => !line.monthlyOvertimeOnly || line.minutes > 0) : (data.workers || []).filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
-    const datesForWorker = dates.filter((date) => !worker.operational_start_date || date >= worker.operational_start_date)
-    const line = calculatePayrollLine({ worker, term: worker.payroll_compensation, attendanceByDate: attendance,
-      dates: datesForWorker, rules: data.rules, holidayDates: holidays, paymentType: 'weekly', futureDatesAreNeutral: true })
+    const line = calculateWeeklyPayoutLine(data, monday, worker)
     const saved = stored.find((s) => String(s.worker_id) === String(worker.id))
     // Non-OT canonical adjustments still form part of base payable. OT
     // corrections outside the manual-entry path are not payable in this report.
     const adjusted = applyPayrollAdjustments(line, (data.payrollAdjustments || []).filter((a) => a.payroll_line_id === saved?.id && a.adjustment_type !== 'overtime_correction'))
-    const effective = applyManualWeeklyOvertime(line, (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id)), data.outsideWorkMovements || [])
-    const minutes = effective.eveningOvertimeMinutes
+    const minutes = line.eveningOvertimeMinutes
     const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: line.term?.overtime_rate_per_hour })
     const configured = line.term?.daily_rate != null && line.term.daily_rate !== '' && line.term?.daily_transport_allowance != null && line.currency
     const basePay = configured ? round(adjusted.finalAmount - adjusted.overtimeAmount) : null
@@ -67,15 +64,10 @@ export function teamWeeklyReport(data, monday) {
   // Reuse the attendance classifier with zero wage/transport inputs solely for
   // operational day counts; only the canonical manual OT rate can pay money.
   const included = new Set(lines.map((line) => String(line.worker.id)))
-  const monthlyLines = (data.workers || []).filter((worker) => worker.payment_type === 'monthly'
+  const monthlyLines = (locked && frozenPopulation ? [] : data.workers || []).filter((worker) => worker.payment_type === 'monthly'
     && isNormalPayrollWorkerOnDate(worker, end) && !included.has(String(worker.id))).map((worker) => {
-    const term = { currency_code: worker.payroll_compensation?.currency_code,
-      overtime_rate_per_hour: worker.payroll_compensation?.overtime_rate_per_hour,
-      daily_rate: 0, daily_transport_allowance: 0, monthly_salary: 0 }
-    const attendanceLine = calculatePayrollLine({ worker, term, attendanceByDate: attendance,
-      dates: dates.filter((date) => !worker.operational_start_date || date >= worker.operational_start_date),
-      rules: data.rules, holidayDates: holidays, paymentType: 'weekly', futureDatesAreNeutral: true })
-    const effective = applyManualWeeklyOvertime(attendanceLine, (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id)), locked ? [] : data.outsideWorkMovements || [])
+    const effective = calculateWeeklyPayoutLine({ ...data, outsideWorkMovements: locked ? [] : data.outsideWorkMovements }, monday, worker)
+    const term = effective.term, attendanceLine = effective
     const overtimeAmount = effective.missingRateBlocker || !term.currency_code ? null : effective.overtimeAmount
     return { worker, currency: term.currency_code, monthlyOvertimeOnly: true,
       workDays: attendanceLine.presentDays + attendanceLine.halfDays * Number(data.rules?.half_day_multiplier ?? .5),

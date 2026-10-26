@@ -6,6 +6,7 @@ import { assertPayrollLineCurrencies, payrollLineCurrencySnapshot } from '../uti
 import { payrollDraftEligibleLines, removableStaleWeeklyPayrollLineIds } from '../utils/weeklyPayrollEligibility'
 import { getWeeklyOvertimeOverrides } from './weeklyOvertimeApi'
 import { getPayrollOutsideWork } from './payrollOutsideWorkApi'
+import { assertWeeklyPayoutDraftReady, assertWeeklyPayoutSnapshotComplete, weeklyPayoutLines, weeklyPayoutSourceSnapshot } from '../utils/weeklyPayoutLines'
 
 const isMissingSundayPaymentsError = (error) => (
   error?.code === '42P01'
@@ -63,7 +64,7 @@ export const payrollDraftLinePayload = (runId, line, periodStart, periodEnd, due
   worker_name_snapshot: line.worker.full_name || '-', payment_type_snapshot: line.paymentType, currency_code_snapshot: payrollLineCurrencySnapshot(line),
   monthly_payroll_cycle_start_date_snapshot: line.term?.monthly_payroll_cycle_start_date || null,
   compensation_snapshot: line.term || {}, rule_snapshot: line.rules || {},
-  attendance_summary_snapshot: { payable_overtime_source_version: line.payableOvertimeSourceVersion || null, payable_overtime_days: line.payableOvertimeDays || [], manual_overtime_source_version: 1, weekly_manual_overtime_override_minutes: line.weeklyManualOverrideMinutes ?? null, manual_overtime_only: line.manualOvertimeOnly === true, present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
+  attendance_summary_snapshot: { ...weeklyPayoutSourceSnapshot(line), weekly_payout_source_version: line.payableOvertimeSourceVersion === 2 ? 3 : null, monthly_overtime_only: line.monthlyOvertimeOnly === true, worker_identity_snapshot: { employee_code: line.worker.employee_code, team_id: line.worker.team_id, team_name: line.worker.team_name || line.worker.team?.name }, payable_overtime_source_version: line.payableOvertimeSourceVersion || null, payable_overtime_days: line.payableOvertimeDays || [], manual_overtime_source_version: 1, weekly_manual_overtime_override_minutes: line.weeklyManualOverrideMinutes ?? null, manual_overtime_only: line.manualOvertimeOnly === true, present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
     date: detail.date,
     status: detail.status,
     manual_override: detail.row?.manual_override === true,
@@ -127,7 +128,7 @@ export const persistPayrollDraftRequest = async ({ paymentType, periodStart = nu
   const payload = eligibleLines.map((line) => {
     const existingLineId = lineIdByWorkerId.get(String(line.worker.id))
     const adjustments = existingLineId ? adjustmentsByLineId.get(String(existingLineId)) || [] : []
-    const adjustedLine = applyPayrollAdjustments(line, line.manualOvertimeOnly ? adjustments.filter((a) => a.adjustment_type !== 'overtime_correction') : adjustments)
+    const adjustedLine = line.monthlyOvertimeOnly ? line : applyPayrollAdjustments(line, line.manualOvertimeOnly ? adjustments.filter((a) => a.adjustment_type !== 'overtime_correction') : adjustments)
     return payrollDraftLinePayload(run.id, adjustedLine, line.cycle?.start || periodStart, line.cycle?.end || periodEnd, line.cycle?.due || dueDate)
   })
   const { data: savedLines, error: lineError } = await client.from('payroll_line').upsert(payload, { onConflict: 'payroll_run_id,worker_id' }).select('id,worker_id')
@@ -238,7 +239,7 @@ export const setWeeklyPayrollRunStatusRequest = async ({ runId, nextStatus }) =>
   const client = getSupabaseClient()
   const { data: run, error: readError } = await client
     .from('payroll_run')
-    .select('id,payment_type,status')
+    .select('id,payment_type,status,weekly_period_start,weekly_period_end')
     .eq('id', runId)
     .maybeSingle()
   if (readError) throw readError
@@ -247,6 +248,21 @@ export const setWeeklyPayrollRunStatusRequest = async ({ runId, nextStatus }) =>
     || (run.status === 'reviewed' && ['draft', 'finalized'].includes(nextStatus))
     || (run.status === 'finalized' && nextStatus === 'paid')
   if (!allowed) throw new Error('This payroll status transition is not allowed.')
+
+  if (run.payment_type === 'weekly' && nextStatus === 'reviewed') {
+    const fresh = await getPayrollOperationsDataRequest({ date_from: run.weekly_period_start, date_to: run.weekly_period_end, paginate: true })
+    const stored = (fresh.payrollLines || []).filter((line) => line.payroll_run_id === run.id)
+    const calculated = weeklyPayoutLines(fresh, run.weekly_period_start).map((line) => {
+      const old = stored.find((s) => String(s.worker_id) === String(line.worker.id))
+      return line.monthlyOvertimeOnly ? line : applyPayrollAdjustments(line, (fresh.payrollAdjustments || []).filter((a) => a.payroll_line_id === old?.id && a.adjustment_type !== 'overtime_correction'))
+    })
+    assertWeeklyPayoutDraftReady(stored, calculated)
+  }
+  if (run.payment_type === 'weekly' && nextStatus === 'finalized') {
+    const { data: snapshots, error } = await client.from('payroll_line').select('attendance_summary_snapshot,calculation_snapshot,compensation_snapshot,base_amount,transport_amount,holiday_amount,overtime_amount,final_amount').eq('payroll_run_id', run.id)
+    if (error) throw error
+    assertWeeklyPayoutSnapshotComplete(snapshots || [])
+  }
 
   const adminId = await currentAdminId(client)
   const audit = nextStatus === 'reviewed'

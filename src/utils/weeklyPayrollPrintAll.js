@@ -16,7 +16,7 @@ export const buildWeeklyPayrollAllTeamsHtml = ({ title, periodStart, periodEnd, 
       const rateConfigured = line.term?.overtime_rate_per_hour !== '' && line.term?.overtime_rate_per_hour != null
       const transportConfigured = line.term?.daily_transport_allowance != null && line.term.daily_transport_allowance !== ''
       const cells = [
-        `<strong>${escapeHtml(line.worker.full_name)}</strong><small>${escapeHtml(line.worker.employee_code || '—')}</small>`,
+        `<strong>${escapeHtml(line.worker.full_name)}</strong><small>${escapeHtml(line.worker.employee_code || '—')}</small>${line.monthlyOvertimeOnly ? `<small>${escapeHtml(labels.monthlyOnly || '')}</small>` : ''}`,
         ...workDates.map((date) => {
           const detail = line.details?.find((item) => item.date === date)
           return escapeHtml(labels.status[weeklyPayrollDisplayStatus(detail)])

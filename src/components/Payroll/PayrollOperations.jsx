@@ -3,12 +3,12 @@ import { getErrorMessage } from '../../api/axios'
 import { saveAttendanceManuallyRequest, updateAttendanceManuallyRequest } from '../../api/attendanceApi'
 import { cancelSundayWorkRequest, confirmSundayWorkRequest, createPayrollAdjustmentRequest, getPayrollOperationsDataRequest, markSundayPaymentPaidRequest, persistPayrollDraftRequest, reversePaidSundayPaymentRequest, setWeeklyPayrollRunStatusRequest } from '../../api/payrollOperationsApi'
 import { saveWorkerPayrollSettingsRequest } from '../../api/payrollSettingsApi'
-import { applyPayrollAdjustments, calculatePayrollLine, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
+import { applyPayrollAdjustments, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
 import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
 import { printAllWeeklyPayrollTeams } from '../../utils/weeklyPayrollPrintAll'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { payrollWorkerLabel } from '../../utils/payrollLineCurrency'
-import { isWeeklyPayrollEligibleWorker, positiveWeeklyPayrollCurrencyTotals, weeklyPayrollCurrencyTotalsMatch, weeklyPayrollEligibleLines, weeklyPayrollTotalsByCurrency } from '../../utils/weeklyPayrollEligibility'
+import { positiveWeeklyPayrollCurrencyTotals, weeklyPayrollCurrencyTotalsMatch, weeklyPayrollTotalsByCurrency } from '../../utils/weeklyPayrollEligibility'
 import { useTranslation } from '../../i18n/LanguageContext'
 import AttendanceEditModal from '../Forms/AttendanceEditModal'
 import WeeklyPayrollSheet from './WeeklyPayrollSheet'
@@ -21,30 +21,16 @@ import { formatEveningOvertimeMinutes } from '../../utils/weeklyPayrollOvertime'
 import { positiveWeeklyPayrollFooterAmounts, weeklyPayrollTeamFooter } from '../../utils/weeklyPayrollTeamFooter'
 import { staleWeeklyPayrollWorkerIds } from '../../utils/weeklyPayrollDraftFreshness'
 import { payrollConfigurationWarnings } from '../../utils/payrollWarnings'
-import { applyManualWeeklyOvertime } from '../../utils/weeklyManualOvertime'
 import { saveWeeklyOvertime } from '../../api/weeklyOvertimeApi'
+import { weeklyPayoutLines, weeklyPayoutSnapshotLines } from '../../utils/weeklyPayoutLines'
 
 const money = (amount, currency) => formatPayrollMoney(amount, { currency, paymentType: 'weekly' })
 
 const weeklyLinesFor = (data, monday) => {
-  const attendance = new Map((data?.attendance || []).map((row) => [`${row.worker_id}|${row.attendance_date}`, row]))
-  const holidays = new Set((data?.holidays || []).map((item) => item.holiday_date))
-  const saturday = weeklyDates(monday).at(-1)
   const sundayDate = sundayBefore(monday)
-  return (data?.workers || [])
-    .filter((worker) => isWeeklyPayrollEligibleWorker(worker, saturday))
-    .map((worker) => {
-      const sundayPayment = (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(worker.id) && payment.work_date === sundayDate) || null
-      return { ...applyManualWeeklyOvertime(calculatePayrollLine({
-      worker,
-      term: worker.payroll_compensation,
-      attendanceByDate: attendance,
-      dates: weeklyDates(monday),
-      rules: data?.rules,
-      holidayDates: holidays,
-      paymentType: 'weekly',
-      futureDatesAreNeutral: true,
-      }), (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id)), data.outsideWorkMovements || []), sundayDate, sundayPayment }
+  return weeklyPayoutLines(data, monday).map((line) => {
+      const sundayPayment = line.monthlyOvertimeOnly ? null : (data?.sundayPayments || []).find((payment) => String(payment.worker_id) === String(line.worker.id) && payment.work_date === sundayDate) || null
+      return { ...line, sundayDate, sundayPayment }
     })
 }
 
@@ -70,18 +56,20 @@ export default function PayrollOperations() {
   }, [data])
   const calculatedLines = useMemo(() => weeklyLinesFor(data, monday).map((line) => {
     const payrollLine = payrollLineByWorkerId.get(String(line.worker.id))
-    return payrollLine ? applyPayrollAdjustments(line, (adjustmentsByLineId.get(String(payrollLine.id)) || []).filter((a) => a.adjustment_type !== 'overtime_correction')) : line
+    return payrollLine && !line.monthlyOvertimeOnly ? applyPayrollAdjustments(line, (adjustmentsByLineId.get(String(payrollLine.id)) || []).filter((a) => a.adjustment_type !== 'overtime_correction')) : line
   }), [adjustmentsByLineId, data, monday, payrollLineByWorkerId])
   const storedLines = useMemo(() => (data?.payrollLines || []).filter((line) => line.payroll_run_id === weeklyRun?.id).map((stored) => {
     const worker = (data?.workers || []).find((item) => String(item.id) === String(stored.worker_id)) || { id: stored.worker_id, full_name: stored.worker_name_snapshot, employee_code: null, team_id: null, team_name: null }
     const summary = stored.attendance_summary_snapshot || {}
     const calculation = stored.calculation_snapshot || {}
     return {
-      worker,
+      worker: { ...worker, ...summary.worker_identity_snapshot, full_name: stored.worker_name_snapshot, payment_type: stored.payment_type_snapshot },
       manualOvertimeOnly: summary.manual_overtime_only === true,
       weeklyManualOverrideMinutes: summary.weekly_manual_overtime_override_minutes ?? null,
       payableOvertimeSourceVersion: summary.payable_overtime_source_version || null,
       payableOvertimeDays: summary.payable_overtime_days || [],
+      monthlyOvertimeOnly: summary.monthly_overtime_only === true,
+      missingRateBlocker: Number(calculation.evening_overtime_minutes || 0) > 0 && stored.compensation_snapshot?.overtime_rate_per_hour == null,
       term: stored.compensation_snapshot || {},
       rules: stored.rule_snapshot || {},
       paymentType: stored.payment_type_snapshot,
@@ -103,7 +91,7 @@ export default function PayrollOperations() {
   // A finalized/reviewed run is an immutable historical snapshot.  The dated
   // operational roster applies when calculating or refreshing a draft, never
   // when merely displaying a saved historical payroll line.
-  const lines = weeklyRun && weeklyRun.status !== 'draft' ? weeklyPayrollEligibleLines(storedLines) : calculatedLines
+  const lines = weeklyRun && weeklyRun.status !== 'draft' ? weeklyPayoutSnapshotLines(storedLines) : calculatedLines
   const totals = totalLines(lines)
   const payrollWarnings = payrollConfigurationWarnings(lines, 'weekly')
   const runStatusLabel = !weeklyRun ? t('payroll.statusNotSaved') : weeklyRun.status === 'reviewed' ? t('payroll.statusReviewed') : weeklyRun.status === 'finalized' ? t('payroll.statusFinalized') : weeklyRun.status === 'paid' ? t('payroll.statusPaid') : t('payroll.statusDraft')
@@ -162,7 +150,7 @@ export default function PayrollOperations() {
     if (draftRun?.weekly_period_start !== monday || draftRun?.weekly_period_end !== saturday || new Date(`${monday}T12:00:00`).getDay() !== 1 || draftRun?.scheduled_payment_date !== saturday) errors.push(t('payroll.reviewValidationPeriod'))
     if (!currentStoredLines.length || currentStoredLines.length !== calculatedLines.length) errors.push(t('payroll.reviewValidationLines'))
     if (staleWeeklyPayrollWorkerIds(currentStoredLines, calculatedLines).length) errors.push(t('payroll.refreshDraftRequired'))
-    const invalidAmountLines = currentStoredLines.filter((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0)
+    const invalidAmountLines = currentStoredLines.filter((line) => !Number.isFinite(line.finalAmount) || line.unresolvedDays > 0 || line.missingRateBlocker)
     if (invalidAmountLines.length) errors.push(`${t('payroll.reviewValidationAmounts')}: ${invalidAmountLines.map(payrollWorkerLabel).join(', ')}`)
     const activeAdjustmentLineIds = new Set((data?.payrollAdjustments || []).filter((adjustment) => !adjustment.voided_at).map((adjustment) => String(adjustment.payroll_line_id)))
     if (currentStoredLines.some((line) => activeAdjustmentLineIds.has(String(payrollLineByWorkerId.get(String(line.worker.id))?.id)) && !line.calculationSnapshotHasAdjustments)) errors.push(t('payroll.reviewValidationAdjustments'))
@@ -217,6 +205,7 @@ export default function PayrollOperations() {
       worker: t('payroll.worker'), workDayPay: t('payroll.workDayPay'),
       overtimeHours: t('payroll.overtimeHours'), overtimeAmount: t('payroll.overtimeAmount'),
       transport: t('payroll.transport'), total: t('payroll.finalPay'),
+      monthlyOnly: t('teamWeeklyReport.monthlyOnly'),
       status: { present: t('attendance.present'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), neutral: '—' },
     },
   })

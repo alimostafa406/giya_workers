@@ -10,6 +10,9 @@ export const staleWeeklyPayrollWorkerIds = (storedLines = [], canonicalLines = [
     if (Number(saved.eveningOvertimeMinutes || 0) !== Number(line.eveningOvertimeMinutes || 0)) return true
     if ((saved.weeklyManualOverrideMinutes ?? null) !== (line.weeklyManualOverrideMinutes ?? null)) return true
     if (JSON.stringify(saved.payableOvertimeDays || []) !== JSON.stringify(line.payableOvertimeDays || [])) return true
+    if (Boolean(saved.monthlyOvertimeOnly) !== Boolean(line.monthlyOvertimeOnly)) return true
+    if (saved.currency !== line.currency || (saved.term?.overtime_rate_per_hour ?? null) !== (line.term?.overtime_rate_per_hour ?? null)) return true
+    if (Number(saved.overtimeAmount || 0) !== Number(line.overtimeAmount || 0)) return true
     const days = new Map(saved.details.map(detail => [detail.date, detail]))
     return line.details.some(detail => {
       const old = days.get(detail.date)
