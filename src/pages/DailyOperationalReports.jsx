@@ -9,6 +9,7 @@ import { kinshasaClock } from '../utils/attendanceOperationalGate'
 import { attendanceStatusKey, buildDailyAttendanceExceptions, buildDailyOvertimeReport, yesterdayFromBusinessDate } from '../utils/dailyOperationalReports'
 import { formatEveningOvertimeMinutes } from '../utils/weeklyPayrollOvertime'
 import { useOvertimeReportSettings } from '../utils/useOvertimeReportSettings.js'
+import BiometricOvertimeReview from './BiometricOvertimeReview'
 
 const yesterday = () => yesterdayFromBusinessDate(kinshasaClock().date)
 const formatTime = (value) => value && value !== '—' ? <span dir="ltr">{String(value).slice(0, 5)}</span> : '—'
@@ -51,6 +52,8 @@ export default function DailyOperationalReports({ type }) {
     ? buildDailyOvertimeReport({ attendance, mappings, date: selectedDate, overtimeTeamIds: overtimeSettings.loading ? [] : overtimeSettings.settings.team_ids })
     : buildDailyAttendanceExceptions({ workers, attendance, evidence, mappings, date: selectedDate })), [attendance, evidence, mappings, overtime, selectedDate, workers, overtimeSettings.loading, overtimeSettings.settings])
   const label = (status) => t(`attendance.${({ in_progress: 'inProgress', half_day: 'halfDay', not_recorded: 'notRecorded' }[status] || status)}`)
+
+  if (overtime) return <BiometricOvertimeReview report={{ rows, date: selectedDate, setDate: setSelectedDate, loading: loading || overtimeSettings.loading, error, title, formattedDate }} />
 
   return <section>
     <style>{'@media print { @page { size: A4 landscape; margin: 12mm; } }'}</style>
