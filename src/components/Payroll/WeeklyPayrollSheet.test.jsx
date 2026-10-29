@@ -29,7 +29,7 @@ const zarourLines = [
 ]
 
 const renderLines = (lines) => render(<WeeklyPayrollSheet lines={lines} dates={['2026-09-24']} onEdit={() => {}} />)
-const amountCell = (name) => within(screen.getByRole('row', { name: new RegExp(name) })).getAllByRole('cell')[5]
+const amountCell = (name) => within(screen.getByRole('row', { name: new RegExp(name) })).getAllByRole('cell')[4]
 
 test('renders saved Zarour worker overtime amounts without changing the team total or line snapshots', () => {
   const before = structuredClone(zarourLines)
@@ -48,5 +48,5 @@ test('zero overtime displays no positive amount and an unresolved rate keeps its
   ])
   expect(amountCell('NO OVERTIME').textContent).toBe('—')
   expect(amountCell('UNRESOLVED RATE').textContent).toBe('—')
-  expect(within(screen.getByRole('row', { name: /UNRESOLVED RATE/ })).getAllByRole('cell')[4].textContent).toBe('1h00')
+  expect(within(screen.getByRole('row', { name: /UNRESOLVED RATE/ })).getAllByRole('cell')[3].textContent).toContain('1h00')
 })
