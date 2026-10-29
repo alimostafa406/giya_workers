@@ -6,9 +6,8 @@ import { getBiometricMappingsRequest } from '../api/biometricMappingApi'
 import { getWorkersRequest } from '../api/workersApi'
 import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
-import { attendanceStatusKey, buildDailyAttendanceExceptions, buildDailyOvertimeReport, yesterdayFromBusinessDate } from '../utils/dailyOperationalReports'
+import { attendanceStatusKey, biometricIdsByWorker, buildDailyAttendanceExceptions, yesterdayFromBusinessDate } from '../utils/dailyOperationalReports'
 import { formatEveningOvertimeMinutes } from '../utils/weeklyPayrollOvertime'
-import { useOvertimeReportSettings } from '../utils/useOvertimeReportSettings.js'
 import BiometricOvertimeReview from './BiometricOvertimeReview'
 
 const yesterday = () => yesterdayFromBusinessDate(kinshasaClock().date)
@@ -24,7 +23,6 @@ export default function DailyOperationalReports({ type }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const overtime = type === 'overtime'
-  const overtimeSettings = useOvertimeReportSettings(selectedDate)
   const title = t(overtime ? 'reports.dailyOvertimeTitle' : 'reports.dailyExceptionsTitle')
   const locale = language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : 'en-GB'
   const formattedDate = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date(`${selectedDate}T12:00:00`))
@@ -48,12 +46,17 @@ export default function DailyOperationalReports({ type }) {
 
   useEffect(() => { load() }, [load])
 
-  const rows = useMemo(() => (overtime
-    ? buildDailyOvertimeReport({ attendance, mappings, date: selectedDate, overtimeTeamIds: overtimeSettings.loading ? [] : overtimeSettings.settings.team_ids })
-    : buildDailyAttendanceExceptions({ workers, attendance, evidence, mappings, date: selectedDate })), [attendance, evidence, mappings, overtime, selectedDate, workers, overtimeSettings.loading, overtimeSettings.settings])
+  const rows = useMemo(() => {
+    if (!overtime) return buildDailyAttendanceExceptions({ workers, attendance, evidence, mappings, date: selectedDate })
+    const biometricIds = biometricIdsByWorker(mappings)
+    // Display enrichment only. The shared review component owns the population
+    // and 30-minute threshold, independently of read-only report settings.
+    return attendance.map((row) => ({ id: row.id,
+      biometricId: biometricIds.get(String(row.worker_id || row.worker?.id)) || '—', note: row.note || '—' }))
+  }, [attendance, evidence, mappings, overtime, selectedDate, workers])
   const label = (status) => t(`attendance.${({ in_progress: 'inProgress', half_day: 'halfDay', not_recorded: 'notRecorded' }[status] || status)}`)
 
-  if (overtime) return <BiometricOvertimeReview report={{ rows, date: selectedDate, setDate: setSelectedDate, loading: loading || overtimeSettings.loading, error, title, formattedDate }} />
+  if (overtime) return <BiometricOvertimeReview report={{ rows, date: selectedDate, setDate: setSelectedDate, loading, error, title, formattedDate }} />
 
   return <section>
     <style>{'@media print { @page { size: A4 landscape; margin: 12mm; } }'}</style>

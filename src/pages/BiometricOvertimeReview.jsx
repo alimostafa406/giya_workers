@@ -22,12 +22,12 @@ export default function BiometricOvertimeReview({ report } = {}) {
     return () => { active = false }
   }, [date,reload])
   const reviewRows = biometricReviewRows(sources)
-  // Preserve the report's existing population, ordering and useful display columns.
-  // Only genuine canonical biometric sources receive decision controls.
-  const rows = report ? report.rows.map((display) => {
-    const review = reviewRows.find((r) => String(r.attendance.id) === String(display.id))
-    return review ? { ...review, display } : { display, worker: { id: `report-${display.id}`, full_name: display.worker, team_id: display.teamId, team_name: display.team }, attendance: {}, minutes: display.overtimeMinutes, status: 'unavailable', locked: true }
-  }) : reviewRows
+  // Both routes use precisely the same canonical candidates. Report rows add
+  // display metadata only; they must never restrict approval eligibility.
+  const rows = report ? reviewRows.map((review) => ({ ...review,
+    display: report.rows.find((display) => String(display.id) === String(review.attendance.id))
+      || { biometricId: '—', note: review.attendance.note || '—' },
+  })) : reviewRows
   const visible = rows.filter((r) => (!team || String(r.worker.team_id) === team) && (!status || r.status === status))
   const teams = [...new Map(rows.map((r) => [String(r.worker.team_id),r.worker.team_name])).entries()]
   const changeDate = (next) => { if(next && next<=today && !saving) { setDate(next); setMessage(''); setError('') } }

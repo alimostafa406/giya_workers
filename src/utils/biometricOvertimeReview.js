@@ -2,6 +2,7 @@ import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
 import { isWeeklyOvertimeEligibleWorker } from './overtimeWorkerScope.js'
 
 export const biometricReviewTitle = 'مراجعة الوقت الإضافي من البصمة'
+export const MINIMUM_BIOMETRIC_REVIEW_MINUTES = 30
 export function biometricOvertimeMinutes(worker, row, date) {
   if (!isWeeklyOvertimeEligibleWorker(worker, date) || row?.attendance_source !== 'biometric'
     || !row.check_out || !['present','late','half_day'].includes(row.status)
@@ -9,7 +10,7 @@ export function biometricOvertimeMinutes(worker, row, date) {
   // Remove only the manual-duration input: the real clocks/evidence are unchanged.
   return weeklyPayrollOvertimeForDetail({ date, worker, row: { ...row, manual_override: false, emergency_overtime_mode: null, emergency_overtime_minutes: null } }).eveningOvertimeMinutes
 }
-export function biometricReviewRows(sources = []) {
+function derivedBiometricRows(sources = []) {
   return sources.map((source) => {
     const minutes = biometricOvertimeMinutes(source.worker, source.attendance, source.attendance.attendance_date)
     const review = source.review
@@ -17,12 +18,15 @@ export function biometricReviewRows(sources = []) {
     return { ...source, minutes, stale, status: review && !stale ? review.decision : 'pending' }
   }).filter((row) => row.minutes > 0)
 }
+export function biometricReviewRows(sources = []) {
+  return derivedBiometricRows(sources).filter((row) => row.minutes >= MINIMUM_BIOMETRIC_REVIEW_MINUTES)
+}
 export function approvedBiometricOvertime(worker, detail, sources = []) {
   const entry = sources.find((s) => String(s.worker.id) === String(worker.id) && s.attendance.attendance_date === detail.date)
   if (!entry || !detail.row || String(entry.attendance.id) !== String(detail.row.id)
     || ['check_in','check_out','status','attendance_source'].some((key) => String(entry.attendance[key] || '') !== String(detail.row[key] || ''))
     || entry.attendance.biometric_sync_metadata?.check_out_event_timestamp !== detail.row.biometric_sync_metadata?.check_out_event_timestamp) return null
-  const reviewed = biometricReviewRows([entry])[0]
+  const reviewed = derivedBiometricRows([entry])[0]
   if (reviewed?.status !== 'approved' || reviewed.minutes !== biometricOvertimeMinutes(worker, detail.row, detail.date)) return null
   return { minutes: reviewed.minutes, version: reviewed.review.version, actor: reviewed.review.actor,
     decided_at: reviewed.review.decided_at, source_fingerprint: entry.source_fingerprint }
