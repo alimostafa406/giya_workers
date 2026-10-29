@@ -82,14 +82,33 @@ export function teamWeeklyReport(data, monday) {
   return { lines, groups, totals: reportTotals(lines), run, locked, hasLiveMonthlyOvertime: locked && monthlyLines.length > 0 }
 }
 
-export const teamReportPrintCss = `@page{size:A4 landscape;margin:10mm}body{font:12px Arial,Tahoma,sans-serif;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:7px;text-align:start}td:not(:first-child),thead th:not(:first-child){text-align:center}th{background:#f1f5f9}thead{display:table-header-group}tfoot{display:table-row-group;break-inside:avoid;page-break-inside:avoid}tfoot th,tfoot td{font-weight:800;background:#e2e8f0;border-top:2px solid #64748b}tfoot bdi{display:block}tr{break-inside:avoid;page-break-inside:avoid}bdi{white-space:nowrap}h1,h2{break-after:avoid}.team-report-header{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}tbody tr:last-child{break-after:avoid;page-break-after:avoid}`
+export const teamReportPrintCss = `@page{size:A4 landscape;margin:7mm}
+*{box-sizing:border-box}html,body{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}
+body{font:10pt/1.2 Arial,Tahoma,sans-serif;color:#172033}
+.team-report-all,.team-report-content,.team-report-content .overflow-x-auto{display:block;width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0;overflow:visible}
+h1{font-size:14pt;margin:0 0 1mm}h2{font-size:12pt;margin:1mm 0}p{margin:0 0 1mm}
+table{width:100%;max-width:none;min-width:0;table-layout:fixed;border-collapse:collapse;margin:2mm 0 0}
+th,td{border:1px solid #64748b;padding:1mm .7mm;font-size:10pt;line-height:1.2;text-align:start;vertical-align:middle;white-space:normal;overflow-wrap:anywhere}
+td:not(:first-child),thead th:not(:first-child){text-align:center}thead th{font-size:9.5pt;background:#f1f5f9}
+.team-report-team th:nth-child(1){width:14%}.team-report-team th:nth-child(2){width:4%}
+.team-report-team th:nth-child(n+3):nth-child(-n+8){width:4.5%}
+.team-report-team th:nth-child(9),.team-report-team th:nth-child(10){width:4%}
+.team-report-team th:nth-child(11){width:7%}.team-report-team th:nth-child(12),.team-report-team th:nth-child(13){width:13%}
+.team-report-team th:nth-child(14){width:14%}.team-report-summary th:first-child{width:20%}
+thead{display:table-header-group}tfoot{display:table-row-group;break-inside:avoid;page-break-inside:avoid}
+tfoot th,tfoot td{font-weight:800;background:#e2e8f0;border-top:2px solid #64748b}tfoot bdi{display:block}
+tr{break-inside:avoid;page-break-inside:avoid}bdi{white-space:normal;unicode-bidi:isolate}small{display:block;font-size:9.5pt}
+h1,h2{break-after:avoid}.team-report-header{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}
+.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}
+tbody tr:last-child{break-after:avoid;page-break-after:avoid}
+@media print{html,body,.team-report-all,.team-report-content,table{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}.team-report-controls,button,input,select,[hidden]{display:none!important}}`
 export function printTeamReport(element, { language = document.documentElement.lang || 'ar', title = element?.querySelector?.('h1')?.textContent || '' } = {}) {
   if (!element) return false
   const popup = window.open('', '_blank')
   if (!popup) return false
   const locale = ['ar', 'fr', 'en'].includes(language) ? language : 'en'
   const escapedTitle = String(title).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]))
-  popup.document.write(`<!doctype html><html lang="${locale}" dir="${locale === 'ar' ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${escapedTitle}</title><style>${teamReportPrintCss}.team-report-team table{font-size:10px}.team-report-team th,.team-report-team td{padding:5px 3px}.team-report-day{white-space:nowrap}</style></head><body>${element.innerHTML}</body></html>`)
+  popup.document.write(`<!doctype html><html lang="${locale}" dir="${locale === 'ar' ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${escapedTitle}</title><style>${teamReportPrintCss}</style></head><body>${element.innerHTML}</body></html>`)
   popup.document.close()
   Promise.resolve(popup.document.fonts?.ready).then(() => { popup.focus(); popup.print() })
   return true
