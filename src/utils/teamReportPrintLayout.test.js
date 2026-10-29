@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach,expect,it,vi } from 'vitest'
 import { rotateTeamPrintSheets } from './teamReportPrintLayout'
+import { printTeamReport } from './teamWeeklyReport'
+import { printRenderedPayrollTables } from './printRenderedPayroll'
 afterEach(()=>{vi.restoreAllMocks();document.body.innerHTML=''})
 const names=['JEREMIE','MBOMBA','MERVEILLE 2','RICHARD','ROBERT']
 const fixture=(workers=names)=>'<section class="team-report-team"><header>Zarour</header><table><thead><tr><th>العامل</th><th>الكود</th></tr></thead><tbody>'+workers.map((name,index)=>`<tr><td>${name}</td><td>${index}</td></tr>`).join('')+'</tbody><tfoot><tr><td>إجمالي الفرقة</td><td>999</td></tr></tfoot></table></section>'
@@ -33,4 +35,24 @@ it('summary-only printing is wrapped and rotated too',()=>{
  document.body.innerHTML='<h1>Summary</h1><table><tbody><tr><td>10</td></tr></tbody></table>'
  rotateTeamPrintSheets(document)
  expect(document.querySelector('.payroll-rotated-content table').textContent).toBe('10')
+})
+
+it.each(['weekly-report','payroll'])('%s actual popup DOM is rotated before print, including native reprint',async route=>{
+ const doc=document.implementation.createHTMLDocument('Print')
+ const beforePrint=[]
+ const popup={document:doc,focus:vi.fn(),addEventListener:vi.fn((name,fn)=>{if(name==='beforeprint')beforePrint.push(fn)}),print:vi.fn(()=>{
+  expect(doc.querySelectorAll('.payroll-rotated-sheet')).toHaveLength(1)
+  expect(doc.querySelectorAll('.payroll-rotated-content table')).toHaveLength(1)
+  expect(doc.querySelector('style').textContent).toContain('transform:rotate(90deg)')
+  expect(doc.documentElement.dir).toBe('rtl')
+  expect([...doc.querySelectorAll('tbody tr')].map(row=>row.cells[0].textContent)).toEqual(names)
+ })}
+ vi.spyOn(window,'open').mockReturnValue(popup)
+ const element=document.createElement('div');element.innerHTML=fixture()
+ if(route==='weekly-report')printTeamReport(element,{language:'ar',title:'Report'})
+ else printRenderedPayrollTables([{name:'Zarour',element:element.querySelector('table')}],{title:'Report',language:'ar',direction:'rtl'})
+ await vi.waitFor(()=>expect(popup.print).toHaveBeenCalledOnce())
+ beforePrint.forEach(fn=>fn())
+ expect(doc.querySelectorAll('.payroll-rotated-sheet')).toHaveLength(1)
+ expect(doc.querySelector('h1')?.textContent||doc.querySelector('header').textContent).toBe(route==='payroll'?'Report':'Zarour')
 })

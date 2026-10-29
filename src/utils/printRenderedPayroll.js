@@ -1,5 +1,7 @@
 const escape = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 
+import { finishRotatedPayrollPrint, rotatedPayrollPrintCss } from './teamReportPrintLayout.js'
+
 // Clone the live React table, including its actual order, cells and tfoot.
 // No attendance, overtime, monetary or total calculation belongs here.
 export function renderedPayrollTableHtml(element) {
@@ -29,9 +31,10 @@ export function renderedPayrollTableHtml(element) {
 
 export function printRenderedPayrollTables(sections, { title, metadata = [], language = 'ar', direction = 'rtl' }) {
   if (!sections.length) return false
-  const content = sections.map(({ name, element })=>`<section class="team"><h2>${escape(name)}</h2>${renderedPayrollTableHtml(element)}</section>`).join('')
+  const content = sections.map(({ name, element })=>`<section class="team"><header><h1>${escape(title)}</h1><div class="meta">${metadata.map(text=>`<p>${escape(text)}</p>`).join('')}</div><h2>${escape(name)}</h2></header>${renderedPayrollTableHtml(element)}</section>`).join('')
   const popup = window.open('', '_blank')
   if (!popup) return false
+  popup.document.open?.()
   popup.document.write(`<!doctype html><html lang="${escape(language)}" dir="${direction === 'rtl' ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${escape(title)}</title><style>
     @page{size:A4 landscape;margin:6mm}*{box-sizing:border-box}
     html,body{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}
@@ -46,8 +49,9 @@ export function printRenderedPayrollTables(sections, { title, metadata = [], lan
     tfoot tr,tr{break-inside:avoid;page-break-inside:avoid}td span,td small,th span{display:block}
     bdi,[dir="ltr"]{unicode-bidi:isolate}small{font-size:9pt}.team+.team{break-before:page;page-break-before:always}
     @media print{html,body,.team,table{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}button,input,select,textarea,nav,[hidden]{display:none!important}}
-  </style></head><body><h1>${escape(title)}</h1><div class="meta">${metadata.map(text=>`<p>${escape(text)}</p>`).join('')}</div>${content}</body></html>`)
+    ${rotatedPayrollPrintCss}
+  </style></head><body>${content}</body></html>`)
   popup.document.close()
-  Promise.resolve(popup.document.fonts?.ready).then(()=>{popup.focus();popup.print()})
+  finishRotatedPayrollPrint(popup)
   return true
 }
