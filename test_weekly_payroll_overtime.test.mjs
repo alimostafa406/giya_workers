@@ -118,5 +118,6 @@ test('weekly table source contains exactly the approved data columns and worker 
   assert.match(sheet, /onClick=\{\(\) => onEdit\(line\.worker\.id\)\}/)
   assert.match(sheet, /money\(line\.attendanceWage, line\)/)
   assert.match(sheet, /transportConfigured \? money\(line\.transportAmount, line\) : '—'/)
-  assert.doesNotMatch(sheet, /sundayStatusLabel|sundayWork|dailyRate|finalPay|common\.actions|common\.edit|simpleWeeklyPayrollForLine/)
+  assert.match(sheet, /payroll\.finalPay/)
+  assert.doesNotMatch(sheet, /sundayStatusLabel|sundayWork|dailyRate|common\.actions|common\.edit|simpleWeeklyPayrollForLine/)
 })
