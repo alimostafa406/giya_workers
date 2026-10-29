@@ -11,6 +11,19 @@ export function renderedPayrollTableHtml(element) {
   // Standalone print styles replace screen sizing/overflow/visibility utilities.
   table.querySelectorAll('[class]').forEach(node=>node.removeAttribute('class'))
   table.removeAttribute('class')
+  // Column sizing is presentation only; preserve every original cell/value.
+  // Worker + weekdays + wages/OT hours/OT amount/transport/final payable.
+  const dayCount = table.tHead?.rows[0]?.cells.length - 6
+  if (dayCount > 0) {
+    table.querySelectorAll('colgroup').forEach(node=>node.remove())
+    const columns = table.ownerDocument.createElement('colgroup')
+    for (const width of [18,...Array(dayCount).fill(30/dayCount),11,7,11,10,13]) {
+      const col = table.ownerDocument.createElement('col')
+      col.style.width = `${width}%`
+      columns.appendChild(col)
+    }
+    table.insertBefore(columns,table.tHead)
+  }
   return table.outerHTML
 }
 
@@ -20,10 +33,19 @@ export function printRenderedPayrollTables(sections, { title, metadata = [], lan
   const popup = window.open('', '_blank')
   if (!popup) return false
   popup.document.write(`<!doctype html><html lang="${escape(language)}" dir="${direction === 'rtl' ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${escape(title)}</title><style>
-    @page{size:A4 landscape;margin:8mm}*{box-sizing:border-box}body{margin:0;color:#172033;font-family:Arial,Tahoma,sans-serif;font-size:10px}
-    h1{font-size:18px;margin:0 0 8px}h2{font-size:14px;margin:12px 0 6px;break-after:avoid}.meta{margin-bottom:10px}.meta p{margin:3px 0}
-    table{width:100%;table-layout:auto;border-collapse:collapse}th,td{border:1px solid #94a3b8;padding:5px 3px;font-size:9px;text-align:center;vertical-align:middle;overflow:visible}th:first-child,td:first-child{text-align:start}thead{display:table-header-group;background:#f1f5f9}tfoot{display:table-row-group;font-weight:800;background:#e2e8f0}tfoot tr{break-inside:avoid;page-break-inside:avoid}tr{break-inside:avoid;page-break-inside:avoid}td span,td small,th span{display:block}bdi,[dir="ltr"]{unicode-bidi:isolate}small{font-size:8px}.team+.team{break-before:page;page-break-before:always}
-    @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}button,input,select,textarea,nav{display:none!important}}
+    @page{size:A4 landscape;margin:6mm}*{box-sizing:border-box}
+    html,body{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}
+    body{color:#172033;font-family:Arial,Tahoma,sans-serif;font-size:9.5pt;line-height:1.25}
+    h1{font-size:14pt;margin:0 0 2mm}h2{font-size:12pt;margin:2mm 0;break-after:avoid;page-break-after:avoid}
+    .meta{display:flex;flex-wrap:wrap;gap:1mm 5mm;margin:0 0 2mm;font-size:9pt}.meta p{margin:0}
+    .team{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}
+    table{width:100%;max-width:none;min-width:0;table-layout:fixed;border-collapse:collapse;margin:0}
+    th,td{border:1px solid #64748b;padding:1.4mm 1mm;font-size:9.5pt;text-align:center;vertical-align:middle;white-space:normal;overflow-wrap:anywhere;overflow:visible}
+    thead th{font-size:9pt;line-height:1.2}th:first-child,td:first-child{text-align:start}
+    thead{display:table-header-group;background:#f1f5f9}tfoot{display:table-row-group;font-weight:800;background:#e2e8f0}
+    tfoot tr,tr{break-inside:avoid;page-break-inside:avoid}td span,td small,th span{display:block}
+    bdi,[dir="ltr"]{unicode-bidi:isolate}small{font-size:9pt}.team+.team{break-before:page;page-break-before:always}
+    @media print{html,body,.team,table{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}button,input,select,textarea,nav,[hidden]{display:none!important}}
   </style></head><body><h1>${escape(title)}</h1><div class="meta">${metadata.map(text=>`<p>${escape(text)}</p>`).join('')}</div>${content}</body></html>`)
   popup.document.close()
   Promise.resolve(popup.document.fonts?.ready).then(()=>{popup.focus();popup.print()})
