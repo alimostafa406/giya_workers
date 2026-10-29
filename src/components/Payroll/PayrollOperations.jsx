@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getErrorMessage } from '../../api/axios'
 import { saveAttendanceManuallyRequest, updateAttendanceManuallyRequest } from '../../api/attendanceApi'
 import { cancelSundayWorkRequest, confirmSundayWorkRequest, createPayrollAdjustmentRequest, getPayrollOperationsDataRequest, markSundayPaymentPaidRequest, persistPayrollDraftRequest, reversePaidSundayPaymentRequest, setWeeklyPayrollRunStatusRequest } from '../../api/payrollOperationsApi'
 import { saveWorkerPayrollSettingsRequest } from '../../api/payrollSettingsApi'
 import { applyPayrollAdjustments, mondayFor, sundayBefore, totalLines, weeklyDates } from '../../utils/payrollCalculations'
-import { exportPayrollExcel, exportPayrollPdf, printPayrollReport } from '../../utils/payrollExports'
-import { printAllWeeklyPayrollTeams } from '../../utils/weeklyPayrollPrintAll'
+import { exportPayrollExcel } from '../../utils/payrollExports'
+import { printRenderedPayrollTables } from '../../utils/printRenderedPayroll'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 import { payrollWorkerLabel } from '../../utils/payrollLineCurrency'
 import { positiveWeeklyPayrollCurrencyTotals, weeklyPayrollCurrencyTotalsMatch, weeklyPayrollTotalsByCurrency } from '../../utils/weeklyPayrollEligibility'
@@ -36,6 +36,7 @@ const weeklyLinesFor = (data, monday) => {
 const numeric = (value) => Math.round((Number(value) || 0) * 100) / 100
 
 export default function PayrollOperations() {
+  const selectedPrintRef = useRef(null), allTeamsPrintRef = useRef(null)
   const { t, language, direction } = useTranslation()
   const [data, setData] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [monday, setMonday] = useState(mondayFor()); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(''); const [selectedTeamId, setSelectedTeamId] = useState(''); const [workerSearch, setWorkerSearch] = useState(''); const [editingWorkerId, setEditingWorkerId] = useState(''); const [editingAttendance, setEditingAttendance] = useState(null); const [savingAttendance, setSavingAttendance] = useState(false); const [savingSheetWorkerId, setSavingSheetWorkerId] = useState(''); const [runActionSaving, setRunActionSaving] = useState(false); const [reviewErrors, setReviewErrors] = useState([])
   const load = async (weekStart = monday) => { setLoading(true); try { const result = await getPayrollOperationsDataRequest({ date_from: weekStart, date_to: weeklyDates(weekStart).at(-1), paginate: true }); setData(result); setError(''); return result } catch (e) { setError(getErrorMessage(e)); return null } finally { setLoading(false) } }
@@ -127,15 +128,13 @@ export default function PayrollOperations() {
   const exportTeam = (kind) => {
     if (!selectedTeam) return
     const config = { title: `${t('payroll.weeklyPayrollReport')} — ${selectedTeam.name}`, metadata: exportMetadata(selectedTeam.name), headers: teamExportHeaders, rows: teamExportRows, totals: teamExportTotals, direction, language, sheetName: t('payroll.weekly'), filename: `weekly-payroll-${monday}-${selectedTeam.name}` }
-    if (kind === 'print') printPayrollReport(config)
+    if (kind === 'print' || kind === 'pdf') printRenderedPayrollTables([{ name: selectedTeam.name, element: selectedPrintRef.current }], { title: config.title, metadata: config.metadata, language, direction })
     if (kind === 'excel') exportPayrollExcel({ ...config, filename: `${config.filename}.xlsx` })
-    if (kind === 'pdf' && !exportPayrollPdf({ ...config, filename: `${config.filename}.pdf` }).supported) setError(t('payroll.pdfArabicUnsupported'))
   }
   const exportAllTeams = (kind) => {
     const config = { title: t('payroll.allTeamsSummary'), metadata: exportMetadata(), headers: allTeamsHeaders, rows: allTeamsRows, totals: allTeamsTotals, direction, language, sheetName: t('payroll.allTeamsSummary'), filename: `weekly-payroll-all-teams-${monday}` }
-    if (kind === 'print') printPayrollReport(config)
+    if (kind === 'print' || kind === 'pdf') printEveryTeam()
     if (kind === 'excel') exportPayrollExcel({ ...config, filename: `${config.filename}.xlsx` })
-    if (kind === 'pdf' && !exportPayrollPdf({ ...config, filename: `${config.filename}.pdf` }).supported) setError(t('payroll.pdfArabicUnsupported'))
   }
   const saveDraft = async () => { if (!data?.rules || (weeklyRun && weeklyRun.status !== 'draft')) return; setSaving(true); setError(''); setMessage(''); try { const saturday = weeklyDates(monday).at(-1); await persistPayrollDraftRequest({ paymentType: 'weekly', periodStart: monday, periodEnd: saturday, dueDate: saturday, currency: 'CDF', ruleSetId: data.rules.id, lines: weeklyLinesFor(data, monday) }); await load(); setMessage(t('payroll.draftSaved')) } catch (e) { setError(getErrorMessage(e)) } finally { setSaving(false) } }
   const saveInlineOvertime = async (line, minutes) => {
@@ -198,20 +197,9 @@ export default function PayrollOperations() {
     })
     return load()
   }
-  const printEveryTeam = () => printAllWeeklyPayrollTeams({
-    title: t('payroll.weeklyPayrollReport'), periodStart: monday, periodEnd: saturday,
-    groups: teamGroups, overallTotalsByCurrency: weeklyPayrollTotalsByCurrency(lines),
-    dates: weeklyDates(monday), language, direction,
-    labels: {
-      period: t('payroll.payrollPeriod'), teams: t('payroll.teamCount'), workers: t('payroll.workerCount'),
-      overallTotal: t('payroll.allTeamsPayrollTotal'), teamTotal: t('payroll.teamPayrollTotal'),
-      worker: t('payroll.worker'), workDayPay: t('payroll.workDayPay'),
-      overtimeHours: t('payroll.overtimeHours'), overtimeAmount: t('payroll.overtimeAmount'),
-      transport: t('payroll.transport'), total: t('payroll.finalPay'),
-      monthlyOnly: t('teamWeeklyReport.monthlyOnly'),
-      status: { present: t('attendance.present'), half_day: t('attendance.halfDay'), absent: t('attendance.absent'), neutral: '—' },
-    },
-  })
+  const printEveryTeam = () => printRenderedPayrollTables(teamGroups.map(group => ({
+    name: group.name, element: [...(allTeamsPrintRef.current?.children || [])].find(node=>node.dataset.payrollPrintTeam === group.id),
+  })), { title: t('payroll.weeklyPayrollReport'), metadata: exportMetadata(), language, direction })
   const refreshDraftFromAttendance = async () => {
     if (!draftRun || saving || runActionSaving) return
     setSaving(true); setError(''); setMessage('')
@@ -376,7 +364,8 @@ export default function PayrollOperations() {
     {!selectedTeam ? <div className="mb-3 flex flex-wrap justify-end gap-2"><button type="button" className="btn-primary px-3 py-2" disabled={loading || !teamGroups.length} onClick={printEveryTeam}>{t('payroll.printAllTeams')}</button>{exportButtons(exportAllTeams)}</div> : null}
     <div className="mb-4"><WeeklyPayrollTeamSummary groups={teamGroups} selectedTeamId={selectedTeamId} onSelectTeam={(id) => { setSelectedTeamId(id); setEditingWorkerId('') }} /></div>
     {(reviewErrors.length || weekValidationErrors.length) ? <div className="mb-3 rounded bg-amber-50 p-3 text-amber-900"><p className="font-bold">{t('payroll.reviewValidationFailed')}</p><ul className="mt-2 list-inside list-disc text-sm">{(reviewErrors.length ? reviewErrors : weekValidationErrors).map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
-    {selectedTeam ? <div data-weekly-team-review><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><div className="mb-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><p><strong>{t('common.team')}:</strong> {selectedTeam.name}</p><p><strong>{t('payroll.workers')}:</strong> {selectedTeam.lines.length}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {amountDue(selectedTeam.amountDueByCurrency)}</p></div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} onSaveOvertime={saveInlineOvertime} /></div> : <p className="py-3 text-center text-sm font-bold text-(--muted)">{loading ? t('common.loading') : t('payroll.choosePayrollTeam')}</p>}
+    {selectedTeam ? <div data-weekly-team-review ref={selectedPrintRef}><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><button className="btn-secondary" onClick={() => { setSelectedTeamId(''); setEditingWorkerId('') }}>{t('payroll.back')}</button>{exportButtons(exportTeam)}</div><div className="mb-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><p><strong>{t('common.team')}:</strong> {selectedTeam.name}</p><p><strong>{t('payroll.workers')}:</strong> {selectedTeam.lines.length}</p><p className="font-extrabold"><strong>{t('payroll.teamTotal')}:</strong> {amountDue(selectedTeam.amountDueByCurrency)}</p></div><WeeklyPayrollSheet lines={selectedTeam.lines} dates={weeklyDates(monday)} onEdit={setEditingWorkerId} editable={!weeklyRun || weeklyRun.status === 'draft'} onSaveOvertime={saveInlineOvertime} /></div> : <p className="py-3 text-center text-sm font-bold text-(--muted)">{loading ? t('common.loading') : t('payroll.choosePayrollTeam')}</p>}
+    {!selectedTeam && <div hidden aria-hidden="true" ref={allTeamsPrintRef} data-payroll-all-teams-print-source>{teamGroups.map(group=><div key={group.id} data-payroll-print-team={group.id}><WeeklyPayrollSheet lines={group.lines} dates={weeklyDates(monday)} onEdit={()=>{}} editable={!weeklyRun || weeklyRun.status === 'draft'} /></div>)}</div>}
     <WeeklyPayrollWorkerEditPanel line={editingLine} dates={weeklyDates(monday)} hasDraft={Boolean(draftRun)} saving={Boolean(savingSheetWorkerId)} onClose={() => setEditingWorkerId('')} onSave={saveSheetEdit} onMarkSundayPaid={markSundayPaid} onCorrectPaidSunday={correctPaidSunday} />
     <AttendanceEditModal row={editingAttendance} isOpen={Boolean(editingAttendance)} isSaving={savingAttendance} onClose={() => setEditingAttendance(null)} onSave={saveAttendanceCorrection} />
   </section>

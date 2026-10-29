@@ -24,7 +24,7 @@ beforeEach(()=>{
   api.load.mockImplementation(async()=>structuredClone(data))
   api.save.mockImplementation(async({entries})=>{ for(const e of entries){const o=data.weeklyOvertimeOverrides.find(x=>x.worker_id===e.worker_id);o.minutes=e.minutes;o.version++}return [] })
 })
-afterEach(()=>{cleanup();vi.clearAllMocks()})
+afterEach(()=>{cleanup();vi.clearAllMocks();vi.restoreAllMocks()})
 async function openTeam(){render(<LanguageProvider><PayrollOperations /></LanguageProvider>);fireEvent.click(await screen.findByRole('button',{name:/^Team/}));return document.querySelector('[data-weekly-payroll-sheet]')}
 const row = (table,name)=>within(table).getByRole('button',{name:new RegExp(`^${name}`)}).closest('tr')
 
@@ -50,6 +50,15 @@ it('one OT column, visible 5h -> 15h save, canonical versioned override, monthly
   expect(report.groups[0].totals.minutes).toBe(1800)
   expect(report.totals.minutes).toBe(1800)
   expect(report.totals.currencies.CDF.overtimeAmount).toBe(300)
+  const popup={document:{write:vi.fn(),close:vi.fn(),fonts:{ready:Promise.resolve()}},focus:vi.fn(),print:vi.fn()}
+  vi.spyOn(window,'open').mockReturnValue(popup)
+  const actions=within(document.querySelector('[data-weekly-team-review]'))
+  fireEvent.click(actions.getByRole('button',{name:/^Print$/i}))
+  const printed=new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html')
+  expect(printed.querySelector('table').textContent).toContain('15h00')
+  expect(printed.querySelector('tfoot').textContent).toBe(table.querySelector('tfoot').textContent)
+  fireEvent.click(actions.getByRole('button',{name:/PDF/i}))
+  expect(popup.document.write.mock.calls[1][0]).toBe(popup.document.write.mock.calls[0][0])
   const r=row(table,'monthly');fireEvent.click(within(r).getByRole('button',{name:/Overtime Hours/}));fireEvent.click(within(r).getByRole('button',{name:'Clear weekly override'}))
   await waitFor(()=>expect(within(row(table,'monthly')).getByRole('button',{name:/Overtime Hours/}).textContent).toBe('2h00'))
   expect(api.save).toHaveBeenLastCalledWith({week:'2026-10-19',entries:[{worker_id:'monthly',minutes:null,expected_version:2}]})
@@ -63,6 +72,25 @@ it.each(['reviewed','finalized','paid'])('%s snapshots have read-only locked ove
   expect(within(table).queryByRole('button',{name:/Overtime Hours/})).toBeNull()
   expect(within(table).getAllByText('Locked')).toHaveLength(2)
   expect(api.save).not.toHaveBeenCalled();expect(JSON.stringify(data.payrollLines)).toBe(before)
+})
+
+it('page-level Print All Teams uses every current React table including its totals row',async()=>{
+  data.workers[1].team_id='other';data.workers[1].team_name='Other team'
+  const popup={document:{write:vi.fn(),close:vi.fn(),fonts:{ready:Promise.resolve()}},focus:vi.fn(),print:vi.fn()}
+  vi.spyOn(window,'open').mockReturnValue(popup)
+  render(<LanguageProvider><PayrollOperations /></LanguageProvider>)
+  const print=await screen.findByRole('button',{name:/Print All Teams/i})
+  await waitFor(()=>expect(print.disabled).toBe(false))
+  fireEvent.click(print)
+  const doc=new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html')
+  expect(doc.querySelectorAll('table')).toHaveLength(2)
+  expect(doc.querySelectorAll('tfoot')).toHaveLength(2)
+  const originals=document.querySelectorAll('[data-payroll-all-teams-print-source] table')
+  expect(originals).toHaveLength(2)
+  doc.querySelectorAll('table').forEach((table,index)=>{
+    expect(table.querySelector('tfoot').textContent).toBe(originals[index].querySelector('tfoot').textContent)
+    expect(table.querySelector('tbody tr').cells[0].textContent).toBe(originals[index].querySelector('tbody tr').cells[0].textContent)
+  })
 })
 
 it.each(['25:30','40:00'])('duration %s can be saved; cancel never writes',async value=>{
