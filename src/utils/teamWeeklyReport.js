@@ -3,6 +3,7 @@ import { isNormalPayrollWorkerOnDate, isWeeklyPayrollEligibleWorker } from './we
 import { calculateWeeklyOvertimePay } from './weeklyPayrollOvertime.js'
 import { manualReportMinutes } from './weeklyManualOvertime.js'
 import { calculateWeeklyPayoutLine } from './weeklyPayoutLines.js'
+import { expandTeamPrintRows } from './teamReportPrintLayout.js'
 export { manualReportMinutes } from './weeklyManualOvertime.js'
 
 const round = (n) => Math.round(n * 100) / 100
@@ -101,6 +102,7 @@ tr{break-inside:avoid;page-break-inside:avoid}bdi{white-space:normal;unicode-bid
 h1,h2{break-after:avoid}.team-report-header{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}
 .team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}
 tbody tr:last-child{break-after:avoid;page-break-after:avoid}
+@media screen{body{width:283mm}}
 @media print{html,body,.team-report-all,.team-report-content,table{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}.team-report-controls,button,input,select,[hidden]{display:none!important}}`
 export function printTeamReport(element, { language = document.documentElement.lang || 'ar', title = element?.querySelector?.('h1')?.textContent || '' } = {}) {
   if (!element) return false
@@ -110,6 +112,6 @@ export function printTeamReport(element, { language = document.documentElement.l
   const escapedTitle = String(title).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]))
   popup.document.write(`<!doctype html><html lang="${locale}" dir="${locale === 'ar' ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${escapedTitle}</title><style>${teamReportPrintCss}</style></head><body>${element.innerHTML}</body></html>`)
   popup.document.close()
-  Promise.resolve(popup.document.fonts?.ready).then(() => { popup.focus(); popup.print() })
+  Promise.resolve(popup.document.fonts?.ready).then(() => { expandTeamPrintRows(popup.document); popup.focus(); popup.print() })
   return true
 }
