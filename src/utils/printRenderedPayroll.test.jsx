@@ -29,7 +29,7 @@ it.each(['ar','fr'])('%s print clones the current table cells/order/statuses/tot
  expect(widths[0]).toBeGreaterThan(widths[1])
  expect(widths[7]).toBeGreaterThan(widths[8])
  const css=doc.querySelector('style').textContent
- expect(css).toContain('@page{size:A4 landscape;margin:6mm}')
+ expect(css).toContain('@page{size:A4 landscape;margin:7mm}')
  expect(css).toContain('table-layout:fixed')
  expect(css).toContain('font-size:9.5pt')
  expect(css).toContain('max-width:none')

@@ -1,6 +1,6 @@
 const escape = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 
-import { finishRotatedPayrollPrint, rotatedPayrollPrintCss } from './teamReportPrintLayout.js'
+import { finishPayrollPrint, payrollLandscapePrintCss } from './teamReportPrintLayout.js'
 
 // Clone the live React table, including its actual order, cells and tfoot.
 // No attendance, overtime, monetary or total calculation belongs here.
@@ -36,7 +36,7 @@ export function printRenderedPayrollTables(sections, { title, metadata = [], lan
   if (!popup) return false
   popup.document.open?.()
   popup.document.write(`<!doctype html><html lang="${escape(language)}" dir="${direction === 'rtl' ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${escape(title)}</title><style>
-    @page{size:A4 landscape;margin:6mm}*{box-sizing:border-box}
+    @page{size:A4 landscape;margin:7mm}*{box-sizing:border-box}
     html,body{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}
     body{color:#172033;font-family:Arial,Tahoma,sans-serif;font-size:9.5pt;line-height:1.25}
     h1{font-size:14pt;margin:0 0 2mm}h2{font-size:12pt;margin:2mm 0;break-after:avoid;page-break-after:avoid}
@@ -49,9 +49,9 @@ export function printRenderedPayrollTables(sections, { title, metadata = [], lan
     tfoot tr,tr{break-inside:avoid;page-break-inside:avoid}td span,td small,th span{display:block}
     bdi,[dir="ltr"]{unicode-bidi:isolate}small{font-size:9pt}.team+.team{break-before:page;page-break-before:always}
     @media print{html,body,.team,table{width:100%;max-width:none;min-width:0;height:auto;min-height:0;margin:0;padding:0}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}button,input,select,textarea,nav,[hidden]{display:none!important}}
-    ${rotatedPayrollPrintCss}
+    ${payrollLandscapePrintCss}
   </style></head><body>${content}</body></html>`)
   popup.document.close()
-  finishRotatedPayrollPrint(popup)
+  finishPayrollPrint(popup)
   return true
 }
