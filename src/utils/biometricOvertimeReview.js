@@ -2,7 +2,6 @@ import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
 import { isWeeklyOvertimeEligibleWorker } from './overtimeWorkerScope.js'
 
 export const biometricReviewTitle = 'مراجعة الوقت الإضافي من البصمة'
-export const MINIMUM_BIOMETRIC_REVIEW_MINUTES = 30
 export function biometricOvertimeMinutes(worker, row, date) {
   if (!isWeeklyOvertimeEligibleWorker(worker, date) || row?.attendance_source !== 'biometric'
     || !row.check_out || !['present','late','half_day'].includes(row.status)
@@ -19,7 +18,9 @@ function derivedBiometricRows(sources = []) {
   }).filter((row) => row.minutes > 0)
 }
 export function biometricReviewRows(sources = []) {
-  return derivedBiometricRows(sources).filter((row) => row.minutes >= MINIMUM_BIOMETRIC_REVIEW_MINUTES)
+  // The canonical calculation owns the strict >30-minute eligibility check,
+  // before half-hour rounding. Do not apply a second threshold to rounded OT.
+  return derivedBiometricRows(sources)
 }
 export function approvedBiometricOvertime(worker, detail, sources = []) {
   const entry = sources.find((s) => String(s.worker.id) === String(worker.id) && s.attendance.attendance_date === detail.date)

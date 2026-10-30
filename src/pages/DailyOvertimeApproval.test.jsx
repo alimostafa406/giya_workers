@@ -16,12 +16,6 @@ vi.mock('../api/biometricMappingApi', () => ({ getBiometricMappingsRequest: asyn
 vi.mock('../api/currentAttendanceEvidenceApi', () => ({ getCurrentAttendanceEvidenceRequest: async () => ({ data: [] }) }))
 vi.mock('../utils/useOvertimeReportSettings.js', () => ({ useOvertimeReportSettings: () => ({ loading: false, settings: { team_ids: ['one','two'] } }) }))
 vi.mock('../utils/attendanceOperationalGate', () => ({ kinshasaClock: () => ({ date: '2026-10-24' }) }))
-vi.mock('../utils/weeklyPayrollOvertime.js', async (importOriginal) => {
-  const actual = await importOriginal()
-  return { ...actual, weeklyPayrollOvertimeForDetail: (detail) => detail.row?.derivedMinutes != null
-    ? { morningOvertimeMinutes:0, eveningOvertimeMinutes:detail.row.derivedMinutes }
-    : actual.weeklyPayrollOvertimeForDetail(detail) }
-})
 let sources
 beforeEach(() => {
   sources = ['Alpha','Beta'].map((name, i) => {
@@ -93,22 +87,23 @@ it('stale decisions require review again and retain the report biometric/notes c
   expect(screen.getByText('إجمالي الساعات الموافق عليها:').textContent).not.toContain('2.5')
 })
 
-it('both routes show the identical >=30-minute candidate set, independent of the old report population', async () => {
+it('both routes use the real strict >30-minute calculation, independent of the old report population', async () => {
   const template = sources[0]
-  sources = [20,29,30,31,45,60].map(minutes => ({ ...structuredClone(template),
-    worker: { ...template.worker, id:String(minutes), full_name:`Worker ${minutes}`, payment_type:minutes===30?'monthly':'weekly' },
-    attendance: { ...template.attendance, id:`att-${minutes}`, worker_id:String(minutes), derivedMinutes:minutes },
+  sources = [20,29,30,31,45,55,60,90].map(minutes => ({ ...structuredClone(template),
+    worker: { ...template.worker, id:String(minutes), full_name:minutes===55?'MBOMBA #77':`Worker ${minutes}`, payment_type:minutes===31?'monthly':'weekly' },
+    attendance: { ...template.attendance, id:`att-${minutes}`, worker_id:String(minutes), check_out:`${17+Math.floor(minutes/60)}:${String(minutes%60).padStart(2,'0')}:${minutes===55?'19':'00'}` },
   }))
   // Display enrichment need not contain an attendance row for a candidate.
   api.attendance.mockResolvedValue({ data:[] })
   open()
-  await screen.findByRole('checkbox', { name:'Worker 30' })
+  await screen.findByRole('checkbox', { name:'Worker 31' })
   const reportNames = screen.getAllByRole('checkbox').map(input=>input.getAttribute('aria-label'))
-  expect(reportNames).toEqual(['Worker 30','Worker 31','Worker 45','Worker 60'])
+  expect(reportNames).toEqual(['Worker 31','Worker 45','MBOMBA #77','Worker 60','Worker 90'])
   cleanup(); render(<BiometricOvertimeReview />)
   fireEvent.change(screen.getByLabelText('التاريخ'), { target:{ value:'2026-10-23' } })
-  await screen.findByRole('checkbox', { name:'Worker 30' })
+  await screen.findByRole('checkbox', { name:'Worker 31' })
   expect(screen.getAllByRole('checkbox').map(input=>input.getAttribute('aria-label'))).toEqual(reportNames)
   expect(screen.queryByRole('checkbox', { name:'Worker 29' })).toBeNull()
+  expect(screen.queryByRole('checkbox', { name:'Worker 30' })).toBeNull()
   expect(api.decide).not.toHaveBeenCalled()
 })

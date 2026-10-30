@@ -1,4 +1,5 @@
 const KINSHASA_TIME_ZONE = 'Africa/Kinshasa'
+export const BIOMETRIC_OVERTIME_THRESHOLD_MINUTES = 30
 
 const overtimeTeamName = (value = {}) => {
   const row = value?.row || {}
@@ -113,10 +114,12 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
   }
   if (!isWeekday(detail.date)) return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   const checkOut = normalizedCheckoutMinutes(detail)
-  const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(Math.floor(checkOut - 1020), 0)
+  const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(checkOut - 1020, 0)
   return {
     morningOvertimeMinutes: 0,
-    eveningOvertimeMinutes: workedAfterEndMinutes < 60 ? 0 : 60 + (Math.floor((workedAfterEndMinutes - 60) / 30) * 30),
+    // Check eligibility before rounding: exactly 30 minutes is not eligible.
+    // Retain completed half-hour blocks for the reviewed/payable duration.
+    eveningOvertimeMinutes: workedAfterEndMinutes <= BIOMETRIC_OVERTIME_THRESHOLD_MINUTES ? 0 : Math.floor(workedAfterEndMinutes / 30) * 30,
   }
 }
 
