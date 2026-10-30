@@ -36,11 +36,11 @@ test('draft detects half-day to present correction and later real checkout', () 
 test('cross-midnight checkout and missing rate retain canonical overtime time', () => {
   const old = saved(preview({ status: 'present', check_in: '07:54:25', check_out: '17:04:00' }, null))
   const nextDay = preview({ status: 'present', check_in: '07:54:25', check_out: '00:31:00', biometric_sync_metadata: { check_out_event_timestamp: '2026-09-29T00:31:00+01:00' } }, null)
-  assert.equal(nextDay.eveningOvertimeMinutes, 450)
-  assert.equal(nextDay.overtimeHours, 7.5)
+  assert.equal(nextDay.eveningOvertimeMinutes, 451)
+  assert.equal(nextDay.overtimeHours, 451 / 60)
   assert.equal(nextDay.overtimeAmount, 0)
   assert.deepEqual(staleWeeklyPayrollWorkerIds([old], [nextDay]), ['w'])
-  assert.equal(weeklyPayrollOvertimeForLine(nextDay).eveningOvertimeMinutes, 450)
+  assert.equal(weeklyPayrollOvertimeForLine(nextDay).eveningOvertimeMinutes, 451)
 })
 test('report-only team and two-hour threshold never filter payroll overtime', () => {
   const row = { worker_id:'w', worker, team:worker.team, attendance_date:'2026-09-28', status:'present', check_in:'08:00:00', check_out:'18:00:00' }

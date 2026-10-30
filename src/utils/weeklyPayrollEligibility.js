@@ -1,10 +1,34 @@
 import { isActiveWorker } from './activeWorkers.js'
 
 export const isNormalPayrollWorkerOnDate = (worker, periodEnd = '') => (
-  isActiveWorker(worker)
+  (isActiveWorker(worker) || (worker?.payroll_period_evidence?.end === periodEnd
+    && worker.payroll_period_evidence.start && worker.payroll_period_evidence.start <= periodEnd))
   && (!worker?.operational_start_date || !periodEnd || String(worker.operational_start_date) <= String(periodEnd))
   && (worker?.staff_classification || 'normal') === 'normal'
 )
+
+// Period membership is not today's operational roster. Preserve recorded work,
+// decisions, payable sources and immutable population evidence without changing
+// is_active. Evidence is bounded to this week and cannot leak into a later one.
+export function weeklyPayrollPeriodWorkers(data, start, end) {
+  const inPeriod = date => Boolean(date && date >= start && date <= end)
+  return (data.workers || []).map(worker => {
+    const id = String(worker.id)
+    const history = (data.weeklyPayrollPopulation || []).find(row => String(row.worker_id) === id && inPeriod(row.date))
+    const saved = (data.payrollLines || []).find(row => String(row.worker_id) === id
+      && row.attendance_period_start <= end && row.attendance_period_end >= start
+      && (row.payment_type_snapshot === 'weekly' || row.attendance_summary_snapshot?.monthly_overtime_only))
+    const activity = Boolean(history || saved
+      || (data.attendance || []).some(row => String(row.worker_id) === id && inPeriod(row.attendance_date))
+      || (data.weeklyOvertimeOverrides || []).some(row => String(row.worker_id) === id && row.week_start === start && Number(row.minutes) > 0)
+      || (data.biometricOvertimeReviews || []).some(row => String(row.worker?.id) === id && inPeriod(row.attendance?.attendance_date))
+      || (data.outsideWorkMovements || []).some(row => row.status === 'final' && inPeriod(row.work_date)
+        && (row.outside_work_movement_workers || []).some(participant => String(participant.worker_id) === id)))
+    const identity = saved?.attendance_summary_snapshot?.worker_identity_snapshot || history?.identity
+    return { ...worker, ...(identity || {}),
+      ...(activity ? { payroll_period_evidence: { start, end } } : { payroll_period_evidence: null }) }
+  })
+}
 
 export const isWeeklyPayrollEligibleWorker = (worker, periodEnd = '') => (
   isNormalPayrollWorkerOnDate(worker, periodEnd) && worker?.payment_type === 'weekly'

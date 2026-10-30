@@ -1,5 +1,5 @@
 import { calculatePayrollLine, weeklyDates } from './payrollCalculations.js'
-import { isNormalPayrollWorkerOnDate, isWeeklyPayrollEligibleWorker } from './weeklyPayrollEligibility.js'
+import { isNormalPayrollWorkerOnDate, isWeeklyPayrollEligibleWorker, weeklyPayrollPeriodWorkers } from './weeklyPayrollEligibility.js'
 import { applyManualWeeklyOvertime } from './weeklyManualOvertime.js'
 import { calculateWeeklyOvertimePay } from './weeklyPayrollOvertime.js'
 
@@ -24,7 +24,7 @@ export function calculateWeeklyPayoutLine(data, monday, worker) {
 export function weeklyPayoutLines(data, monday) {
   if (!data) return []
   const end = weeklyDates(monday).at(-1)
-  return (data.workers || []).filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)
+  return weeklyPayrollPeriodWorkers(data, monday, end).filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)
     || (worker.payment_type === 'monthly' && isNormalPayrollWorkerOnDate(worker, end)))
     .map((worker) => calculateWeeklyPayoutLine(data, monday, worker))
     .filter((line) => !line.monthlyOvertimeOnly || line.eveningOvertimeMinutes > 0)

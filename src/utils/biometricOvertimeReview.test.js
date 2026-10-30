@@ -53,9 +53,9 @@ it('pending/stale relevant reviews block review/finalization, but an explicit we
  expect(()=>assertBiometricReviewsResolved({...d,attendance:[{...attendance,manual_override:true,emergency_overtime_mode:'manual_overtime_duration',emergency_overtime_minutes:120}]},[date])).not.toThrow()
  expect(()=>assertBiometricReviewsResolved({...d,biometricOvertimeReviews:[source('rejected')]},[date])).not.toThrow()
 })
-it('manual/fabricated checkout, zero overtime, excluded and inactive workers are not review candidates',()=>{
+it('manual/fabricated checkout and zero overtime are excluded; recorded inactive history remains reviewable',()=>{
  for(const change of [{attendance_source:'manual'},{check_out:null},{check_out:'17:30:00'},{manual_override:true,emergency_overtime_mode:'manual_checkout'}]){
   const s=source();s.attendance={...s.attendance,...change};expect(biometricReviewRows([s])).toHaveLength(0)
  }
- const s=source();s.worker={...worker,is_active:false};expect(biometricReviewRows([s])).toHaveLength(0)
+ const s=source();s.worker={...worker,is_active:false};expect(biometricReviewRows([s])).toHaveLength(1)
 })

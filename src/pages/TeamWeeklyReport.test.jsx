@@ -212,10 +212,11 @@ it('all-team summary includes monthly OT money only and keeps currencies separat
   expect(report.groups.find((g) => g.name === 'Zarour').totals.currencies.CDF).toEqual({ basePay: 0, overtimeAmount: 15, finalAmount: 15 })
   expect(report.totals.currencies.CDF.finalAmount).toBe(165)
 })
-it('inactive, future-start and special-staff monthly workers remain excluded', () => {
+it('recorded inactive monthly OT is retained; future-start and special-staff workers remain excluded', () => {
   const d = data(); d.workers = [monthlyWorker('inactive', { is_active: false }), monthlyWorker('future', { operational_start_date: '2026-11-01' }), monthlyWorker('foreign', { staff_classification: 'special_staff' })]
   d.attendance = d.workers.map((w) => row(w.id, manual(360)))
-  expect(teamWeeklyReport(d, week).lines).toHaveLength(0)
+  expect(teamWeeklyReport(d, week).lines.map(line=>line.worker.id)).toEqual(['inactive'])
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({basePay:0,minutes:360})
 })
 it('monthly payroll cycle, deductions and finalized salary snapshots remain untouched', () => {
   const d = data([row('m', manual(360))]); d.workers = [monthlyWorker()]

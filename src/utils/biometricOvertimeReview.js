@@ -3,7 +3,13 @@ import { isWeeklyOvertimeEligibleWorker } from './overtimeWorkerScope.js'
 
 export const biometricReviewTitle = 'مراجعة الوقت الإضافي من البصمة'
 export function biometricOvertimeMinutes(worker, row, date) {
-  if (!isWeeklyOvertimeEligibleWorker(worker, date) || row?.attendance_source !== 'biometric'
+  // A recorded historical biometric row retains its payroll eligibility after
+  // deactivation. This read-only projection never reactivates the stored worker
+  // and does not relax active-worker checks in overtime-entry write actions.
+  const recordedWorker = worker?.is_active === false && row?.attendance_date === date
+    && String(row.worker_id) === String(worker.id)
+    ? { ...worker, is_active: true } : worker
+  if (!isWeeklyOvertimeEligibleWorker(recordedWorker, date) || row?.attendance_source !== 'biometric'
     || !row.check_out || !['present','late','half_day'].includes(row.status)
     || (row.manual_override && row.emergency_overtime_mode !== 'manual_overtime_duration')) return 0
   // Remove only the manual-duration input: the real clocks/evidence are unchanged.

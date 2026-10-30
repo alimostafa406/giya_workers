@@ -1,5 +1,5 @@
 import { applyPayrollAdjustments, weeklyDates } from './payrollCalculations.js'
-import { isNormalPayrollWorkerOnDate, isWeeklyPayrollEligibleWorker } from './weeklyPayrollEligibility.js'
+import { isNormalPayrollWorkerOnDate, isWeeklyPayrollEligibleWorker, weeklyPayrollPeriodWorkers } from './weeklyPayrollEligibility.js'
 import { calculateWeeklyOvertimePay } from './weeklyPayrollOvertime.js'
 import { manualReportMinutes } from './weeklyManualOvertime.js'
 import { calculateWeeklyPayoutLine } from './weeklyPayoutLines.js'
@@ -20,6 +20,7 @@ export const reportTotals = (lines) => lines.reduce((total, line) => {
 // payroll engine; only this report's overtime source is replaced, never stored.
 export function teamWeeklyReport(data, monday) {
   const dates = weeklyDates(monday), end = dates.at(-1)
+  const periodWorkers = weeklyPayrollPeriodWorkers(data, monday, end)
   const run = data.runs?.find((r) => r.payment_type === 'weekly' && r.weekly_period_start === monday && r.weekly_period_end === end)
   const stored = (data.payrollLines || []).filter((line) => line.payroll_run_id === run?.id)
   const locked = run && run.status !== 'draft'
@@ -45,7 +46,7 @@ export function teamWeeklyReport(data, monday) {
       details: s.attendance_summary_snapshot?.days || [],
       finalAmount: overtimeAmount == null ? null : round(basePay + overtimeAmount), unresolved: overtime.missingRateBlocker,
     }
-  }).filter((line) => !line.monthlyOvertimeOnly || line.minutes > 0) : (data.workers || []).filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
+  }).filter((line) => !line.monthlyOvertimeOnly || line.minutes > 0) : periodWorkers.filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
     const line = calculateWeeklyPayoutLine(data, monday, worker)
     const saved = stored.find((s) => String(s.worker_id) === String(worker.id))
     // Non-OT canonical adjustments still form part of base payable. OT
@@ -65,7 +66,7 @@ export function teamWeeklyReport(data, monday) {
   // Reuse the attendance classifier with zero wage/transport inputs solely for
   // operational day counts; only the canonical manual OT rate can pay money.
   const included = new Set(lines.map((line) => String(line.worker.id)))
-  const monthlyLines = (locked && frozenPopulation ? [] : data.workers || []).filter((worker) => worker.payment_type === 'monthly'
+  const monthlyLines = (locked && frozenPopulation ? [] : periodWorkers).filter((worker) => worker.payment_type === 'monthly'
     && isNormalPayrollWorkerOnDate(worker, end) && !included.has(String(worker.id))).map((worker) => {
     const effective = calculateWeeklyPayoutLine({ ...data, outsideWorkMovements: locked ? [] : data.outsideWorkMovements }, monday, worker)
     const term = effective.term, attendanceLine = effective
