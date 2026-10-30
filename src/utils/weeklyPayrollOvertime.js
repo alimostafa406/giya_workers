@@ -118,8 +118,9 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
   return {
     morningOvertimeMinutes: 0,
     // Check eligibility before rounding: exactly 30 minutes is not eligible.
-    // Retain completed half-hour blocks for the reviewed/payable duration.
-    eveningOvertimeMinutes: workedAfterEndMinutes <= BIOMETRIC_OVERTIME_THRESHOLD_MINUTES ? 0 : Math.floor(workedAfterEndMinutes / 30) * 30,
+    // Once eligible, preserve every completed minute. Raw biometric timestamps
+    // retain the seconds; the review/payroll contract stores whole minutes.
+    eveningOvertimeMinutes: workedAfterEndMinutes <= BIOMETRIC_OVERTIME_THRESHOLD_MINUTES ? 0 : Math.floor(workedAfterEndMinutes),
   }
 }
 

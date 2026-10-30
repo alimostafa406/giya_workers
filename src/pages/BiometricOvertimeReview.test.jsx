@@ -13,7 +13,7 @@ it.each(['approved','rejected'])('visible bulk %s reviews both weekly and monthl
  const rows=fixture(),before=JSON.stringify(rows);mock.load.mockResolvedValue(rows);mock.decide.mockResolvedValue([])
  render(<BiometricOvertimeReview />)
  await screen.findByRole('checkbox',{name:'Monthly'})
- expect(screen.getAllByText('2.5 h')).toHaveLength(2)
+ expect(screen.getAllByText('2h30')).toHaveLength(2)
  fireEvent.click(screen.getByRole('button',{name:'اختيار الكل'}))
  fireEvent.click(screen.getByRole('button',{name:decision==='approved'?'موافقة على المحددين':'رفض المحددين'}))
  await waitFor(()=>expect(mock.decide).toHaveBeenCalledWith('2026-10-23',expect.arrayContaining(rows.map((r)=>expect.objectContaining(r))),decision))

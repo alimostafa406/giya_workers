@@ -34,7 +34,7 @@ test('Daily Overtime Report excludes Chauffeur while retaining normal-worker ove
   assert.deepEqual(report, []) // 90 minutes is canonical but below the report threshold.
 })
 
-test('Chauffeur payroll line has no normal overtime while Maison remains unchanged', () => {
+test('Chauffeur payroll line has no normal overtime while normal teams retain real minutes', () => {
   const chauffeurLine = calculatePayrollLine({
     worker: { id: 'chauffeur', team_name: 'Chauffeur' },
     term: { daily_rate: 100, daily_transport_allowance: 0, overtime_rate_per_hour: 10, overtime_start_time: '17:00:00' },
@@ -44,6 +44,6 @@ test('Chauffeur payroll line has no normal overtime while Maison remains unchang
   assert.equal(chauffeurLine.presentDays, 1)
   assert.equal(chauffeurLine.overtimeHours, 0)
   assert.equal(chauffeurLine.overtimeAmount, 0)
-  assert.equal(weeklyPayrollOvertimeForDetail(detail('Maison', '18:39:00')).eveningOvertimeMinutes, 90)
-  assert.equal(weeklyPayrollOvertimeForDetail(detail('Peinture Raghibe', '18:39:00')).eveningOvertimeMinutes, 90)
+  assert.equal(weeklyPayrollOvertimeForDetail(detail('Maison', '18:39:00')).eveningOvertimeMinutes, 99)
+  assert.equal(weeklyPayrollOvertimeForDetail(detail('Peinture Raghibe', '18:39:00')).eveningOvertimeMinutes, 99)
 })

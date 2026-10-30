@@ -24,25 +24,22 @@ test('morning overtime is disabled until worker schedules are approved', () => {
   assert.equal(weeklyPayrollOvertimeForDetail(monday('06:00:00', null)).morningOvertimeMinutes, 0)
 })
 
-test('evening overtime requires more than 30 minutes then awards completed half-hour blocks', () => {
+test('evening overtime requires more than 30 minutes then preserves every whole minute', () => {
   assert.equal(weeklyPayrollOvertimeForDetail(monday('09:08:30', '16:07:50')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:00:00')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:15:00')).eveningOvertimeMinutes, 0)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '17:30:00')).eveningOvertimeMinutes, 0)
-  for (const time of ['17:31:00', '17:55:19', '17:59:00']) assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', time)).eveningOvertimeMinutes, 30)
-  for (const time of ['18:00:00', '18:20:00', '18:29:00']) assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', time)).eveningOvertimeMinutes, 60)
-  for (const time of ['18:30:00', '18:59:00']) assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', time)).eveningOvertimeMinutes, 90)
-  for (const time of ['19:00:00', '19:29:00']) assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', time)).eveningOvertimeMinutes, 120)
+  for (const [time,minutes] of [['17:31:00',31],['17:55:19',55],['17:59:00',59],['18:00:00',60],['18:20:00',80],['18:29:00',89],['18:30:00',90],['18:59:00',119],['19:00:00',120],['19:29:00',149]]) assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', time)).eveningOvertimeMinutes, minutes)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '19:30:00')).eveningOvertimeMinutes, 150)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '22:00:00')).eveningOvertimeMinutes, 300)
   assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', null)).eveningOvertimeMinutes, 0)
 })
 
 test('verified next-day checkouts within the workday tail use the previous workday chronology', () => {
-  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '23:59:00')).eveningOvertimeMinutes, 390)
-  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '00:31:00')).eveningOvertimeMinutes, 450)
-  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '00:33:00')).eveningOvertimeMinutes, 450)
-  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '01:02:00')).eveningOvertimeMinutes, 480)
+  assert.equal(weeklyPayrollOvertimeForDetail(monday('08:00:00', '23:59:00')).eveningOvertimeMinutes, 419)
+  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '00:31:00')).eveningOvertimeMinutes, 451)
+  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '00:33:00')).eveningOvertimeMinutes, 453)
+  assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '01:02:00')).eveningOvertimeMinutes, 482)
   assert.equal(weeklyPayrollOvertimeForDetail(nextDayCheckout('08:00:00', '02:00:00')).eveningOvertimeMinutes, 540)
 })
 
@@ -51,7 +48,7 @@ test('approved next-day checkout evidence also preserves cross-midnight chronolo
     date: '2026-09-14',
     status: 'present',
     row: { check_in: '08:00:00', check_out: '00:31:00', review_approved_check_out_at: '2026-09-15T00:31:00+01:00' },
-  }).eveningOvertimeMinutes, 450)
+  }).eveningOvertimeMinutes, 451)
 })
 
 test('new weekly payroll snapshots retain verified next-day checkout evidence', () => {

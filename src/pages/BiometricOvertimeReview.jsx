@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import { getBiometricOvertimeReviews, decideBiometricOvertime } from '../api/biometricOvertimeReviewApi'
-import { biometricReviewRows, biometricReviewTitle } from '../utils/biometricOvertimeReview'
+import { biometricReviewRows, biometricReviewTitle, formatBiometricOvertimeDuration as hours } from '../utils/biometricOvertimeReview'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
 import { getErrorMessage } from '../api/axios'
 
 const labels = { pending: 'قيد المراجعة', approved: 'موافق عليه', rejected: 'مرفوض' }
-const hours = (minutes) => `${Number((minutes / 60).toFixed(2))} h`
 const dayAfter = (date, offset) => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate()+offset); return d.toISOString().slice(0,10) }
 export default function BiometricOvertimeReview({ report } = {}) {
   const today = kinshasaClock().date

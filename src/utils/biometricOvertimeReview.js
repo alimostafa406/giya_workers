@@ -19,8 +19,12 @@ function derivedBiometricRows(sources = []) {
 }
 export function biometricReviewRows(sources = []) {
   // The canonical calculation owns the strict >30-minute eligibility check,
-  // before half-hour rounding. Do not apply a second threshold to rounded OT.
+  // before whole-minute precision. Do not apply a second threshold afterwards.
   return derivedBiometricRows(sources)
+}
+export function formatBiometricOvertimeDuration(minutes) {
+  const wholeMinutes = Math.max(0, Math.floor(Number(minutes) || 0))
+  return wholeMinutes < 60 ? `${wholeMinutes} min` : `${Math.floor(wholeMinutes / 60)}h${String(wholeMinutes % 60).padStart(2, '0')}`
 }
 export function approvedBiometricOvertime(worker, detail, sources = []) {
   const entry = sources.find((s) => String(s.worker.id) === String(worker.id) && s.attendance.attendance_date === detail.date)
