@@ -163,5 +163,21 @@ export default function Payroll() {
   const { t } = useTranslation()
   const [section, setSection] = useState('weekly')
   const [historyOpen, setHistoryOpen] = useState(false)
-  return <section><div className="mb-4 flex flex-wrap justify-end gap-2"><Link className="btn-primary" to="/payroll/team-weekly-report">تقرير قبض الفرق</Link><button className="btn-secondary" type="button" onClick={() => setHistoryOpen((open) => !open)}>{t('payroll.payrollHistory')}</button><Link className="btn-secondary" to="/payroll/publication">{t('payroll.manageViewerPublication')}</Link><Link className="btn-secondary" to="/payroll/compensation-review">{t('payroll.printCompensationReview')}</Link></div><div className="mb-4 flex flex-wrap gap-2"><button className={section === 'weekly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('weekly')}>{t('payroll.weeklyOperations')}</button><button className={section === 'monthly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('monthly')}>{t('payroll.monthlyOperations')}</button></div>{section === 'weekly' ? <PayrollOperations /> : <MonthlyPayrollOperations />}{historyOpen ? <div className="mt-4"><PayrollHistory /></div> : null}</section>
+  return <section>
+    <header className="surface-card mb-4 flex flex-wrap items-center justify-between gap-4 border border-(--border) p-4">
+      <h1 className="text-xl font-extrabold">{t('payroll.operations')}</h1>
+      <Link className="btn-primary inline-flex w-full items-center justify-center px-6 py-3 text-base font-bold sm:w-auto" to="/payroll/team-weekly-report">تقرير قبض الفرق</Link>
+    </header>
+    <div className="mb-4 flex flex-wrap gap-2">
+      <button className="btn-secondary" type="button" onClick={() => setHistoryOpen((open) => !open)}>{t('payroll.payrollHistory')}</button>
+      <Link className="btn-secondary" to="/payroll/publication">{t('payroll.manageViewerPublication')}</Link>
+      <Link className="btn-secondary" to="/payroll/compensation-review">{t('payroll.printCompensationReview')}</Link>
+    </div>
+    <div className="mb-4 flex flex-wrap gap-2">
+      <button type="button" className={section === 'weekly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('weekly')}>{t('payroll.weeklyOperations')}</button>
+      <button type="button" className={section === 'monthly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('monthly')}>{t('payroll.monthlyOperations')}</button>
+    </div>
+    {section === 'weekly' ? <PayrollOperations /> : <MonthlyPayrollOperations />}
+    {historyOpen ? <div className="mt-4"><PayrollHistory /></div> : null}
+  </section>
 }
