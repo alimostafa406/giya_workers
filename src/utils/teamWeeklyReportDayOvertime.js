@@ -15,6 +15,13 @@ export function formatTeamReportDayOvertime(minutes) {
   return formatBiometricOvertimeDuration(minutes).replace(/h00$/, 'h')
 }
 
+// Payroll-only presentation: use the canonical localized attendance status,
+// never replace present with an operational O marker. All payroll print paths
+// consume this same date-specific OT formatter without recalculating totals.
+export function payrollDayPresentation(line, date, statusText) {
+  return { status: statusText, duration: formatTeamReportDayOvertime(teamReportDayOvertime(line, date)) }
+}
+
 export function isOutsideWorkReportDay(detail, day) {
   return detail?.row?.attendance_source === 'outside_work'
     || detail?.row?.biometric_sync_metadata?.supervisor_morning_review?.choice === 'O'

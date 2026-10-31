@@ -9,6 +9,7 @@ import { weeklyPayoutLines } from '../utils/weeklyPayoutLines'
 import { payrollDraftLinePayload } from '../api/payrollOperationsApi'
 import { formatTeamReportDayOvertime, teamReportDayOvertime } from '../utils/teamWeeklyReportDayOvertime'
 import PayableAttendanceDay from '../components/Payroll/PayableAttendanceDay'
+import OutsideWorkTeamMarkers from '../components/Reports/OutsideWorkTeamMarkers'
 globalThis.React = React
 const mocks = vi.hoisted(() => ({ load: vi.fn() }))
 vi.mock('../api/payrollOperationsApi', async importOriginal => ({ ...await importOriginal(), getPayrollOperationsDataRequest: mocks.load }))
@@ -123,10 +124,13 @@ it('outside-work payroll labels show present with exact daily OT while operation
   }
   expect(teamWeeklyReport(d, week).totals).toEqual(totals)
   expect(JSON.stringify(d)).toBe(before)
-  // Default callers retain the operational O marker; only the team payroll
-  // report explicitly requests the present label.
+  // Every shared payroll caller now uses present. Operational marker tables
+  // retain O unless explicitly rendered in the payroll report.
   const line = teamWeeklyReport(d, week).lines[0]
   cleanup()
   const operational = render(<PayableAttendanceDay line={line} date={dates[2]} statusText="حاضر" />)
-  expect(operational.container.textContent).toBe('O 1h13')
+  expect(operational.container.textContent).toBe('حاضر 1h13')
+  cleanup()
+  const markers = render(<OutsideWorkTeamMarkers markers={[{ worker: line.worker, dates: [dates[2]] }]} dates={[dates[2]]} />)
+  expect(markers.container.querySelector('tbody tr').lastElementChild.textContent).toBe('O')
 })

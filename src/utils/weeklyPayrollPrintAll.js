@@ -1,5 +1,6 @@
 import { formatPayrollMoney } from './payrollCurrency.js'
 import { formatEveningOvertimeMinutes, weeklyPayrollDisplayStatus, weeklyPayrollOvertimeForLine } from './weeklyPayrollOvertime.js'
+import { payrollDayPresentation } from './teamWeeklyReportDayOvertime.js'
 
 const escapeHtml = (value) => String(value ?? '—').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]))
 const money = (amount, line) => formatPayrollMoney(amount, { currency: line.currency, paymentType: 'weekly' })
@@ -19,7 +20,8 @@ export const buildWeeklyPayrollAllTeamsHtml = ({ title, periodStart, periodEnd, 
         `<strong>${escapeHtml(line.worker.full_name)}</strong><small>${escapeHtml(line.worker.employee_code || '—')}</small>${line.monthlyOvertimeOnly ? `<small>${escapeHtml(labels.monthlyOnly || '')}</small>` : ''}`,
         ...workDates.map((date) => {
           const detail = line.details?.find((item) => item.date === date)
-          return escapeHtml(labels.status[weeklyPayrollDisplayStatus(detail)])
+          const day = payrollDayPresentation(line, date, labels.status[weeklyPayrollDisplayStatus(detail)])
+          return `${escapeHtml(day.status)}${day.duration ? ` <bdi dir="ltr">${escapeHtml(day.duration)}</bdi>` : ''}`
         }),
         escapeHtml(baseRateConfigured ? money(line.attendanceWage, line) : '—'),
         escapeHtml(formatEveningOvertimeMinutes(overtime.eveningOvertimeMinutes)),
