@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { readFileSync } from 'node:fs'
 import { LanguageProvider } from '../../i18n/LanguageContext'
 import OutsideWorkReport from './OutsideWorkReport'
-import { outsideWorkReport } from '../../utils/outsideWorkReports'
+import { isOutsideWorkSunday, outsideWorkReport } from '../../utils/outsideWorkReports'
 
 globalThis.React = React
 const api = vi.hoisted(() => ({ list: vi.fn() }))
@@ -117,14 +117,65 @@ describe('custom outside-work report center', () => {
     expect(print.textContent).toContain('Team B')
     expect(print.textContent).toContain('Independent foreman')
   })
-  it('bounds drafts/all to the selected range and labels drafts', async () => {
+  it('report remains FINAL-only and never offers draft/all printing', async () => {
     const { container } = open(); await loaded()
-    change('Status', 'draft'); await loaded()
-    expect(api.list).toHaveBeenLastCalledWith('2026-10-01', '2026-10-15', { reportStatus: 'draft' })
-    expect(screen.getAllByText('Draft', { exact: true })).toHaveLength(2)
-    expect(container.querySelector('.outside-work-print').querySelectorAll('.outside-report-movement')).toHaveLength(1)
-    change('Status', 'all'); await loaded()
-    expect(container.querySelector('.outside-work-print').querySelectorAll('.outside-report-movement')).toHaveLength(4)
+    expect(screen.getByLabelText('Status').disabled).toBe(true)
+    expect(screen.getByLabelText('Status').options).toHaveLength(1)
+    expect(api.list).toHaveBeenLastCalledWith('2026-10-01', '2026-10-15', { reportStatus: 'final' })
+    expect(container.querySelector('.outside-work-print').querySelectorAll('.outside-report-movement')).toHaveLength(3)
+  })
+  it('Mostafa Sundays across weeks exclude weekdays/drafts; exact dates override Sundays and print the same rows', async () => {
+    const history = [movement('sun1', '2026-10-04', { foreman_name: 'Mostafa' }),
+      movement('sun2', '2026-10-11', { foreman_name: 'Mostafa', outside_work_movement_workers: [member('a'), member('b')] }),
+      movement('weekday', '2026-10-13', { foreman_name: 'Mostafa' }),
+      movement('draftSun', '2026-10-11', { status: 'draft' }),
+      movement('otherForeman', '2026-10-11', { foreman_worker_id: 'other' })]
+    api.list.mockResolvedValueOnce(history)
+    const { container } = open(); await loaded()
+    change('Report type', 'foreman'); change('Select a foreman', 'worker:f1'); change('Day filter', 'sundays')
+    const print = container.querySelector('.outside-work-print')
+    expect(print.querySelectorAll('.outside-report-movement')).toHaveLength(2)
+    expect(print.textContent).not.toContain('2026-10-13')
+    expect(print.textContent).toContain('Mostafa')
+    expect(print.textContent).toContain('Team B')
+    expect(print.textContent).toContain('80')
+    expect(print.querySelectorAll('td').length).toBeGreaterThan(0)
+    expect([...print.querySelectorAll('td')].filter(cell => cell.textContent === 'O')).toHaveLength(3)
+    const metrics = [...container.querySelector('.foreman-report-summary').children]
+    expect(metrics.find(el => el.textContent.includes('Number of Sundays')).querySelector('strong').textContent).toBe('2')
+    expect(metrics.find(el => el.textContent.includes('Worker-days')).querySelector('strong').textContent).toBe('3')
+    expect(screen.getByRole('cell', { name: 'BETA' })).toBeTruthy()
+    change('Specific dates (override day filter)', '2026-10-13'); fireEvent.click(screen.getByRole('button', { name: 'Add date' }))
+    expect(print.querySelectorAll('.outside-report-movement')).toHaveLength(1)
+    expect(print.textContent).toContain('2026-10-13')
+    expect(print.textContent).not.toContain('2026-10-04')
+    change('Specific dates (override day filter)', '2026-10-11'); fireEvent.click(screen.getByRole('button', { name: 'Add date' }))
+    expect(print.querySelectorAll('.outside-report-movement')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Print Report' }))
+    expect(window.print).toHaveBeenCalledOnce()
+    expect(print.querySelector('button,input,select')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove date 2026-10-13' }))
+    expect(print.querySelectorAll('.outside-report-movement')).toHaveLength(1)
+  })
+  it('destination filter uses movement.team_id, not participant permanent membership', async () => {
+    const { container } = open(); await loaded()
+    change('Report type', 'destination'); change('Select team', 'B')
+    expect(container.querySelector('.outside-work-print').querySelectorAll('.outside-report-movement')).toHaveLength(0)
+    change('Select team', 'A')
+    expect(container.querySelector('.outside-work-print').querySelectorAll('.outside-report-movement')).toHaveLength(2)
+  })
+  it('calendar Sunday selection, unique worker-days and overtime reuse canonical rules without mutation', () => {
+    expect(isOutsideWorkSunday('2026-10-04')).toBe(true)
+    expect(isOutsideWorkSunday('2026-10-11')).toBe(true)
+    expect(isOutsideWorkSunday('2026-10-12')).toBe(false)
+    const sunday = movement('sun', '2026-10-11', { end_time: '16:30:00' })
+    const history = [sunday, { ...sunday, id: 'repeat' }, movement('weekday', '2026-10-13')]
+    const before = structuredClone(history)
+    const report = outsideWorkReport(history, { from: '2026-10-01', to: '2026-10-15', dayFilter: 'sundays' })
+    expect(report.sundayCount).toBe(1); expect(report.workerDayCount).toBe(1)
+    expect(report.workerOvertimeMinutes).toBe(0)
+    expect(report.rows[0].foremanOvertimeMinutes).toBe(150)
+    expect(history).toEqual(before)
   })
   it('shows empty, invalid, loading and error states and disables printing stale data', async () => {
     open(); await loaded()
