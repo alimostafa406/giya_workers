@@ -4,6 +4,7 @@ import { calculateWeeklyOvertimePay } from './weeklyPayrollOvertime.js'
 import { manualReportMinutes } from './weeklyManualOvertime.js'
 import { calculateWeeklyPayoutLine } from './weeklyPayoutLines.js'
 import { finishPayrollPrint, payrollLandscapePrintCss } from './teamReportPrintLayout.js'
+import { outsideWorkTeamMarkers } from './outsideWorkTeamMarkers.js'
 export { manualReportMinutes } from './weeklyManualOvertime.js'
 
 const round = (n) => Math.round(n * 100) / 100
@@ -80,7 +81,18 @@ export function teamWeeklyReport(data, monday) {
   const groups = [...new Set(lines.map((l) => String(l.worker.team_id || 'unassigned')))].map((id) => {
     const teamLines = lines.filter((l) => String(l.worker.team_id || 'unassigned') === id)
     return { id, name: teamLines[0].worker.team_name || teamLines[0].worker.team?.name || 'بدون فريق', lines: teamLines, totals: reportTotals(teamLines) }
-  }).sort((a, b) => a.name.localeCompare(b.name))
+  })
+  // Separate informational visitors from payable lines, counts and totals.
+  // Saved payroll rows and their financial team identity are never regrouped.
+  for (const markerGroup of outsideWorkTeamMarkers(data.workers, data.outsideWorkMovements, dates, data.teams)) {
+    let group = groups.find((item) => item.id === markerGroup.id)
+    if (!group) {
+      group = { id: markerGroup.id, name: markerGroup.name, lines: [], totals: reportTotals([]) }
+      groups.push(group)
+    }
+    group.outsideWorkMarkers = markerGroup.workers
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name))
   return { lines, groups, totals: reportTotals(lines), run, locked, hasLiveMonthlyOvertime: locked && monthlyLines.length > 0 }
 }
 

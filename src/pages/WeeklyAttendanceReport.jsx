@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { getAttendanceRequest } from '../api/attendanceApi'
 import { getErrorMessage } from '../api/axios'
@@ -19,6 +19,9 @@ import {
 } from '../utils/weeklyAttendanceReport'
 import { reportWorkerMatchesSearch } from '../utils/reportWorkerSearch'
 import { isOperationalAttendanceTeam, isOperationalAttendanceWorkerOnDate } from '../utils/activeWorkers'
+import { getOutsideWorkMovements } from '../api/outsideWorkApi'
+import { outsideWorkTeamMarkers } from '../utils/outsideWorkTeamMarkers'
+import OutsideWorkTeamMarkers from '../components/Reports/OutsideWorkTeamMarkers'
 
 const asArray = (value) => {
   if (Array.isArray(value)) {
@@ -58,6 +61,8 @@ function WeeklyAttendanceReport() {
   const [teams, setTeams] = useState([])
   const [workers, setWorkers] = useState([])
   const [attendance, setAttendance] = useState([])
+  const [outsideMovements, setOutsideMovements] = useState([])
+  const markerPrintRef = useRef(null)
   const [reviewing, setReviewing] = useState(false)
   const [reviewResult, setReviewResult] = useState(null)
   const [weeklyFilters, setWeeklyFilters] = useState({
@@ -89,7 +94,7 @@ function WeeklyAttendanceReport() {
     setLoading(true)
     setError('')
     try {
-      const [teamsRes, workersRes, attendanceRes] = await Promise.all([
+      const [teamsRes, workersRes, attendanceRes, movements] = await Promise.all([
         getTeamsRequest(),
         getWorkersRequest(),
         getAttendanceRequest({
@@ -97,10 +102,12 @@ function WeeklyAttendanceReport() {
           date_to: weeklyFilters.endDate,
           paginate: true,
         }),
+        getOutsideWorkMovements(weeklyFilters.startDate, weeklyFilters.endDate, { reportStatus: 'final' }),
       ])
       setTeams(asArray(teamsRes.data))
       setWorkers(asArray(workersRes.data))
       setAttendance(asArray(attendanceRes.data))
+      setOutsideMovements(movements)
       return true
     } catch (err) {
       setError(getErrorMessage(err))
@@ -171,6 +178,14 @@ function WeeklyAttendanceReport() {
     ? t('reports.weeklyTitleForTeam', { team: selectedTeam.name })
     : t('reports.weeklyTitle')
   const reportTitle = `${reportBaseTitle} — ${weeklyFilters.startDate} → ${weeklyFilters.endDate}`
+
+  const outsideMarkers = useMemo(() => {
+    if (!selectedTeam || (weeklyFilters.supervisorId
+      && String(selectedTeam.supervisor_id || '') !== String(weeklyFilters.supervisorId))) return []
+    return (outsideWorkTeamMarkers(workers, outsideMovements, weeklyDates, teams)
+      .find((group) => group.id === String(selectedTeam.id))?.workers || [])
+      .filter(({ worker }) => reportWorkerMatchesSearch(worker, weeklyFilters.search))
+  }, [selectedTeam, weeklyFilters.supervisorId, weeklyFilters.search, workers, outsideMovements, weeklyDates, teams])
 
   const weeklyReportRows = useMemo(() => {
     if (!weeklyFilters.teamId || weeklyDates.length === 0) {
@@ -349,6 +364,7 @@ function WeeklyAttendanceReport() {
             </thead>
             <tbody>${tableRows}</tbody>
           </table>
+          ${markerPrintRef.current?.innerHTML || ''}
         </body>
       </html>
     `)
@@ -523,6 +539,9 @@ function WeeklyAttendanceReport() {
             loading={loading}
             emptyMessage={weeklyFilters.search.trim() ? t('common.noResults') : t('reports.noData')}
           />
+          <div ref={markerPrintRef}>
+            <OutsideWorkTeamMarkers markers={outsideMarkers} dates={weeklyDates} language={language} />
+          </div>
         </>
       )}
     </section>
