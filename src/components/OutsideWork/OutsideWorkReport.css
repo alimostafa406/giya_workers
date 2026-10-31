@@ -22,18 +22,37 @@
 .outside-report-facts dd { font-size: .85rem; font-weight: 600; }
 .outside-work-print { display: none; }
 @media print {
-  @page outside-work-report { size: A4 portrait; margin: 12mm; }
+  @page outside-work-report { size: A4 landscape; margin: 7mm; }
   .app-sidebar, main > header, .outside-work-page > :not(#outside-work-report-view), #outside-work-report-view > :not(.outside-work-print) { display: none !important; }
   main, main > div, .outside-work-page, #outside-work-report-view { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; border: 0 !important; box-shadow: none !important; background: white !important; }
-  .outside-work-print { display: block !important; color: #111; page: outside-work-report; }
+  .outside-work-print { display: block !important; color: #111; page: outside-work-report; width: 100%; max-width: none; font: 10pt/1.15 Arial, Tahoma, sans-serif; }
   .outside-work-print, .outside-work-print * { visibility: visible !important; }
-  .outside-work-print h1 { font-size: 19pt; font-weight: 800; }
-  .outside-work-print h2 { font-size: 13pt; margin-block: .5rem; }
-  .outside-work-print .outside-report-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); break-inside: avoid; }
-  .outside-work-print .outside-report-movement { break-inside: avoid; page-break-inside: avoid; }
-  .outside-work-print .outside-report-day > h3 { break-after: avoid; }
-  .outside-work-print .outside-work-table-scroll { overflow: visible; }
-  .outside-work-print table { width: 100%; table-layout: fixed; }
+  .outside-work-print h1 { font-size: 14pt; font-weight: 800; margin: 0 0 1mm; }
+  .outside-work-print h2 { font-size: 11pt; margin: 0 0 1mm; }
+  .outside-work-print p { margin: 0 0 1mm; }
+  .outside-work-print > h1, .outside-work-print > h2 { display: inline-block; margin-inline-end: 4mm; }
+  .outside-work-print > p { display: inline-block; margin-inline-end: 4mm; font-size: 9pt; }
+  .outside-work-print .outside-report-summary { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2mm; margin: 2mm 0 0; break-inside: avoid; }
+  .outside-work-print .outside-report-summary > div { padding: 1mm 2mm; border-radius: 0; }
+  .outside-work-print .outside-report-summary p { font-size: 9pt; }
+  .outside-work-print .outside-report-summary strong { font-size: 10pt; }
+  .outside-work-print .outside-report-day { display: block; margin: 1mm 0 0; break-before: auto; break-after: auto; break-inside: auto; page-break-before: auto; page-break-after: auto; }
+  .outside-work-print .outside-report-movement { display: block; padding: 1mm 0; break-before: auto; break-after: auto; break-inside: auto; page-break-inside: auto; }
+  .outside-work-print .outside-report-day > h3 { margin: 0; padding: 0 0 1mm; font-size: 11pt; break-after: avoid; }
+  .outside-work-print .outside-report-movement header { gap: 2mm; margin: 0 0 1mm; break-after: avoid; }
+  .outside-work-print .outside-report-facts { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1mm 2mm; margin: 0 0 1mm; break-after: avoid; }
+  .outside-work-print .outside-report-facts dt { font-size: 9pt; margin: 0; }
+  .outside-work-print .outside-report-facts dd { font-size: 10pt; margin: 0; }
+  .outside-work-print .outside-work-table-scroll { overflow: visible; margin: 0; }
+  .outside-work-print table { width: 100%; max-width: none; min-width: 0; table-layout: fixed; border-collapse: collapse; }
+  .outside-work-print .outside-work-compact-table th, .outside-work-print .outside-work-compact-table td { padding: .7mm 1mm; font-size: 10pt; line-height: 1.1; overflow-wrap: anywhere; }
+  .outside-work-print .outside-work-compact-table th { font-size: 9pt; }
+  .outside-work-print .outside-work-compact-table:has(th:nth-child(7)) th:nth-child(1) { width: 18%; }
+  .outside-work-print .outside-work-compact-table:has(th:nth-child(7)) th:nth-child(2) { width: 8%; }
+  .outside-work-print .outside-work-compact-table:has(th:nth-child(7)) th:nth-child(3) { width: 15%; }
+  .outside-work-print .outside-work-compact-table:has(th:nth-child(7)) th:nth-child(4) { width: 7%; }
+  .outside-work-print .outside-work-compact-table:has(th:nth-child(7)) th:nth-child(5), .outside-work-print .outside-work-compact-table:has(th:nth-child(7)) th:nth-child(6) { width: 11%; }
+  .outside-work-print .outside-work-compact-table:has(th:nth-child(7)) th:nth-child(7) { width: 30%; }
   .outside-work-print thead { display: table-header-group; }
   .outside-work-print tr { break-inside: avoid; }
 }

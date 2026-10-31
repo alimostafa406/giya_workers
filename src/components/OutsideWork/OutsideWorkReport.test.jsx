@@ -196,7 +196,8 @@ describe('custom outside-work report center', () => {
     expect(container.querySelector('.outside-report-period').textContent).toBe('الخميس 01/10/2026 → الخميس 15/10/2026')
     expect(container.querySelector('.outside-report-period').dir).toBe('ltr')
     const css = readFileSync('src/components/OutsideWork/OutsideWorkReport.css', 'utf8')
-    for (const rule of ['A4 portrait', 'break-inside: avoid', 'table-header-group', 'visibility: visible !important', '#outside-work-report-view > :not(.outside-work-print)']) expect(css).toContain(rule)
+    for (const rule of ['A4 landscape', 'margin: 7mm', 'break-inside: auto', 'table-header-group', 'visibility: visible !important', '#outside-work-report-view > :not(.outside-work-print)']) expect(css).toContain(rule)
+    expect(css).not.toMatch(/(?:page-break-before|page-break-after):\s*always|(?:break-before|break-after):\s*page|rotate\(/)
   })
   it('keeps real worker times, stored values and the existing overtime rule unchanged', () => {
     const before = structuredClone(rows)
