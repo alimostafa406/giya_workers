@@ -8,6 +8,7 @@ import { teamWeeklyReport, teamReportPrintCss } from '../utils/teamWeeklyReport'
 import { weeklyPayoutLines } from '../utils/weeklyPayoutLines'
 import { payrollDraftLinePayload } from '../api/payrollOperationsApi'
 import { formatTeamReportDayOvertime, teamReportDayOvertime } from '../utils/teamWeeklyReportDayOvertime'
+import PayableAttendanceDay from '../components/Payroll/PayableAttendanceDay'
 globalThis.React = React
 const mocks = vi.hoisted(() => ({ load: vi.fn() }))
 vi.mock('../api/payrollOperationsApi', async importOriginal => ({ ...await importOriginal(), getPayrollOperationsDataRequest: mocks.load }))
@@ -70,7 +71,7 @@ it.each(['ar', 'fr'])('%s screen and Print All Teams preserve separate landscape
   const cells = [...row.querySelectorAll('.team-report-day')]
   expect(cells[0].textContent.trim()).toMatch(/3h$/)
   expect(cells[1].textContent).not.toMatch(/min|\dh/)
-  expect(cells[2].textContent.trim()).toBe('O 1h30')
+  expect(cells[2].textContent.trim()).toBe(language === 'ar' ? 'حاضر 1h30' : 'Présent 1h30')
   expect(cells[3].textContent).not.toMatch(/min|\dh/)
   expect(cells[4].textContent.trim()).toMatch(/55 min$/)
   expect(cells[0].querySelector('bdi').dir).toBe('ltr')
@@ -87,9 +88,45 @@ it.each(['ar', 'fr'])('%s screen and Print All Teams preserve separate landscape
   const html = popup.document.write.mock.calls[0][0], doc = new DOMParser().parseFromString(html, 'text/html')
   expect(doc.querySelectorAll('.team-report-team')).toHaveLength(2)
   expect(doc.querySelector('.team-report-summary')).not.toBeNull()
-  expect(doc.body.textContent).toContain('O 1h30')
+  expect(doc.body.textContent).toContain(language === 'ar' ? 'حاضر 1h30' : 'Présent 1h30')
   expect(doc.documentElement.dir).toBe(language === 'ar' ? 'rtl' : 'ltr')
   expect(teamReportPrintCss).toContain('A4 landscape')
   expect(teamReportPrintCss).toContain('.team-report-team+.team-report-team,.team-report-summary{break-before:page')
   expect(teamReportPrintCss).not.toMatch(/rotate\(/)
+})
+
+it('outside-work payroll labels show present with exact daily OT while operational labels and totals stay unchanged', async () => {
+  window.history.replaceState({}, '', `/?date=${week}`)
+  const d = fixture()
+  d.workers = ['jousui', 'muyolo danyel', 'EMMA2', 'PEMBELE'].map((name, index) => ({ ...d.workers[0], id: `w${index}`, full_name: name, team_name: 'Montage mostafa' }))
+  d.weeklyOvertimeOverrides = []; d.biometricOvertimeReviews = []
+  d.attendance = d.workers.flatMap(worker => dates.map((attendance_date, i) => ({ id: `${worker.id}-${i}`, worker_id: worker.id, attendance_date,
+    status: i === 4 ? 'absent' : 'present', attendance_day_fraction: i === 4 ? 0 : 1, attendance_source: i === 4 ? 'manual' : 'outside_work' })))
+  const ends = ['17:00', '18:00', '18:13', '18:43', '17:00', '14:00']
+  d.outsideWorkMovements = dates.filter((_, i) => i !== 4).map(date => ({ id: `movement-${date}`, work_date: date, status: 'final',
+    outside_work_movement_workers: d.workers.map(worker => ({ worker_id: worker.id, start_time: '08:00', end_time: ends[dates.indexOf(date)] })) }))
+  const before = JSON.stringify(d), totals = teamWeeklyReport(d, week).totals
+  mocks.load.mockResolvedValue(d)
+  const popup = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
+  vi.spyOn(window, 'open').mockReturnValue(popup)
+  render(<LanguageProvider><TeamWeeklyReport /></LanguageProvider>)
+  await screen.findByText('jousui')
+  const expected = ['حاضر', 'حاضر 1h', 'حاضر 1h13', 'حاضر 1h43', 'غائب', 'حاضر']
+  for (const worker of d.workers) {
+    const row = screen.getByText(worker.full_name).closest('tr')
+    expect([...row.querySelectorAll('.team-report-day')].map(cell => cell.textContent.trim())).toEqual(expected)
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
+  const printed = new DOMParser().parseFromString(popup.document.write.mock.calls[0][0], 'text/html')
+  for (const row of printed.querySelectorAll('.team-report-team tbody tr')) {
+    expect([...row.querySelectorAll('.team-report-day')].map(cell => cell.textContent.trim())).toEqual(expected)
+  }
+  expect(teamWeeklyReport(d, week).totals).toEqual(totals)
+  expect(JSON.stringify(d)).toBe(before)
+  // Default callers retain the operational O marker; only the team payroll
+  // report explicitly requests the present label.
+  const line = teamWeeklyReport(d, week).lines[0]
+  cleanup()
+  const operational = render(<PayableAttendanceDay line={line} date={dates[2]} statusText="حاضر" />)
+  expect(operational.container.textContent).toBe('O 1h13')
 })

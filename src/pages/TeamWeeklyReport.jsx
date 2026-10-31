@@ -22,7 +22,7 @@ function DayCell({ line, date, t }) {
   const detail = line.details?.find(detail => detail.date === date)
   const duration = teamReportDayOvertime(line, date)
   return <td className="team-report-day" style={duration ? { whiteSpace: 'normal' } : undefined}>
-    <PayableAttendanceDay line={line} date={date} statusText={dayStatus(detail, t)} />
+    <PayableAttendanceDay line={line} date={date} statusText={dayStatus(detail, t)} outsideWorkAsPresent />
   </td>
 }
 function Amounts({ totals, field }) { return Object.entries(totals.currencies).map(([currency, values]) => <bdi dir="ltr" className="block" key={currency}>{money(values[field], currency)}</bdi>) }
