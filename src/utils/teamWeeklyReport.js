@@ -12,7 +12,7 @@ const round = (n) => Math.round(n * 100) / 100
 export const reportTotals = (lines) => lines.reduce((total, line) => {
   total.workers += 1; total.workDays += line.workDays; total.absentDays += line.absentDays; total.minutes += line.minutes
   const key = line.currency || 'UNCONFIGURED'
-  const amounts = total.currencies[key] ||= { basePay: 0, overtimeAmount: 0, finalAmount: 0 }
+  const amounts = total.currencies[key] ||= { basePay: 0, overtimeAmount: 0, transportAmount: 0, finalAmount: 0 }
   for (const field of Object.keys(amounts)) amounts[field] = amounts[field] == null || line[field] == null ? null : round(amounts[field] + line[field])
   return total
 }, { workers: 0, workDays: 0, absentDays: 0, minutes: 0, currencies: {} })
@@ -38,20 +38,21 @@ export function teamWeeklyReport(data, monday) {
       : s.attendance_summary_snapshot?.weekly_manual_overtime_override_minutes ?? (s.attendance_summary_snapshot?.days || []).filter((d) => dates.includes(d.date)).reduce((sum, day) => sum + manualReportMinutes(day), 0)
     const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: s.compensation_snapshot?.overtime_rate_per_hour })
     const monthlyOvertimeOnly = s.payment_type_snapshot === 'monthly'
-    const basePay = monthlyOvertimeOnly ? 0 : round(Number(s.final_amount) - Number(s.overtime_amount || 0))
+    const transportAmount = Number(s.transport_amount || 0)
+    const basePay = monthlyOvertimeOnly ? 0 : round(Number(s.final_amount) - Number(s.overtime_amount || 0) - transportAmount)
     const overtimeAmount = overtime.missingRateBlocker ? null : s.attendance_summary_snapshot?.payable_overtime_source_version === 2 ? Number(s.overtime_amount || 0) : overtime.overtimePay ?? 0
     return {
       worker: { ...(data.workers || []).find((w) => String(w.id) === String(s.worker_id)), ...s.attendance_summary_snapshot?.worker_identity_snapshot, id: s.worker_id, full_name: s.worker_name_snapshot, payment_type: s.payment_type_snapshot },
       currency: s.currency_code_snapshot, workDays: Number(s.present_days) + Number(s.half_days) * Number(s.rule_snapshot?.half_day_multiplier ?? .5),
-      absentDays: Number(s.absent_days), minutes, overtimeAmount, basePay, monthlyOvertimeOnly,
+      absentDays: Number(s.absent_days), minutes, overtimeAmount, transportAmount, basePay, monthlyOvertimeOnly,
       details: s.attendance_summary_snapshot?.days || [],
       weeklyManualOverrideMinutes: s.attendance_summary_snapshot?.weekly_manual_overtime_override_minutes ?? null,
       payableOvertimeDays: s.attendance_summary_snapshot?.payable_overtime_days
         || (s.attendance_summary_snapshot?.manual_overtime_source_version === 1
           ? (s.attendance_summary_snapshot.days || []).map(day => ({ date: day.date, source: 'daily_manual', minutes: manualReportMinutes(day) })) : []),
-      finalAmount: overtimeAmount == null ? null : round(basePay + overtimeAmount), unresolved: overtime.missingRateBlocker,
+      finalAmount: overtimeAmount == null ? null : round(basePay + transportAmount + overtimeAmount), unresolved: overtime.missingRateBlocker,
     }
-  }).filter((line) => !line.monthlyOvertimeOnly || line.minutes > 0) : periodWorkers.filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
+  }).filter((line) => !line.monthlyOvertimeOnly || line.minutes > 0 || line.transportAmount > 0) : periodWorkers.filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
     const line = calculateWeeklyPayoutLine(data, monday, worker)
     const saved = stored.find((s) => String(s.worker_id) === String(worker.id))
     // Non-OT canonical adjustments still form part of base payable. OT
@@ -60,29 +61,33 @@ export function teamWeeklyReport(data, monday) {
     const minutes = line.eveningOvertimeMinutes
     const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: line.term?.overtime_rate_per_hour })
     const configured = line.term?.daily_rate != null && line.term.daily_rate !== '' && line.term?.daily_transport_allowance != null && line.currency
-    const basePay = configured ? round(adjusted.finalAmount - adjusted.overtimeAmount) : null
+    const transportAmount = adjusted.transportAmount
+    const basePay = configured ? round(adjusted.finalAmount - adjusted.overtimeAmount - transportAmount) : null
     const overtimeAmount = overtime.missingRateBlocker ? null : overtime.overtimePay ?? 0
     return { worker, currency: line.currency, workDays: line.presentDays + line.halfDays * Number(data.rules?.half_day_multiplier ?? .5),
-      absentDays: line.absentDays, minutes, basePay, overtimeAmount, details: line.details,
+      absentDays: line.absentDays, minutes, basePay, overtimeAmount, transportAmount, details: line.details,
       weeklyManualOverrideMinutes: line.weeklyManualOverrideMinutes, payableOvertimeDays: line.payableOvertimeDays,
-      finalAmount: basePay == null || overtimeAmount == null ? null : round(basePay + overtimeAmount),
+      finalAmount: basePay == null || overtimeAmount == null ? null : round(basePay + transportAmount + overtimeAmount),
       unresolved: !configured || overtime.missingRateBlocker || line.unresolvedDays > 0 }
   })
   // Monthly salary/cycle/deductions are deliberately never evaluated here.
-  // Reuse the attendance classifier with zero wage/transport inputs solely for
-  // operational day counts; only the canonical manual OT rate can pay money.
+  // Reuse canonical attendance/transport rules, with zero monthly base wage.
   const included = new Set(lines.map((line) => String(line.worker.id)))
   const monthlyLines = (locked && frozenPopulation ? [] : periodWorkers).filter((worker) => worker.payment_type === 'monthly'
     && isNormalPayrollWorkerOnDate(worker, end) && !included.has(String(worker.id))).map((worker) => {
     const effective = calculateWeeklyPayoutLine({ ...data, outsideWorkMovements: locked ? [] : data.outsideWorkMovements }, monday, worker)
     const term = effective.term, attendanceLine = effective
+    // Legacy locked weeks retain their old OT-only supplement behavior. New
+    // transport is never added retrospectively to a frozen payroll population.
+    const transportAmount = locked ? 0 : effective.transportAmount
     const overtimeAmount = effective.missingRateBlocker || !term.currency_code ? null : effective.overtimeAmount
     return { worker, currency: term.currency_code, monthlyOvertimeOnly: true,
       workDays: attendanceLine.presentDays + attendanceLine.halfDays * Number(data.rules?.half_day_multiplier ?? .5),
       absentDays: attendanceLine.absentDays, minutes: effective.eveningOvertimeMinutes, details: attendanceLine.details,
       weeklyManualOverrideMinutes: effective.weeklyManualOverrideMinutes, payableOvertimeDays: effective.payableOvertimeDays,
-      basePay: 0, overtimeAmount, finalAmount: overtimeAmount, unresolved: effective.missingRateBlocker || !term.currency_code }
-  }).filter((line) => line.minutes > 0)
+      basePay: 0, overtimeAmount, transportAmount,
+      finalAmount: overtimeAmount == null ? null : round(transportAmount + overtimeAmount), unresolved: effective.missingRateBlocker || !term.currency_code }
+  }).filter((line) => line.minutes > 0 || line.transportAmount > 0)
   lines.push(...monthlyLines)
   const groups = [...new Set(lines.map((l) => String(l.worker.team_id || 'unassigned')))].map((id) => {
     const teamLines = lines.filter((l) => String(l.worker.team_id || 'unassigned') === id)
@@ -110,11 +115,11 @@ h1{font-size:14pt;margin:0 0 1mm}h2{font-size:12pt;margin:1mm 0}p{margin:0 0 1mm
 table{width:100%;max-width:none;min-width:0;table-layout:fixed;border-collapse:collapse;margin:2mm 0 0}
 th,td{border:1px solid #64748b;padding:1mm .7mm;font-size:10pt;line-height:1.2;text-align:start;vertical-align:middle;white-space:normal;overflow-wrap:anywhere}
 td:not(:first-child),thead th:not(:first-child){text-align:center}thead th{font-size:9.5pt;background:#f1f5f9}
-.team-report-team th:nth-child(1){width:14%}.team-report-team th:nth-child(2){width:4%}
+.team-report-team th:nth-child(1){width:13%}.team-report-team th:nth-child(2){width:4%}
 .team-report-team th:nth-child(n+3):nth-child(-n+8){width:4.5%}
 .team-report-team th:nth-child(9),.team-report-team th:nth-child(10){width:4%}
-.team-report-team th:nth-child(11){width:7%}.team-report-team th:nth-child(12),.team-report-team th:nth-child(13){width:13%}
-.team-report-team th:nth-child(14){width:14%}.team-report-summary th:first-child{width:20%}
+.team-report-team th:nth-child(11){width:6%}.team-report-team th:nth-child(12),.team-report-team th:nth-child(13),.team-report-team th:nth-child(14){width:10%}
+.team-report-team th:nth-child(15){width:12%}.team-report-summary th:first-child{width:20%}
 thead{display:table-header-group}tfoot{display:table-row-group;break-inside:avoid;page-break-inside:avoid}
 tfoot th,tfoot td{font-weight:800;background:#e2e8f0;border-top:2px solid #64748b}tfoot bdi{display:block}
 tr{break-inside:avoid;page-break-inside:avoid}bdi{white-space:normal;unicode-bidi:isolate}small{display:block;font-size:9.5pt}

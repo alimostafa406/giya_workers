@@ -27,7 +27,7 @@ it('weekly save population includes marked monthly OT only, never monthly salary
   expect(lines.map((line) => line.worker.id)).toEqual(['override','daily','outside','biometric','monthly'])
   expect(payrollDraftEligibleLines('weekly', lines, saturday)).toEqual(lines)
   expect(lines.find((line) => line.worker.id === 'monthly')).toMatchObject({ paymentType: 'monthly', monthlyOvertimeOnly: true,
-    baseAmount: 0, attendanceWage: 0, transportAmount: 0, holidayAmount: 0, monthlySalary: 0, absenceDeduction: 0, overtimeHours: 5, overtimeAmount: 100, finalAmount: 100 })
+    baseAmount: 0, attendanceWage: 0, transportAmount: 10, holidayAmount: 0, monthlySalary: 0, absenceDeduction: 0, overtimeHours: 5, overtimeAmount: 100, finalAmount: 110 })
 })
 
 it.each(['reviewed','finalized','paid'])('all overtime sources and team/grand totals survive %s snapshot without live recalculation', (status) => {
@@ -47,7 +47,7 @@ it.each(['reviewed','finalized','paid'])('all overtime sources and team/grand to
     expect(snapshot.attendance_summary_snapshot.effective_overtime_sources).toEqual(id === 'override' || id === 'monthly' ? ['weekly_manual_override'] : id === 'biometric' ? [] : id === 'daily' ? ['daily_manual'] : ['outside_work'])
     expect(snapshot.attendance_summary_snapshot.payable_overtime_days).toEqual(lines.find((line) => line.worker.id === id).payableOvertimeDays)
   }
-  expect(payload.find((s) => s.worker_id === 'monthly')).toMatchObject({ payment_type_snapshot: 'monthly', base_amount: 0, transport_amount: 0, final_amount: 100,
+  expect(payload.find((s) => s.worker_id === 'monthly')).toMatchObject({ payment_type_snapshot: 'monthly', base_amount: 0, transport_amount: 10, final_amount: 110,
     attendance_summary_snapshot: { monthly_overtime_only: true } })
   const frozenPayload = JSON.stringify(payload)
   d.runs = [{ id: 'run', payment_type: 'weekly', weekly_period_start: monday, weekly_period_end: saturday, status }]; d.payrollLines = payload
@@ -69,9 +69,9 @@ it.each(['reviewed','finalized','paid'])('all overtime sources and team/grand to
   expect(weeklyPayoutSnapshotLines(lines)).toHaveLength(5)
 })
 
-it('a zero monthly override excludes monthly line without changing weekly base payroll scope', () => {
+it('a zero monthly override retains canonical transport without changing weekly base payroll scope', () => {
   const d = fixture(); d.weeklyOvertimeOverrides.find((o) => o.worker_id === 'monthly').minutes = 0
-  expect(weeklyPayoutLines(d, monday).some((line) => line.monthlyOvertimeOnly)).toBe(false)
+  expect(weeklyPayoutLines(d, monday).find((line) => line.monthlyOvertimeOnly)).toMatchObject({ transportAmount: 10, overtimeAmount: 0, finalAmount: 10 })
 })
 it('rate/source changes make a draft stale even when overtime duration is unchanged', () => {
   const d = fixture(), before = weeklyPayoutLines(d, monday)

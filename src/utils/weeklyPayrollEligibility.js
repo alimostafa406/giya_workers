@@ -41,9 +41,9 @@ export const weeklyPayrollEligibleLines = (lines = [], periodEnd = '') => (
 export const payrollDraftEligibleLines = (paymentType, lines = [], periodEnd = '') => (
   paymentType === 'weekly' ? (Array.isArray(lines) ? lines : []).filter((line) => isWeeklyPayrollEligibleWorker(line?.worker, periodEnd)
     || (line?.monthlyOvertimeOnly === true && line.worker?.payment_type === 'monthly'
-      && isNormalPayrollWorkerOnDate(line.worker, periodEnd) && Number(line.eveningOvertimeMinutes) > 0
-      && line.baseAmount === 0 && line.transportAmount === 0 && line.holidayAmount === 0
-      && line.finalAmount === line.overtimeAmount)) : (Array.isArray(lines) ? lines : [])
+      && isNormalPayrollWorkerOnDate(line.worker, periodEnd) && (Number(line.eveningOvertimeMinutes) > 0 || Number(line.transportAmount) > 0)
+      && line.baseAmount === 0 && line.transportAmount >= 0 && line.holidayAmount === 0
+      && line.finalAmount === Math.round((line.transportAmount + line.overtimeAmount) * 100) / 100)) : (Array.isArray(lines) ? lines : [])
 )
 
 export const weeklyPayrollTotalsByCurrency = (lines = []) => (
