@@ -16,18 +16,19 @@ export const parseWeeklyDuration = (value) => {
 }
 export function applyManualWeeklyOvertime(line, override, movements = [], biometricReviews = []) {
   const dailyManualMinutes = (line.details || []).reduce((sum, d) => sum + manualReportMinutes(d.row), 0)
-  const outsideDays = outsideWorkOvertimeDays(line.worker || {}, (line.details || []).map((d) => d.date), movements)
+  const manualOnly = isChauffeurNormalOvertimeExcluded(line)
+  const outsideDays = manualOnly ? [] : outsideWorkOvertimeDays(line.worker || {}, (line.details || []).map((d) => d.date), movements)
   const payableOvertimeDays = (line.details || []).map((detail) => {
     const outside = outsideDays.find((day) => day.date === detail.date)
     const manual = hasDailyManualOvertime(detail.row)
-    const approved = approvedBiometricOvertime(line.worker || {}, detail, biometricReviews)
+    const approved = manualOnly ? null : approvedBiometricOvertime(line.worker || {}, detail, biometricReviews)
     return { date: detail.date, source: manual ? 'daily_manual' : approved ? 'approved_biometric' : outside?.minutes ? 'outside_work' : 'none',
       minutes: manual ? manualReportMinutes(detail.row) : approved ? approved.minutes : outside?.minutes || 0,
       ...(approved && !manual ? { biometric_approval: approved } : {}),
       outside_work_minutes: outside?.minutes || 0, movement_ids: outside?.movement_ids || [] }
   })
   const weeklyManualOverrideMinutes = override?.minutes ?? null
-  const minutes = isChauffeurNormalOvertimeExcluded(line) ? 0 : weeklyManualOverrideMinutes ?? payableOvertimeDays.reduce((sum, d) => sum + d.minutes, 0)
+  const minutes = weeklyManualOverrideMinutes ?? payableOvertimeDays.reduce((sum, d) => sum + d.minutes, 0)
   const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: line.term?.overtime_rate_per_hour })
   return { ...line, ...overtime, overtimeRate: line.term?.overtime_rate_per_hour ?? null,
     manualOvertimeOnly: true, payableOvertimeSourceVersion: 2, payableOvertimeDays, dailyManualMinutes, weeklyManualOverrideMinutes, weeklyManualOverrideVersion: override?.version || 0,

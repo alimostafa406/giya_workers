@@ -25,8 +25,23 @@ beforeEach(()=>{
   api.save.mockImplementation(async({entries})=>{ for(const e of entries){const o=data.weeklyOvertimeOverrides.find(x=>x.worker_id===e.worker_id);o.minutes=e.minutes;o.version++}return [] })
 })
 afterEach(()=>{cleanup();vi.clearAllMocks();vi.restoreAllMocks()})
-async function openTeam(){render(<LanguageProvider><PayrollOperations /></LanguageProvider>);fireEvent.click(await screen.findByRole('button',{name:/^Team/}));return document.querySelector('[data-weekly-payroll-sheet]')}
+async function openTeam(name = /^Team/){render(<LanguageProvider><PayrollOperations /></LanguageProvider>);fireEvent.click(await screen.findByRole('button',{name}));return document.querySelector('[data-weekly-payroll-sheet]')}
 const row = (table,name)=>within(table).getByRole('button',{name:new RegExp(`^${name}`)}).closest('tr')
+
+it('PAYIKE monthly Chauffeur saves manual weekly OT from actual payroll controls at 3500 without base salary', async () => {
+  data.workers = [{ ...data.workers[1], full_name: 'PAYIKE', employee_code: '63', team_name: 'Chauffeur',
+    payroll_compensation: { ...data.workers[1].payroll_compensation, overtime_rate_per_hour: 3500 } }]
+  data.weeklyOvertimeOverrides = [{ worker_id: 'monthly', minutes: 0, version: 1 }]
+  const table = await openTeam('Chauffeur'), r = row(table, 'PAYIKE')
+  fireEvent.click(within(r).getByRole('button', { name: /Overtime Hours/ }))
+  fireEvent.change(within(r).getByRole('textbox'), { target: { value: '5:00' } })
+  fireEvent.click(within(r).getByRole('button', { name: 'Save', exact: true }))
+  await waitFor(() => expect(within(row(table, 'PAYIKE')).queryByRole('textbox')).toBeNull())
+  expect(api.save).toHaveBeenCalledWith({ week: '2026-10-19', entries: [{ worker_id: 'monthly', minutes: 300, expected_version: 1 }] })
+  expect(row(table, 'PAYIKE').textContent).toContain('5h00')
+  expect(row(table, 'PAYIKE').textContent).toContain('17,500')
+  expect(teamWeeklyReport(data, '2026-10-19').lines[0]).toMatchObject({ basePay: 0, minutes: 300, overtimeAmount: 17500, finalAmount: 17500 })
+})
 
 it('one OT column, visible 5h -> 15h save, canonical versioned override, monthly-only payouts, clear fallback and report/team totals',async()=>{
   const table=await openTeam()

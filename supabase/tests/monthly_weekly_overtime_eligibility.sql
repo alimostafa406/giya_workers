@@ -34,7 +34,7 @@ begin
     assert rejected,'Inactive/unassigned worker accepted';
   end loop;
   for bad in select w.id from workers w join teams t on t.id=w.team_id left join worker_staff_classification c on c.worker_id=w.id
-    where t.name in ('Adminstration','Chauffeur') or coalesce(c.classification,'normal')<>'normal' loop
+    where t.name = 'Adminstration' or coalesce(c.classification,'normal')<>'normal' loop
     rejected:=false;
     begin perform admin_set_weekly_overtime(d,jsonb_build_array(jsonb_build_object('worker_id',bad,'minutes',60,'expected_version',0)));
       exception when others then rejected:=sqlerrm like 'Worker not eligible:%'; end;

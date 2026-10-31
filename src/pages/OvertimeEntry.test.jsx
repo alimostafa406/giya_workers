@@ -144,7 +144,16 @@ it('uses only eligible active real team members, not foreman metadata or other t
   open(); await team()
   expect(screen.getAllByRole('checkbox').map((input) => input.getAttribute('aria-label'))).toEqual(['ALPHA', 'BETA'])
   for (const name of ['INACTIVE', 'FOREMAN', 'FUTURE', 'DRIVER', 'CHARLIE']) expect(screen.queryByText(name)).toBeNull()
-  expect(screen.queryByRole('option', { name: 'Chauffeur' })).toBeNull()
+  expect(screen.getByRole('option', { name: 'Chauffeur' })).toBeTruthy()
+})
+it('Chauffeur daily manual duration uses normal visible controls and the same save API', async () => {
+  source.attendance.push({ ...source.attendance[0], id: 'att-driver', worker_id: 'driver', status: 'present', attendance_day_fraction: 1 })
+  open(); await team('driver')
+  fireEvent.click(screen.getByRole('checkbox', { name: 'DRIVER' }))
+  fireEvent.click(screen.getByRole('button', { name: '2 hours', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
+  await previewSave()
+  expect(mocks.save.mock.calls[0][0].entries).toEqual([expect.objectContaining({ worker_id: 'driver', minutes: 120, expected_updated_at: '2026-10-24T08:00:00Z' })])
 })
 it('searches loaded team workers without requests and keeps selections when search clears', async () => {
   open(); await team(); const loads = mocks.load.mock.calls.length

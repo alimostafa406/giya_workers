@@ -3,8 +3,7 @@ import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime'
 import { finalAttendanceStatus } from './finalAttendanceStatus'
 
 export const overtimeEntryWorkers = (workers, date) => workers.filter((worker) =>
-  worker.team_id && isOperationalAttendanceWorkerOnDate(worker, date)
-  && (worker.team?.name || worker.team_name) !== 'Chauffeur')
+  worker.team_id && isOperationalAttendanceWorkerOnDate(worker, date))
 
 export const parseOvertimeDuration = (value) => {
   const normalized = String(value).trim().replace(/[٠-٩۰-۹]/g, (digit) =>

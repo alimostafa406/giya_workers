@@ -1,11 +1,14 @@
 import { isOperationalAttendanceWorkerOnDate } from './activeWorkers.js'
 import { biometricIdsByWorker } from './dailyOperationalReports.js'
 
-// Overtime eligibility is deliberately separate from weekly base salary.
+// Manual overtime eligibility is deliberately separate from weekly base salary.
 export const isWeeklyOvertimeEligibleWorker = (worker, end) => Boolean(worker?.team_id)
   && isOperationalAttendanceWorkerOnDate(worker, end)
   && (worker.staff_classification || 'normal') === 'normal'
   && ['weekly', 'monthly'].includes(worker.payment_type)
+
+// Manual admin entry and automatic biometric review have different scopes.
+export const isBiometricOvertimeEligibleWorker = (worker, end) => isWeeklyOvertimeEligibleWorker(worker, end)
   && (worker.team?.name || worker.team_name) !== 'Chauffeur'
 
 export const overtimeBiometricIds = biometricIdsByWorker

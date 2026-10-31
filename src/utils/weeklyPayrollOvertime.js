@@ -15,7 +15,7 @@ const overtimeTeamName = (value = {}) => {
 }
 
 // Chauffeur attendance is deliberately handled by its own temporary
-// attendance rule. It must never enter the normal-worker overtime model.
+// attendance rule. Exclude automatic OT, not explicit admin manual duration.
 export const isChauffeurNormalOvertimeExcluded = (value = {}) => overtimeTeamName(value) === 'Chauffeur'
 
 const clockMinutes = (value) => {
@@ -104,7 +104,7 @@ export const weeklyPayrollDisplayStatus = (detail) => {
 }
 
 export const weeklyPayrollOvertimeForDetail = (detail) => {
-  if (!detail?.date || isChauffeurNormalOvertimeExcluded(detail)) {
+  if (!detail?.date) {
     return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   }
   const row = detail?.row || {}
@@ -112,6 +112,7 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
     && Number.isInteger(Number(row.emergency_overtime_minutes)) && Number(row.emergency_overtime_minutes) > 0) {
     return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: Number(row.emergency_overtime_minutes) }
   }
+  if (isChauffeurNormalOvertimeExcluded(detail)) return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   if (!isWeekday(detail.date)) return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   const checkOut = normalizedCheckoutMinutes(detail)
   const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(checkOut - 1020, 0)
@@ -125,11 +126,10 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
 }
 
 export const weeklyPayrollOvertimeForLine = (line) => (
-  isChauffeurNormalOvertimeExcluded(line)
-    ? { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
-    : line?.manualOvertimeOnly === true ? { morningOvertimeMinutes: 0, eveningOvertimeMinutes: Number(line.eveningOvertimeMinutes || 0) }
+  line?.manualOvertimeOnly === true ? { morningOvertimeMinutes: 0, eveningOvertimeMinutes: Number(line.eveningOvertimeMinutes || 0) }
     : (line?.details || []).reduce((totals, detail) => {
-    const overtime = weeklyPayrollOvertimeForDetail(detail)
+    const overtime = weeklyPayrollOvertimeForDetail({ ...detail, worker: detail.worker || line.worker,
+      team_name: detail.team_name || line.team_name })
     return {
       morningOvertimeMinutes: totals.morningOvertimeMinutes + overtime.morningOvertimeMinutes,
       eveningOvertimeMinutes: totals.eveningOvertimeMinutes + overtime.eveningOvertimeMinutes,
