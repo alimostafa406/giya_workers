@@ -8,7 +8,8 @@ import { weeklyPayrollDisplayStatus } from '../utils/weeklyPayrollOvertime'
 import { useTranslation } from '../i18n/LanguageContext'
 import './TeamWeeklyReport.css'
 import OutsideWorkTeamMarkers from '../components/Reports/OutsideWorkTeamMarkers'
-import { formatTeamReportDayOvertime, isOutsideWorkReportDay, teamReportDayOvertime } from '../utils/teamWeeklyReportDayOvertime'
+import { teamReportDayOvertime } from '../utils/teamWeeklyReportDayOvertime'
+import PayableAttendanceDay from '../components/Payroll/PayableAttendanceDay'
 
 const money = (value, currency) => value == null ? '—' : formatPayrollMoney(value, { currency, paymentType: 'weekly' })
 const hours = (minutes) => `${Number((minutes / 60).toFixed(4))} h`
@@ -19,11 +20,9 @@ const summaryKeys = ['team', 'workers', 'totalWorkDays', 'totalAbsentDays', 'tot
 const dayStatus = (detail, t) => ({ present: t('attendance.present'), absent: t('attendance.absent'), half_day: '½', neutral: '—' })[weeklyPayrollDisplayStatus(detail)]
 function DayCell({ line, date, t }) {
   const detail = line.details?.find(detail => detail.date === date)
-  const day = line.payableOvertimeDays?.find(day => day.date === date)
-  const outside = weeklyPayrollDisplayStatus(detail) === 'present' && isOutsideWorkReportDay(detail, day)
-  const duration = formatTeamReportDayOvertime(teamReportDayOvertime(line, date))
+  const duration = teamReportDayOvertime(line, date)
   return <td className="team-report-day" style={duration ? { whiteSpace: 'normal' } : undefined}>
-    <span>{outside ? 'O' : dayStatus(detail, t)}</span>{duration && <> <bdi dir="ltr" style={{ whiteSpace: 'nowrap' }}>{duration}</bdi></>}
+    <PayableAttendanceDay line={line} date={date} statusText={dayStatus(detail, t)} />
   </td>
 }
 function Amounts({ totals, field }) { return Object.entries(totals.currencies).map(([currency, values]) => <bdi dir="ltr" className="block" key={currency}>{money(values[field], currency)}</bdi>) }
