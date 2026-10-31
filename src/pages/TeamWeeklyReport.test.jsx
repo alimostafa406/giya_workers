@@ -56,10 +56,10 @@ it('team and grand totals sum manual minutes, canonical base and payable by curr
   expect(report.totals.workers).toBe(3); expect(report.totals.workDays).toBe(3); expect(report.totals.minutes).toBe(330)
   expect(report.totals.currencies.CDF).toEqual({ basePay: 300, transportAmount: 30, overtimeAmount: 110, finalAmount: 440 })
 })
-it('inactive, monthly and special staff are excluded and team foreman metadata adds nobody', () => {
+it('inactive empty-week and special staff are excluded; eligible monthly workers stay visible', () => {
   const d = data(); d.workers.push(worker('inactive', 'Siraj', { is_active: false }), worker('monthly', 'Siraj', { payment_type: 'monthly' }), worker('foreign', 'Siraj', { staff_classification: 'special_staff' }))
   d.workers[0].team = { name: 'Siraj', foreman_worker_id: 'foreign' }
-  expect(teamWeeklyReport(d, week).lines.map((l) => l.worker.id)).toEqual(['a', 'b'])
+  expect(teamWeeklyReport(d, week).lines.map((l) => l.worker.id)).toEqual(['a', 'b', 'monthly'])
 })
 it.each(['reviewed', 'finalized', 'paid'])('never reinterprets %s snapshots with unknown manual provenance', (status) => {
   const d = data(); d.runs = [{ id: 'run', payment_type: 'weekly', weekly_period_start: week, weekly_period_end: '2026-10-24', status }]
@@ -183,18 +183,19 @@ it('monthly manual overtime appears with zero base and overtime-only total along
   expect(report.totals.currencies.CDF).toEqual({ basePay: 100, transportAmount: 10, overtimeAmount: 55, finalAmount: 165 })
   expect(JSON.stringify(d)).toBe(before)
 })
-it('monthly zero manual overtime and biometric-only overtime are excluded; weekly base-only remains', () => {
+it('monthly zero extras remain visible without paying unapproved biometric overtime', () => {
   const d = data([row('a'), row('m', { check_out: '23:00' })]); d.workers = [worker('a'), monthlyWorker()]
   const report = teamWeeklyReport(d, week)
-  expect(report.lines).toHaveLength(1)
+  expect(report.lines).toHaveLength(2)
+  expect(report.lines[1]).toMatchObject({ basePay: 0, minutes: 0, finalAmount: 0 })
   expect(report.lines[0]).toMatchObject({ basePay: 100, transportAmount: 10, overtimeAmount: 0, finalAmount: 110 })
 })
-it('monthly override replaces daily sum, zero excludes, and clearing restores daily sum', () => {
+it('monthly override replaces daily sum, zero retains worker, and clearing restores daily sum', () => {
   const d = data([row('m', manual(360))]); d.workers = [monthlyWorker()]
   d.weeklyOvertimeOverrides = [{ worker_id: 'm', minutes: 1500 }]
   expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ minutes: 1500, basePay: 0, overtimeAmount: 62.5, finalAmount: 62.5 })
   d.weeklyOvertimeOverrides[0].minutes = 0
-  expect(teamWeeklyReport(d, week).lines).toHaveLength(0)
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ minutes: 0, finalAmount: 0 })
   d.weeklyOvertimeOverrides[0].minutes = null
   expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ minutes: 360, basePay: 0, finalAmount: 15 })
 })
@@ -390,13 +391,13 @@ it('all monthly overtime sources join weekly workers and reconcile every team an
   d.outsideWorkMovements = [{ id: 'final-outside', status: 'final', work_date: week,
     outside_work_movement_workers: [{ worker_id: 'outside', start_time: '08:00', end_time: '19:30' }, { worker_id: 'zero', start_time: '08:00', end_time: '23:00' }] }]
   const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
-  expect(report.lines.map((line) => line.worker.id).sort()).toEqual(['a', 'five', 'half', 'outside', 'twentyfive'])
+  expect(report.lines.map((line) => line.worker.id).sort()).toEqual(['a', 'five', 'half', 'outside', 'twentyfive', 'zero'])
   expect(report.lines.find((line) => line.worker.id === 'a')).toEqual(originalWeekly)
-  expect(report.groups.find((group) => group.id === 'Siraj').totals).toMatchObject({ workers: 3, minutes: 330,
+  expect(report.groups.find((group) => group.id === 'Siraj').totals).toMatchObject({ workers: 4, minutes: 330,
     currencies: { CDF: { basePay: 100, transportAmount: 10, overtimeAmount: 13.75, finalAmount: 123.75 } } })
   expect(report.groups.find((group) => group.id === 'Zarour').totals).toMatchObject({ workers: 2, minutes: 1650,
     currencies: { CDF: { basePay: 0, overtimeAmount: 68.75, finalAmount: 68.75 } } })
-  expect(report.totals).toMatchObject({ workers: 5, minutes: 1980,
+  expect(report.totals).toMatchObject({ workers: 6, minutes: 1980,
     currencies: { CDF: { basePay: 100, transportAmount: 10, overtimeAmount: 82.5, finalAmount: 192.5 } } })
   for (const line of report.lines.filter((line) => line.monthlyOvertimeOnly)) {
     expect(line.basePay).toBe(0); expect(line.finalAmount).toBe(line.overtimeAmount)

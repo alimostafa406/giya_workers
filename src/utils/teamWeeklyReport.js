@@ -52,7 +52,7 @@ export function teamWeeklyReport(data, monday) {
           ? (s.attendance_summary_snapshot.days || []).map(day => ({ date: day.date, source: 'daily_manual', minutes: manualReportMinutes(day) })) : []),
       finalAmount: overtimeAmount == null ? null : round(basePay + transportAmount + overtimeAmount), unresolved: overtime.missingRateBlocker,
     }
-  }).filter((line) => !line.monthlyOvertimeOnly || line.minutes > 0 || line.transportAmount > 0) : periodWorkers.filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
+  }) : periodWorkers.filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
     const line = calculateWeeklyPayoutLine(data, monday, worker)
     const saved = stored.find((s) => String(s.worker_id) === String(worker.id))
     // Non-OT canonical adjustments still form part of base payable. OT
@@ -80,14 +80,17 @@ export function teamWeeklyReport(data, monday) {
     // Legacy locked weeks retain their old OT-only supplement behavior. New
     // transport is never added retrospectively to a frozen payroll population.
     const transportAmount = locked ? 0 : effective.transportAmount
-    const overtimeAmount = effective.missingRateBlocker || !term.currency_code ? null : effective.overtimeAmount
+    const overtimeAmount = effective.eveningOvertimeMinutes === 0 ? 0
+      : effective.missingRateBlocker || !term.currency_code ? null : effective.overtimeAmount
     return { worker, currency: term.currency_code, monthlyOvertimeOnly: true,
       workDays: attendanceLine.presentDays + attendanceLine.halfDays * Number(data.rules?.half_day_multiplier ?? .5),
       absentDays: attendanceLine.absentDays, minutes: effective.eveningOvertimeMinutes, details: attendanceLine.details,
       weeklyManualOverrideMinutes: effective.weeklyManualOverrideMinutes, payableOvertimeDays: effective.payableOvertimeDays,
       basePay: 0, overtimeAmount, transportAmount,
-      finalAmount: overtimeAmount == null ? null : round(transportAmount + overtimeAmount), unresolved: effective.missingRateBlocker || !term.currency_code }
-  }).filter((line) => line.minutes > 0 || line.transportAmount > 0)
+      finalAmount: overtimeAmount == null || (transportAmount > 0 && !term.currency_code) ? null : round(transportAmount + overtimeAmount),
+      unresolved: effective.missingRateBlocker || (!term.currency_code && (transportAmount > 0 || effective.eveningOvertimeMinutes > 0)) }
+  // Do not add new zero-value population to old locked payroll snapshots.
+  }).filter((line) => !locked || line.minutes > 0 || line.transportAmount > 0)
   lines.push(...monthlyLines)
   const groups = [...new Set(lines.map((l) => String(l.worker.team_id || 'unassigned')))].map((id) => {
     const teamLines = lines.filter((l) => String(l.worker.team_id || 'unassigned') === id)

@@ -30,7 +30,6 @@ export function weeklyPayoutLines(data, monday) {
   return weeklyPayrollPeriodWorkers(data, monday, end).filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)
     || (worker.payment_type === 'monthly' && isNormalPayrollWorkerOnDate(worker, end)))
     .map((worker) => calculateWeeklyPayoutLine(data, monday, worker))
-    .filter((line) => !line.monthlyOvertimeOnly || line.eveningOvertimeMinutes > 0 || line.transportAmount > 0)
 }
 
 // Stored payment type/marker, never today's roster, decides historical display.

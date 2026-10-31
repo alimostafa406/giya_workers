@@ -35,9 +35,56 @@ it.each([[5000, 0, 30000], [0, 300, 12500], [5000, 300, 42500]])('monthly transp
   expect(report.totals.currencies.CDF).toEqual({ basePay: 0, transportAmount: 6 * transport, overtimeAmount: minutes / 60 * 2500, finalAmount: total })
   expect(JSON.stringify(d)).toBe(before)
 })
-it('monthly zero transport and OT is excluded', () => {
-  expect(weeklyPayoutLines(data(0, 0), week)).toEqual([])
-  expect(teamWeeklyReport(data(0, 0), week).lines).toEqual([])
+it('monthly zero transport and OT stays in canonical payroll and report population', () => {
+  const d = data(0, 0), lines = weeklyPayoutLines(d, week)
+  expect(lines).toHaveLength(1)
+  expect(payrollDraftEligibleLines('weekly', lines, end)).toEqual(lines)
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ basePay: 0, transportAmount: 0, minutes: 0, overtimeAmount: 0, finalAmount: 0 })
+})
+it('inactive monthly workers with historical attendance remain visible; future empty weeks exclude them', () => {
+  const d = data(0, 0); d.workers[0].is_active = false
+  expect(weeklyPayoutLines(d, week)).toHaveLength(1)
+  expect(teamWeeklyReport(d, week).lines).toHaveLength(1)
+  expect(weeklyPayoutLines(d, '2026-11-02')).toEqual([])
+  expect(teamWeeklyReport(d, '2026-11-02').lines).toEqual([])
+})
+it('zero-extra monthly rows persist in reviewed/finalized snapshots without adding salary', () => {
+  const d = data(0, 0), lines = weeklyPayoutLines(d, week)
+  const saved = lines.map(line => payrollDraftLinePayload('run', line, week, end, end))
+  expect(() => assertWeeklyPayoutDraftReady(saved, lines)).not.toThrow()
+  expect(() => assertWeeklyPayoutSnapshotComplete(saved)).not.toThrow()
+  d.payrollLines = saved; d.runs = [{ id: 'run', payment_type: 'weekly', weekly_period_start: week, weekly_period_end: end, status: 'paid' }]
+  d.workers = []; d.attendance = []
+  expect(teamWeeklyReport(d, week).lines).toHaveLength(1)
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ basePay: 0, minutes: 0, transportAmount: 0, finalAmount: 0 })
+})
+it('DIDIER #81 with missing matching monthly compensation shows six days and zero extras in payroll and print', async () => {
+  const d = data(0, 0), currentWeek = '2026-10-26'
+  const worker = { ...d.workers[0], id: '2920c2a5-d45b-435d-a828-5d0491fb1fdb', full_name: 'DIDIER', employee_code: '81',
+    team_id: 'cd237c18-1ff0-4107-8fe7-ea5d39ae0d85', team_name: 'Saleh', payroll_compensation: null }
+  d.workers = [worker]; d.weeklyOvertimeOverrides = []
+  d.attendance = weeklyDates(currentWeek).map(date => ({ worker_id: worker.id, attendance_date: date, status: 'present', attendance_day_fraction: 1 }))
+  const before = JSON.stringify(d), lines = weeklyPayoutLines(d, currentWeek)
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toMatchObject({ paymentType: 'monthly', presentDays: 6, baseAmount: 0, transportAmount: 0, eveningOvertimeMinutes: 0, overtimeAmount: 0, finalAmount: 0 })
+  const sheet = render(<LanguageProvider><WeeklyPayrollSheet lines={lines} dates={weeklyDates(currentWeek)} editable onEdit={() => {}} /></LanguageProvider>)
+  const payrollRow = screen.getByText('DIDIER').closest('tr')
+  expect([...payrollRow.children].slice(-5).map(cell => cell.textContent)).toEqual(['0', '—', '—', '0', '0'])
+  expect(sheet.container.querySelectorAll('tbody tr')).toHaveLength(1)
+  cleanup(); window.history.replaceState({}, '', `/?date=${currentWeek}`); mocks.load.mockResolvedValue(d)
+  const popup = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
+  vi.spyOn(window, 'open').mockReturnValue(popup)
+  render(<LanguageProvider><TeamWeeklyReport /></LanguageProvider>)
+  await screen.findByText('DIDIER')
+  const row = screen.getByText('DIDIER').closest('tr')
+  expect([...row.children].slice(10).map(cell => cell.textContent)).toEqual(['—', '0', '—', '0', '0'])
+  fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
+  const printed = new DOMParser().parseFromString(popup.document.write.mock.calls[0][0], 'text/html')
+  expect(printed.querySelectorAll('.team-report-team tbody tr')).toHaveLength(1)
+  expect(printed.body.textContent).toContain('DIDIER')
+  expect(printed.querySelector('.team-report-team tbody tr').textContent).toBe(row.textContent)
+  expect(teamWeeklyReport(d, currentWeek).totals.workers).toBe(1)
+  expect(JSON.stringify(d)).toBe(before)
 })
 it('canonical transport eligibility is reused for half-day/late/outside-work and inactive recorded workers', () => {
   const d = data(10, 0); d.workers[0].is_active = false
@@ -108,14 +155,13 @@ it('monthly transport is visible in main payroll and all-teams print, with zero 
   expect(row.children[14].textContent).toContain('42,500')
   expect(printed.body.textContent).not.toContain('900,000')
 })
-it.skipIf(!process.env.MONTHLY_PAYOUT_AUDIT_INPUT)('all production monthly workers with weekly transport or OT reach the canonical report', async () => {
+it.skipIf(!process.env.MONTHLY_PAYOUT_AUDIT_INPUT)('all production monthly workers including zero extras reach the canonical report', async () => {
   const d = JSON.parse(readFileSync(process.env.MONTHLY_PAYOUT_AUDIT_INPUT, 'utf8')), before = JSON.stringify(d)
   const lines = weeklyPayoutLines(d, '2026-10-26'), report = teamWeeklyReport(d, '2026-10-26')
   expect(lines.length).toBeGreaterThan(0)
   expect(report.lines.map(line => line.worker.id).sort()).toEqual(lines.map(line => line.worker.id).sort())
   for (const line of lines) {
     const shown = report.lines.find(row => row.worker.id === line.worker.id)
-    expect(line.transportAmount > 0 || line.eveningOvertimeMinutes > 0).toBe(true)
     expect(shown.basePay).toBe(0)
     expect(shown.transportAmount).toBe(line.transportAmount)
     if (!line.missingRateBlocker) expect(shown.finalAmount).toBe(Math.round((line.transportAmount + line.overtimeAmount) * 100) / 100)
