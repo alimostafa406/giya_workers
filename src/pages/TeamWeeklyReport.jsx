@@ -8,6 +8,7 @@ import { weeklyPayrollDisplayStatus } from '../utils/weeklyPayrollOvertime'
 import { useTranslation } from '../i18n/LanguageContext'
 import './TeamWeeklyReport.css'
 import OutsideWorkTeamMarkers from '../components/Reports/OutsideWorkTeamMarkers'
+import { formatTeamReportDayOvertime, isOutsideWorkReportDay, teamReportDayOvertime } from '../utils/teamWeeklyReportDayOvertime'
 
 const money = (value, currency) => value == null ? '—' : formatPayrollMoney(value, { currency, paymentType: 'weekly' })
 const hours = (minutes) => `${Number((minutes / 60).toFixed(4))} h`
@@ -16,6 +17,15 @@ const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturd
 const headerKeys = ['worker', 'code', ...dayKeys, 'workDays', 'absentDays', 'manualHours', 'basePay', 'overtimeAmount', 'totalPay']
 const summaryKeys = ['team', 'workers', 'totalWorkDays', 'totalAbsentDays', 'totalManualHours', 'totalOvertimeAmount', 'totalBasePay', 'totalPay']
 const dayStatus = (detail, t) => ({ present: t('attendance.present'), absent: t('attendance.absent'), half_day: '½', neutral: '—' })[weeklyPayrollDisplayStatus(detail)]
+function DayCell({ line, date, t }) {
+  const detail = line.details?.find(detail => detail.date === date)
+  const day = line.payableOvertimeDays?.find(day => day.date === date)
+  const outside = weeklyPayrollDisplayStatus(detail) === 'present' && isOutsideWorkReportDay(detail, day)
+  const duration = formatTeamReportDayOvertime(teamReportDayOvertime(line, date))
+  return <td className="team-report-day" style={duration ? { whiteSpace: 'normal' } : undefined}>
+    <span>{outside ? 'O' : dayStatus(detail, t)}</span>{duration && <> <bdi dir="ltr" style={{ whiteSpace: 'nowrap' }}>{duration}</bdi></>}
+  </td>
+}
 function Amounts({ totals, field }) { return Object.entries(totals.currencies).map(([currency, values]) => <bdi dir="ltr" className="block" key={currency}>{money(values[field], currency)}</bdi>) }
 function TeamTotalRow({ totals }) { const { t } = useTranslation(); return <tr className="team-report-total-row"><th scope="row">{t('teamWeeklyReport.teamTotal')}</th><td>{totals.workers} {t('teamWeeklyReport.workersWord')}</td>{dayKeys.map((day) => <td key={day}>—</td>)}<td>{totals.workDays}</td><td>{totals.absentDays}</td><td><bdi dir="ltr">{hours(totals.minutes)}</bdi></td><td><Amounts totals={totals} field="basePay" /></td><td><Amounts totals={totals} field="overtimeAmount" /></td><td><Amounts totals={totals} field="finalAmount" /></td></tr> }
 function SummaryRow({ name, totals }) { return <tr><th>{name}</th><td>{totals.workers}</td><td>{totals.workDays}</td><td>{totals.absentDays}</td><td><bdi dir="ltr">{hours(totals.minutes)}</bdi></td><td><Amounts totals={totals} field="overtimeAmount" /></td><td><Amounts totals={totals} field="basePay" /></td><td><strong><Amounts totals={totals} field="finalAmount" /></strong></td></tr> }
@@ -51,7 +61,7 @@ export default function TeamWeeklyReport() {
       {report.groups.map((group) => <section key={group.id} className="team-report-content team-report-team" aria-label={`${l('teamRegion')}: ${groupName(group)}`}>
         <header className="team-report-header">{title()}<h2 className="text-xl font-bold">{l('team')}: {groupName(group)}</h2><p>{l('workers')}: {group.lines.length}</p></header>
         {group.lines.some((line) => line.unresolved) && <p>{l('incomplete')}</p>}
-        <div className="overflow-x-auto"><table><thead><tr>{headerKeys.map((key) => <th key={key}>{l(key)}</th>)}</tr></thead><tbody>{group.lines.map((line) => <tr key={line.worker.id}><td>{line.worker.full_name}{line.monthlyOvertimeOnly && <small className="block text-(--muted)">{l('monthlyOnly')}</small>}</td><td>{line.worker.employee_code || '—'}</td>{dates.map((date) => <td className="team-report-day" key={date}>{dayStatus(line.details?.find((detail) => detail.date === date), t)}</td>)}<td>{line.workDays}</td><td>{line.absentDays}</td><td><bdi dir="ltr">{hours(line.minutes)}</bdi></td><td><bdi dir="ltr">{money(line.basePay, line.currency)}</bdi></td><td><bdi dir="ltr">{money(line.overtimeAmount, line.currency)}</bdi></td><td><strong><bdi dir="ltr">{money(line.finalAmount, line.currency)}</bdi></strong></td></tr>)}</tbody><tfoot><TeamTotalRow totals={group.totals} /></tfoot></table></div>
+        <div className="overflow-x-auto"><table><thead><tr>{headerKeys.map((key) => <th key={key}>{l(key)}</th>)}</tr></thead><tbody>{group.lines.map((line) => <tr key={line.worker.id}><td>{line.worker.full_name}{line.monthlyOvertimeOnly && <small className="block text-(--muted)">{l('monthlyOnly')}</small>}</td><td>{line.worker.employee_code || '—'}</td>{dates.map((date) => <DayCell key={date} line={line} date={date} t={t} />)}<td>{line.workDays}</td><td>{line.absentDays}</td><td><bdi dir="ltr">{hours(line.minutes)}</bdi></td><td><bdi dir="ltr">{money(line.basePay, line.currency)}</bdi></td><td><bdi dir="ltr">{money(line.overtimeAmount, line.currency)}</bdi></td><td><strong><bdi dir="ltr">{money(line.finalAmount, line.currency)}</bdi></strong></td></tr>)}</tbody><tfoot><TeamTotalRow totals={group.totals} /></tfoot></table></div>
         <OutsideWorkTeamMarkers markers={group.outsideWorkMarkers} dates={dates} language={language} />
       </section>)}
       <section ref={summaryRef} className="team-report-content team-report-summary" aria-label={l('summaryTitle')}>{title(true)}<div className="overflow-x-auto"><table><thead><tr>{summaryKeys.map((key) => <th key={key}>{l(key)}</th>)}</tr></thead><tbody>{report.groups.map((g) => <SummaryRow key={g.id} name={groupName(g)} totals={g.totals} />)}</tbody><tfoot><SummaryRow name={l('grandTotal')} totals={report.totals} /></tfoot></table></div></section>

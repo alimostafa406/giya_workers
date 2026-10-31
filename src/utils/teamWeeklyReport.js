@@ -45,6 +45,10 @@ export function teamWeeklyReport(data, monday) {
       currency: s.currency_code_snapshot, workDays: Number(s.present_days) + Number(s.half_days) * Number(s.rule_snapshot?.half_day_multiplier ?? .5),
       absentDays: Number(s.absent_days), minutes, overtimeAmount, basePay, monthlyOvertimeOnly,
       details: s.attendance_summary_snapshot?.days || [],
+      weeklyManualOverrideMinutes: s.attendance_summary_snapshot?.weekly_manual_overtime_override_minutes ?? null,
+      payableOvertimeDays: s.attendance_summary_snapshot?.payable_overtime_days
+        || (s.attendance_summary_snapshot?.manual_overtime_source_version === 1
+          ? (s.attendance_summary_snapshot.days || []).map(day => ({ date: day.date, source: 'daily_manual', minutes: manualReportMinutes(day) })) : []),
       finalAmount: overtimeAmount == null ? null : round(basePay + overtimeAmount), unresolved: overtime.missingRateBlocker,
     }
   }).filter((line) => !line.monthlyOvertimeOnly || line.minutes > 0) : periodWorkers.filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
@@ -60,6 +64,7 @@ export function teamWeeklyReport(data, monday) {
     const overtimeAmount = overtime.missingRateBlocker ? null : overtime.overtimePay ?? 0
     return { worker, currency: line.currency, workDays: line.presentDays + line.halfDays * Number(data.rules?.half_day_multiplier ?? .5),
       absentDays: line.absentDays, minutes, basePay, overtimeAmount, details: line.details,
+      weeklyManualOverrideMinutes: line.weeklyManualOverrideMinutes, payableOvertimeDays: line.payableOvertimeDays,
       finalAmount: basePay == null || overtimeAmount == null ? null : round(basePay + overtimeAmount),
       unresolved: !configured || overtime.missingRateBlocker || line.unresolvedDays > 0 }
   })
@@ -75,6 +80,7 @@ export function teamWeeklyReport(data, monday) {
     return { worker, currency: term.currency_code, monthlyOvertimeOnly: true,
       workDays: attendanceLine.presentDays + attendanceLine.halfDays * Number(data.rules?.half_day_multiplier ?? .5),
       absentDays: attendanceLine.absentDays, minutes: effective.eveningOvertimeMinutes, details: attendanceLine.details,
+      weeklyManualOverrideMinutes: effective.weeklyManualOverrideMinutes, payableOvertimeDays: effective.payableOvertimeDays,
       basePay: 0, overtimeAmount, finalAmount: overtimeAmount, unresolved: effective.missingRateBlocker || !term.currency_code }
   }).filter((line) => line.minutes > 0)
   lines.push(...monthlyLines)
