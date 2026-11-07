@@ -19,8 +19,11 @@ function derivedBiometricRows(sources = []) {
   return sources.map((source) => {
     const minutes = biometricOvertimeMinutes(source.worker, source.attendance, source.attendance.attendance_date)
     const review = source.review
-    const stale = Boolean(review && (review.source_fingerprint !== source.source_fingerprint || Number(review.minutes) !== minutes))
-    return { ...source, minutes, stale, status: review && !stale ? review.decision : 'pending' }
+    const audit = review?.history?.at(-1)
+    const originalMinutes = audit?.source_fingerprint === review?.source_fingerprint && Number(audit?.minutes) === Number(review?.minutes)
+      ? audit.original_biometric_minutes ?? review?.minutes : review?.minutes
+    const stale = Boolean(review && (review.source_fingerprint !== source.source_fingerprint || Number(originalMinutes) !== minutes))
+    return { ...source, minutes, approvedMinutes: review && !stale ? Number(review.minutes) : minutes, stale, status: review && !stale ? review.decision : 'pending' }
   }).filter((row) => row.minutes > 0)
 }
 export function biometricReviewRows(sources = []) {
@@ -39,7 +42,8 @@ export function approvedBiometricOvertime(worker, detail, sources = []) {
     || entry.attendance.biometric_sync_metadata?.check_out_event_timestamp !== detail.row.biometric_sync_metadata?.check_out_event_timestamp) return null
   const reviewed = derivedBiometricRows([entry])[0]
   if (reviewed?.status !== 'approved' || reviewed.minutes !== biometricOvertimeMinutes(worker, detail.row, detail.date)) return null
-  return { minutes: reviewed.minutes, version: reviewed.review.version, actor: reviewed.review.actor,
+  return { minutes: reviewed.approvedMinutes, original_biometric_minutes: reviewed.minutes, version: reviewed.review.version, actor: reviewed.review.actor,
+    actor_viewer_id: reviewed.review.actor_viewer_id,
     decided_at: reviewed.review.decided_at, source_fingerprint: entry.source_fingerprint }
 }
 export function unresolvedBiometricOvertime(data, dates) {

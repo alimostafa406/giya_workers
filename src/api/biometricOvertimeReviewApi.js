@@ -8,7 +8,8 @@ export async function getBiometricOvertimeReviews(start, end = start) {
 }
 export async function decideBiometricOvertime(date, rows, decision) {
   const { data, error } = await getSupabaseClient().rpc('admin_decide_biometric_overtime', { p_date: date,
-    p_entries: rows.map((row) => ({ worker_id: row.worker.id, minutes: row.minutes, decision,
+    p_entries: rows.map((row) => ({ worker_id: row.worker.id, minutes: row.payableMinutes ?? row.approvedMinutes ?? row.minutes, decision,
+      original_biometric_minutes: row.minutes, note: row.adjustmentNote || '',
       source_fingerprint: row.source_fingerprint, expected_version: row.review?.version || 0 })) })
   if (error) throw error
   return data
