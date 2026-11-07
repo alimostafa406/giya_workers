@@ -3,6 +3,7 @@ import { getBiometricOvertimeReviews, decideBiometricOvertime } from '../api/bio
 import { biometricReviewRows, biometricReviewTitle, formatBiometricOvertimeDuration as hours } from '../utils/biometricOvertimeReview'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
 import { getErrorMessage } from '../api/axios'
+import { parseWeeklyDuration } from '../utils/weeklyManualOvertime'
 
 const labels = { pending: 'قيد المراجعة', approved: 'موافق عليه', rejected: 'مرفوض' }
 const dayAfter = (date, offset) => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate()+offset); return d.toISOString().slice(0,10) }
@@ -15,8 +16,9 @@ export default function BiometricOvertimeReview({ report } = {}) {
   const [sources, setSources] = useState([]), [team, setTeam] = useState(''), [status, setStatus] = useState('pending')
   const [selected, setSelected] = useState([]), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false)
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [reload, setReload] = useState(0)
+  const [adjustments, setAdjustments] = useState({})
   useEffect(() => {
-    let active = true; setLoading(true); setSources([]); setSelected([])
+    let active = true; setLoading(true); setSources([]); setSelected([]); setAdjustments({})
     getBiometricOvertimeReviews(date).then((rows) => { if(active) setSources(rows) }).catch((e) => { if(active) setError(getErrorMessage(e)) }).finally(() => { if(active) setLoading(false) })
     return () => { active = false }
   }, [date,reload])
@@ -32,6 +34,16 @@ export default function BiometricOvertimeReview({ report } = {}) {
   const changeDate = (next) => { if(next && next<=today && !saving) { setDate(next); setMessage(''); setError('') } }
   const decide = async (entries, decision) => {
     if (!entries.length || saving || loading) return
+    entries = entries.map(row => {
+      const draft = adjustments[row.worker.id]
+      if (!draft) return row
+      const text = draft.duration.trim()
+      const minuteText = text.match(/^(\d+)\s*min$/i)
+      const minutes = minuteText ? Number(minuteText[1]) : parseWeeklyDuration(text.replace('h', ':'))
+      return { ...row, payableMinutes: minutes, adjustmentNote: draft.note || '' }
+    })
+    if (entries.some(row => row.payableMinutes != null && (!Number.isInteger(row.payableMinutes) || row.payableMinutes < 1 || row.payableMinutes > 1440))
+      || entries.some(row => adjustments[row.worker.id] && row.payableMinutes == null)) { setError('أدخل مدة صحيحة مثل 1:00 أو 45 min'); return }
     setSaving(true); setError(''); setMessage('')
     try {
       // Every chunk is atomic; retain earlier successful decisions if a later chunk fails.
@@ -42,7 +54,10 @@ export default function BiometricOvertimeReview({ report } = {}) {
           const entry = chunk.find((r) => String(r.worker.id) === String(source.worker.id))
           if (!entry) return source
           const result = saved?.find((r) => String(r.worker_id) === String(source.worker.id))
-          return { ...source, review: { ...source.review, decision, minutes: entry.minutes, source_fingerprint: entry.source_fingerprint, version: result?.version ?? (source.review?.version || 0)+1 } }
+          const minutes = entry.payableMinutes ?? entry.approvedMinutes ?? entry.minutes
+          return { ...source, review: { ...source.review, decision, minutes, source_fingerprint: entry.source_fingerprint,
+            history: [{ minutes, original_biometric_minutes: entry.minutes, source_fingerprint: entry.source_fingerprint }],
+            version: result?.version ?? (source.review?.version || 0)+1 } }
         }))
       }
       setMessage('تم حفظ القرارات'); setSelected([])
@@ -63,7 +78,7 @@ export default function BiometricOvertimeReview({ report } = {}) {
       <button type="button" className="btn-secondary" onClick={()=>setReload((n)=>n+1)}>إعادة التحميل</button>
       {report && <button type="button" className="btn-secondary" disabled={busy} onClick={()=>window.print()}>طباعة</button>}
     </fieldset>
-    <div className="grid gap-3 sm:grid-cols-4">{[['pending','بانتظار المراجعة'],['approved','موافق عليه'],['rejected','مرفوض']].map(([key,label])=><p key={key} className="surface-card p-3">{label}: <strong>{rows.filter((r)=>r.status===key).length}</strong></p>)}<p className="surface-card p-3">إجمالي الساعات الموافق عليها: <bdi dir="ltr">{hours(rows.filter((r)=>r.status==='approved').reduce((sum,r)=>sum+r.minutes,0))}</bdi></p></div>
+    <div className="grid gap-3 sm:grid-cols-4">{[['pending','بانتظار المراجعة'],['approved','موافق عليه'],['rejected','مرفوض']].map(([key,label])=><p key={key} className="surface-card p-3">{label}: <strong>{rows.filter((r)=>r.status===key).length}</strong></p>)}<p className="surface-card p-3">إجمالي الساعات الموافق عليها: <bdi dir="ltr">{hours(rows.filter((r)=>r.status==='approved').reduce((sum,r)=>sum+r.approvedMinutes,0))}</bdi></p></div>
     {(error || report?.error) && <p role="alert">{error || report.error}</p>}{message && <p role="status">{message}</p>}
     {busy ? <p role="status">جاري التحميل...</p> : <fieldset disabled={saving} className="surface-card p-3">
       <div className="biometric-review-controls mb-3 flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={()=>setSelected((old)=>[...new Set([...old,...visible.filter((r)=>!r.locked).map((r)=>r.worker.id)])])}>اختيار الكل</button>
@@ -73,7 +88,15 @@ export default function BiometricOvertimeReview({ report } = {}) {
       <div className="overflow-x-auto"><table className="w-full border-collapse text-sm"><thead><tr>{['اختيار','العامل','الكود',...(report ? ['رقم البصمة'] : []),'الفريق','وقت الدخول','وقت الخروج','الإضافي المحسوب من البصمة',...(report ? ['ملاحظات'] : []),'الحالة','القرار'].map((h)=><th key={h} className={`border p-2 text-start ${['اختيار','القرار'].includes(h)?'biometric-review-controls':''}`}>{h}</th>)}</tr></thead><tbody>
       {visible.map((r)=><tr key={r.worker.id}><td className="biometric-review-controls border p-2"><input type="checkbox" aria-label={r.worker.full_name} disabled={r.locked} checked={selected.includes(r.worker.id)} onChange={()=>setSelected((old)=>old.includes(r.worker.id)?old.filter((id)=>id!==r.worker.id):[...old,r.worker.id])} /></td>
       <td className="border p-2">{r.worker.full_name}{r.worker.payment_type==='monthly'&&<small className="block">شهري — إضافي فقط</small>}</td><td className="border p-2">{r.worker.employee_code || '—'}</td>{report && <td className="border p-2"><bdi dir="ltr">{r.display.biometricId}</bdi></td>}<td className="border p-2">{r.worker.team_name}</td>
-      <td className="border p-2"><bdi dir="ltr">{r.display?.checkIn || r.attendance.check_in||'—'}</bdi></td><td className="border p-2"><bdi dir="ltr">{r.display?.checkOut || r.attendance.check_out||'—'}</bdi></td><td className="border p-2"><bdi dir="ltr">{hours(r.minutes)}</bdi></td>{report && <td className="border p-2">{r.display.note}</td>}
+      <td className="border p-2"><bdi dir="ltr">{r.display?.checkIn || r.attendance.check_in||'—'}</bdi></td><td className="border p-2"><bdi dir="ltr">{r.display?.checkOut || r.attendance.check_out||'—'}</bdi></td><td className="border p-2"><bdi dir="ltr">{hours(r.minutes)}</bdi>
+        <label className="biometric-review-controls mt-2 block">الوقت الإضافي المعتمد
+          <input className="input-base" dir="ltr" aria-label={`الوقت الإضافي المعتمد ${r.worker.full_name}`} disabled={r.locked}
+            value={adjustments[r.worker.id]?.duration ?? hours(r.approvedMinutes)}
+            onChange={e=>setAdjustments(old=>({...old,[r.worker.id]:{...old[r.worker.id],duration:e.target.value}}))} />
+        </label>
+        <input className="biometric-review-controls input-base mt-1" aria-label={`سبب التعديل ${r.worker.full_name}`} placeholder="سبب / ملاحظات" maxLength={1000} disabled={r.locked}
+          value={adjustments[r.worker.id]?.note || ''} onChange={e=>setAdjustments(old=>({...old,[r.worker.id]:{duration:hours(r.approvedMinutes),...old[r.worker.id],note:e.target.value}}))} />
+      </td>{report && <td className="border p-2">{r.display.note}</td>}
       <td className="border p-2">{r.stale ? 'يحتاج مراجعة من جديد' : labels[r.status] || '—'}{r.stale&&<small className="block text-amber-700">تغير دليل البصمة — يلزم إعادة المراجعة</small>}{r.locked&&r.status!=='unavailable'&&<small className="block">فترة الرواتب مقفلة</small>}</td>
       <td className="biometric-review-controls border p-2">{r.status!=='unavailable'&&<div className="flex gap-2"><button type="button" className="btn-primary" disabled={r.locked} onClick={()=>decide([r],'approved')}>موافقة</button><button type="button" className="btn-secondary" disabled={r.locked} onClick={()=>decide([r],'rejected')}>رفض</button></div>}</td></tr>)}
       {!visible.length&&<tr><td colSpan={report ? 11 : 9} className="p-4 text-center">لا يوجد وقت إضافي مطابق للبحث</td></tr>}</tbody></table></div>
