@@ -11,7 +11,7 @@ const worker = (payment_type = 'weekly') => ({ id: 'w', full_name: 'Late worker'
   staff_classification: 'normal', payroll_compensation: { daily_rate: 10000, daily_transport_allowance: 6000, currency_code: 'CDF', overtime_rate_per_hour: 1000, monthly_salary: 999999 } })
 const attendance = { id: 'a', worker_id: 'w', attendance_date: date, attendance_source: 'biometric', status: 'present', attendance_day_fraction: 1, check_in: '08:35:19', check_out: '17:00:00' }
 const source = () => ({ worker: worker(), attendance: { ...attendance }, evidence: { scheduled_start: `${date}T08:00:00`, raw_check_in: `${date}T08:35:19`, raw_minutes: 35, source_fingerprint: 'fingerprint' },
-  review: { decision: 'approved', version: 1, raw_minutes: 35, approved_minutes: 30, deduction_amount: 2000, source_fingerprint: 'fingerprint' },
+  review: { decision: 'approved', version: 1, raw_minutes: 35, approved_minutes: 30, automatic_deduction: 7727.92, adjusted_deduction: 2000, deduction_amount: 2000, source_fingerprint: 'fingerprint' },
   payroll_source: { date, version: 1, source_fingerprint: 'fingerprint', approved_minutes: 30, deduction_amount: 2000, actor: 'admin', decided_at: '2026-11-11T10:00:00+00:00' } })
 const data = (payment) => ({ workers: [worker(payment)], attendance: [{ ...attendance }], rules: {}, holidays: [], runs: [], payrollLines: [], latenessReviews: [source()] })
 

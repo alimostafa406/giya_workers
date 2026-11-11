@@ -15,7 +15,7 @@ begin
  perform public.admin_decide_biometric_lateness('2026-11-11',jsonb_build_array(e));
  select * into strict r from public.worker_biometric_lateness_review where worker_id=(s->'worker'->>'id')::uuid and attendance_date='2026-11-11';
  assert r.deduction_amount=7727.92 and r.raw_minutes=155 and r.approved_minutes=155,'Server accepted client money or rounded rate early';
- assert r.history->-1->>'mode'='automatic_daily_wage_v1' and r.actor=auth.uid(),'Automatic audit/actor lost';
+ assert r.history->-1->'calculation'->>'mode'='automatic_daily_wage_v1' and r.actor=auth.uid(),'Automatic audit/actor lost';
  e:=e||jsonb_build_object('approved_minutes',120,'expected_version',r.version);
  perform public.admin_decide_biometric_lateness('2026-11-11',jsonb_build_array(e));
  select * into strict r from public.worker_biometric_lateness_review where worker_id=r.worker_id and attendance_date=r.attendance_date;
