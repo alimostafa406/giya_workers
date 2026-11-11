@@ -5,10 +5,11 @@ do $$
 declare source jsonb; e jsonb; a public.attendance; w public.workers; evidence jsonb;
  saved public.worker_biometric_lateness_review; line public.payroll_line;
  d date; clk time; expected integer; before_att text; before_events text; before_pay text; actor_id text:=auth.uid()::text;
- lock_id uuid; lock_status text; monday date;
+ lock_id uuid; lock_status text; monday date; calculated_amount numeric;
 begin
  select s into strict source from jsonb_array_elements(public.admin_get_biometric_lateness_review(current_date-31,current_date)) s
  where not (s->>'locked')::boolean and (s->'evidence'->>'raw_minutes')::integer>0
+ and s->'calculation'->>'unavailable_reason' is null
  and exists(select 1 from public.worker_payroll_compensation c where c.worker_id=(s->'worker'->>'id')::uuid and c.currency_code='CDF'
    and c.effective_from<=(s->'attendance'->>'attendance_date')::date and (c.effective_to is null or c.effective_to>=(s->'attendance'->>'attendance_date')::date)) limit 1;
  d:=(source->'attendance'->>'attendance_date')::date;
@@ -33,16 +34,19 @@ begin
  assert (evidence->>'raw_minutes')::integer=440 and (evidence->>'raw_check_in')::date=a.attendance_date+1,'Night cross-midnight date incorrect';
  assert evidence->>'source_fingerprint'<>source->'evidence'->>'source_fingerprint','Changed evidence fingerprint did not change';
 
+ calculated_amount:=round((source->'calculation'->>'daily_wage')::numeric/(source->'calculation'->>'scheduled_paid_minutes')::numeric*30,2);
  e:=jsonb_build_object('worker_id',source->'worker'->>'id','decision','approved','approved_minutes',30,'deduction_amount',2000,
+   'calculation_fingerprint',source->'calculation'->>'fingerprint',
    'note','Rollback-only lateness regression','source_fingerprint',source->'evidence'->>'source_fingerprint','expected_version',coalesce((source->'review'->>'version')::integer,0));
  perform public.admin_decide_biometric_lateness(d,jsonb_build_array(e));
  select * into strict saved from public.worker_biometric_lateness_review where worker_id=(e->>'worker_id')::uuid and attendance_date=d;
- assert saved.approved_minutes=30 and saved.deduction_amount=2000 and saved.actor=auth.uid(),'Approval value or actor lost';
+ assert saved.approved_minutes=30 and saved.deduction_amount=calculated_amount and saved.actor=auth.uid(),'Automatic approval value or actor lost';
+ assert saved.calculation_snapshot->>'mode'='automatic_daily_wage_v1','Calculation basis not audited';
  assert saved.raw_minutes=(source->'evidence'->>'raw_minutes')::integer and saved.raw_check_in=(source->'evidence'->>'raw_check_in')::timestamp,'Raw evidence overwritten';
  assert saved.history->-1->>'note'=e->>'note' and saved.history->-1->>'actor'=actor_id,'Audit lost';
  line.worker_id:=saved.worker_id; line.attendance_period_start:=d; line.attendance_period_end:=d; line.currency_code_snapshot:='CDF';
  line.attendance_summary_snapshot:=jsonb_build_object('lateness_deductions',private.lateness_payroll_sources(saved.worker_id,d,d,'CDF'));
- line.calculation_snapshot:='{"late_deduction":2000,"late_before_amount":5000}'; line.deduction_amount:=2000; line.final_amount:=3000;
+ line.calculation_snapshot:=jsonb_build_object('late_deduction',calculated_amount,'late_before_amount',5000); line.deduction_amount:=calculated_amount; line.final_amount:=5000-calculated_amount;
  perform private.assert_lateness_payroll_line(line);
  begin
    perform public.admin_decide_biometric_lateness(d,jsonb_build_array(e)); raise exception 'Stale version accepted';
@@ -53,7 +57,8 @@ begin
  exception when raise_exception then if sqlerrm<>'Biometric evidence changed; reload and review again' then raise; end if; end;
  e:=e||jsonb_build_object('source_fingerprint',source->'evidence'->>'source_fingerprint');
  begin
-   perform public.admin_decide_biometric_lateness(d,jsonb_build_array(e,e||jsonb_build_object('worker_id','ffffffff-ffff-ffff-ffff-ffffffffffff'))); raise exception 'Invalid batch accepted';
+   perform public.admin_decide_biometric_lateness(d,jsonb_build_array(e,e||jsonb_build_object('worker_id','ffffffff-ffff-ffff-ffff-ffffffffffff','decision','rejected',
+     'calculation_fingerprint',private.lateness_calculation_context('ffffffff-ffff-ffff-ffff-ffffffffffff',d)->>'fingerprint'))); raise exception 'Invalid batch accepted';
  exception when raise_exception then if sqlerrm<>'Worker not eligible' then raise; end if; end;
  assert saved.version=(select version from public.worker_biometric_lateness_review where worker_id=saved.worker_id and attendance_date=d),'Partial batch write';
  e:=e||jsonb_build_object('approved_minutes',20,'deduction_amount',1000,'decision','rejected');

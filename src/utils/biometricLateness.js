@@ -1,7 +1,20 @@
 export const lateDeductionLabel = (language) => ({ ar: 'خصم التأخير', fr: 'Retenue de retard', en: 'Late deduction' })[language] || 'Late deduction'
 export const latenessStatus = (source) => source.review
-  ? source.review.source_fingerprint === source.evidence?.source_fingerprint ? source.review.decision : 'stale'
+  ? source.review.source_fingerprint === source.evidence?.source_fingerprint
+    && (source.review.calculation_snapshot?.mode !== 'automatic_daily_wage_v1'
+      || source.review.calculation_snapshot.fingerprint === source.calculation?.fingerprint) ? source.review.decision : 'stale'
   : 'pending'
+
+// Currency cents / scheduled minutes stays rational until the final rounding.
+// This mirrors PostgreSQL numeric round(...,2), including exact half-cent ties.
+export function automaticLateDeduction(context, approvedMinutes) {
+  const minutes = Number(approvedMinutes), paid = Number(context?.scheduled_paid_minutes), wage = Number(context?.daily_wage)
+  if (!context || context.unavailable_reason || context.daily_wage == null || !Number.isFinite(wage) || wage < 0
+    || !Number.isSafeInteger(Math.round(wage * 100)) || !Number.isInteger(paid) || paid <= 0
+    || String(approvedMinutes).trim() === '' || !Number.isInteger(minutes) || minutes < 0 || minutes > 1440) return null
+  const numerator = BigInt(Math.round(wage * 100)) * BigInt(minutes)
+  return Number((2n * numerator + BigInt(paid)) / (2n * BigInt(paid))) / 100
+}
 
 // Reviews contain a server-calculated, evidence-checked source projection. Match
 // the very same raw check-in loaded for payroll; never mutate either input.

@@ -7,9 +7,10 @@ export async function getBiometricLatenessReviews(start, end = start) {
   return data || []
 }
 
-export async function decideBiometricLateness(date, row, decision, minutes, amount, note) {
+export async function decideBiometricLateness(date, row, decision, minutes, note) {
   const { data, error } = await getSupabaseClient().rpc('admin_decide_biometric_lateness', { p_date: date, p_entries: [{
-    worker_id: row.worker.id, decision, approved_minutes: minutes, deduction_amount: amount, note,
+    worker_id: row.worker.id, decision, approved_minutes: minutes, note,
+    calculation_fingerprint: row.calculation?.fingerprint,
     source_fingerprint: row.evidence?.source_fingerprint, expected_version: row.review?.version || 0,
   }] })
   if (error) throw error
