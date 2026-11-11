@@ -21,7 +21,7 @@ it.each(['approved', 'rejected'])('visible controls recalculate automatic CDF am
   fireEvent.change(screen.getByRole('textbox', { name: 'سبب الخصم Worker' }), { target: { value: 'Confirmed deduction' } })
   expect(screen.getByText('35 min')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: decision === 'approved' ? 'موافقة' : 'رفض', exact: true }))
-  await waitFor(() => expect(mock.decide).toHaveBeenCalledWith('2026-11-11', row, decision, 30, 'Confirmed deduction'))
+  await waitFor(() => expect(mock.decide).toHaveBeenCalledWith('2026-11-11', row, decision, 30, 'Confirmed deduction', { adjusted_deduction: null, adjustment_source: 'single' }))
   expect(JSON.stringify(row)).toBe(before)
 })
 it('locked review disables decisions and edits; stale review is clearly marked; historical date is requested', async () => {
@@ -53,5 +53,5 @@ it('missing canonical monthly wage stays visible without inventing a deduction; 
   expect(screen.getByRole('button', { name: 'موافقة', exact: true }).disabled).toBe(true)
   expect(screen.getByLabelText('خصم التأخير المحسوب Worker').textContent).toBe('—')
   fireEvent.click(screen.getByRole('button', { name: 'رفض', exact: true }))
-  await waitFor(() => expect(mock.decide).toHaveBeenCalledWith('2026-11-11', row, 'rejected', 35, ''))
+  await waitFor(() => expect(mock.decide).toHaveBeenCalledWith('2026-11-11', row, 'rejected', 35, '', { adjusted_deduction: null, adjustment_source: 'single' }))
 })
