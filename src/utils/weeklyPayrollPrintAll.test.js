@@ -47,7 +47,7 @@ describe('main weekly payroll print all teams', () => {
     expect(html.indexOf('MATAMATA')).toBeGreaterThan(peinture)
     expect(html).toMatch(/21,000/)
     expect(html).toMatch(/12,000/)
-    expect(html).toMatch(/<th>Transport<\/th><th>Total<\/th>/)
+    expect(html).toMatch(/<th>Transport<\/th><th>Late deduction<\/th><th>Total<\/th>/)
     expect(html).toMatch(/<td class="final">[^<]*10,000/)
     expect(html).toMatch(/1h00/)
     expect(html).not.toMatch(/Morning Overtime|morningOvertime/)

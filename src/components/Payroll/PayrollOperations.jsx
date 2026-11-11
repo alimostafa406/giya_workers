@@ -70,6 +70,7 @@ export default function PayrollOperations() {
       payableOvertimeDays: summary.payable_overtime_days || [],
       monthlyOvertimeOnly: summary.monthly_overtime_only === true,
       missingRateBlocker: Number(calculation.evening_overtime_minutes || 0) > 0 && stored.compensation_snapshot?.overtime_rate_per_hour == null,
+      lateDeduction: Number(calculation.late_deduction || 0), latenessDeductions: summary.lateness_deductions || [],
       term: stored.compensation_snapshot || {},
       rules: stored.rule_snapshot || {},
       paymentType: stored.payment_type_snapshot,

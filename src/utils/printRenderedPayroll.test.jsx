@@ -24,7 +24,7 @@ it.each(['ar','fr'])('%s print clones the current table cells/order/statuses/tot
  expect(doc.documentElement.lang).toBe(language)
  expect(doc.documentElement.dir).toBe(language==='ar'?'rtl':'ltr')
  const widths=[...doc.querySelectorAll('colgroup col')].map(col=>parseFloat(col.style.width))
- expect(widths).toHaveLength(12)
+ expect(widths).toHaveLength(13)
  expect(widths.reduce((sum,width)=>sum+width,0)).toBe(100)
  expect(widths[0]).toBeGreaterThan(widths[1])
  expect(widths[7]).toBeGreaterThan(widths[8])

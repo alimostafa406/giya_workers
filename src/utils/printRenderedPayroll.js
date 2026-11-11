@@ -14,12 +14,12 @@ export function renderedPayrollTableHtml(element) {
   table.querySelectorAll('[class]').forEach(node=>node.removeAttribute('class'))
   table.removeAttribute('class')
   // Column sizing is presentation only; preserve every original cell/value.
-  // Worker + weekdays + wages/OT hours/OT amount/transport/final payable.
-  const dayCount = table.tHead?.rows[0]?.cells.length - 6
+  // Worker + weekdays + wages/OT hours/OT amount/transport/late deduction/net.
+  const dayCount = table.tHead?.rows[0]?.cells.length - 7
   if (dayCount > 0) {
     table.querySelectorAll('colgroup').forEach(node=>node.remove())
     const columns = table.ownerDocument.createElement('colgroup')
-    for (const width of [18,...Array(dayCount).fill(30/dayCount),11,7,11,10,13]) {
+    for (const width of [16,...Array(dayCount).fill(30/dayCount),10,7,10,9,7,11]) {
       const col = table.ownerDocument.createElement('col')
       col.style.width = `${width}%`
       columns.appendChild(col)

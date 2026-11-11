@@ -2,6 +2,7 @@ import { calculatePayrollLine, weeklyDates } from './payrollCalculations.js'
 import { isNormalPayrollWorkerOnDate, isWeeklyPayrollEligibleWorker, weeklyPayrollPeriodWorkers } from './weeklyPayrollEligibility.js'
 import { applyManualWeeklyOvertime } from './weeklyManualOvertime.js'
 import { calculateWeeklyOvertimePay } from './weeklyPayrollOvertime.js'
+import { applyWeeklyLateDeductions } from './biometricLateness.js'
 
 // One calculation path for preview, Save Draft and the payout report.
 // Monthly salary, wage deductions and cycle never enter a weekly payout.
@@ -18,10 +19,11 @@ export function calculateWeeklyPayoutLine(data, monday, worker) {
   const effective = applyManualWeeklyOvertime(line, (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(worker.id)), data.outsideWorkMovements || [], data.biometricOvertimeReviews || [])
   // Keep the persisted legacy marker for snapshot compatibility: it now denotes
   // a monthly worker's weekly supplement (transport + OT), never monthly salary.
-  return monthly ? { ...effective, paymentType: 'monthly', monthlyOvertimeOnly: true,
+  const payout = monthly ? { ...effective, paymentType: 'monthly', monthlyOvertimeOnly: true,
     baseAmount: 0, attendanceWage: 0, holidayAmount: 0,
     monthlySalary: 0, dailyValue: 0, absenceDeduction: 0, halfDayDeduction: 0,
     finalAmount: Math.round((effective.transportAmount + effective.overtimeAmount) * 100) / 100 } : effective
+  return applyWeeklyLateDeductions(payout, data.latenessReviews || [])
 }
 
 export function weeklyPayoutLines(data, monday) {
@@ -59,6 +61,7 @@ export function assertWeeklyPayoutDraftReady(stored, calculated) {
       || old.compensation_snapshot?.overtime_rate_per_hour !== line.term?.overtime_rate_per_hour
       || old.currency_code_snapshot !== line.currency
       || Number(old.final_amount) !== Number(line.finalAmount)
+      || JSON.stringify(snapshot.lateness_deductions || []) !== JSON.stringify(line.latenessDeductions || [])
       || Boolean(snapshot.monthly_overtime_only) !== Boolean(line.monthlyOvertimeOnly)
       || (snapshot.weekly_manual_overtime_override_minutes ?? null) !== (line.weeklyManualOverrideMinutes ?? null)
       || JSON.stringify(snapshot.payable_overtime_days || []) !== JSON.stringify(line.payableOvertimeDays || [])) {
@@ -80,6 +83,6 @@ export function assertWeeklyPayoutSnapshotComplete(stored) {
         || !Number.isFinite(Number(line.compensation_snapshot.daily_transport_allowance))
         || Number(line.transport_amount) !== Math.round(Number(line.calculation_snapshot?.transport_days) * Number(line.compensation_snapshot.daily_transport_allowance) * 100) / 100))
       || (minutes > 0 && (rate == null || rate === '' || !Number.isFinite(Number(rate)) || Number(rate) < 0))
-      || (summary.monthly_overtime_only && (Number(line.base_amount) !== 0 || Number(line.transport_amount) < 0 || !Number.isFinite(Number(line.transport_amount)) || Number(line.holiday_amount) !== 0 || Number(line.final_amount) !== Math.round((Number(line.transport_amount) + Number(line.overtime_amount)) * 100) / 100))
+      || (summary.monthly_overtime_only && (Number(line.base_amount) !== 0 || Number(line.transport_amount) < 0 || !Number.isFinite(Number(line.transport_amount)) || Number(line.holiday_amount) !== 0 || Number(line.final_amount) !== Math.round((Number(line.transport_amount) + Number(line.overtime_amount) - Number(line.calculation_snapshot?.late_deduction || 0)) * 100) / 100))
   })) throw new Error('Weekly payout snapshot is incomplete. Reopen Reviewed payroll as Draft and refresh before finalizing.')
 }
