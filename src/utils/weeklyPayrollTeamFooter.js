@@ -9,9 +9,10 @@ export const weeklyPayrollTeamFooter = (lines = []) => {
   lines.forEach((line) => {
     eveningOvertimeMinutes += weeklyPayrollOvertimeForLine(line).eveningOvertimeMinutes
     const currency = line.currency || line.term?.currency_code || 'CDF'
-    const current = byCurrency[currency] || { transport: 0, overtimePay: 0, payrollTotal: 0 }
+    const current = byCurrency[currency] || { transport: 0, overtimePay: 0, lateDeduction: 0, payrollTotal: 0 }
     current.transport += amount(line.transportAmount)
     current.overtimePay += amount(line.overtimeAmount)
+    current.lateDeduction += amount(line.lateDeduction)
     current.payrollTotal += amount(line.finalAmount)
     byCurrency[currency] = current
   })

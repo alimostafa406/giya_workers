@@ -52,9 +52,9 @@ it('team and grand totals sum manual minutes, canonical base and payable by curr
   d.attendance.push(row('c', manual(30)))
   const report = teamWeeklyReport(d, week), siraj = report.groups.find((g) => g.name === 'Siraj')
   expect(siraj.lines).toHaveLength(2); expect(siraj.totals.minutes).toBe(150)
-  expect(siraj.totals.currencies.CDF).toEqual({ basePay: 200, transportAmount: 20, overtimeAmount: 50, finalAmount: 270 })
+  expect(siraj.totals.currencies.CDF).toEqual({ lateDeduction: 0, basePay: 200, transportAmount: 20, overtimeAmount: 50, finalAmount: 270 })
   expect(report.totals.workers).toBe(3); expect(report.totals.workDays).toBe(3); expect(report.totals.minutes).toBe(330)
-  expect(report.totals.currencies.CDF).toEqual({ basePay: 300, transportAmount: 30, overtimeAmount: 110, finalAmount: 440 })
+  expect(report.totals.currencies.CDF).toEqual({ lateDeduction: 0, basePay: 300, transportAmount: 30, overtimeAmount: 110, finalAmount: 440 })
 })
 it('inactive empty-week and special staff are excluded; eligible monthly workers stay visible', () => {
   const d = data(); d.workers.push(worker('inactive', 'Siraj', { is_active: false }), worker('monthly', 'Siraj', { payment_type: 'monthly' }), worker('foreign', 'Siraj', { staff_classification: 'special_staff' }))
@@ -109,13 +109,13 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(screen.queryByRole('combobox')).toBeNull()
   const teams = screen.getAllByRole('region', { name: /^تقرير الفريق:/ })
   expect(teams).toHaveLength(2)
-  const summaryColumns = ['العامل', 'الكود', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'بدل النقل', 'إجمالي القبض']
+  const summaryColumns = ['العامل', 'الكود', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'بدل النقل', 'خصم التأخير', 'إجمالي القبض']
   for (const team of teams) {
     expect(within(team).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(summaryColumns)
     const table = within(team).getByRole('table')
     const totalRow = within(table).getByRole('row', { name: /^إجمالي الفرقة/ })
     expect(totalRow.parentElement.tagName).toBe('TFOOT')
-    expect(totalRow.children).toHaveLength(15)
+    expect(totalRow.children).toHaveLength(16)
     expect(table.tFoot.rows).toHaveLength(1)
     expect(team.querySelector('.team-report-totals')).toBeNull()
     const expectedGroup = teamWeeklyReport(fixture, week).groups.find((g) => team.getAttribute('aria-label') === `تقرير الفريق: ${g.name}`)
@@ -149,8 +149,8 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(teamReportPrintCss).toContain('font-size:10pt')
   expect(teamReportPrintCss).toContain('width:100%;max-width:none;min-width:0;height:auto;min-height:0')
   expect(teamReportPrintCss).not.toMatch(/scale\(|zoom:|\d+vh|height:\s*100%|font-size:\s*10px/)
-  const widths=[13,4,...Array(6).fill(4.5),4,4,6,10,10,10,12]
-  expect(widths).toHaveLength(15)
+  const widths=[13,4,...Array(6).fill(4.5),4,4,6,8,8,8,7,11]
+  expect(widths).toHaveLength(16)
   expect(widths.reduce((sum,width)=>sum+width,0)).toBe(100)
   expect(html).not.toContain('font-size:10px')
   expect(teamReportPrintCss).toContain('.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}')
@@ -159,7 +159,7 @@ it('all eligible teams render together; one print includes every worker and the 
   const summary = screen.getByRole('region', { name: 'ملخص أجور جميع الفرق' })
   const summaryTable = within(summary).getByRole('table')
   expect([...summaryTable.tHead.querySelectorAll('th')].map((h) => h.textContent))
-    .toEqual(['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي بدل النقل', 'إجمالي القبض'])
+    .toEqual(['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي بدل النقل', 'خصم التأخير', 'إجمالي القبض'])
   expect(within(summaryTable).getByRole('row', { name: /^الإجمالي العام/ }).parentElement.tagName).toBe('TFOOT')
 })
 it('print popup failure is reported and the admin route/navigation are wired', () => {
@@ -177,18 +177,18 @@ const monthlyWorker = (id = 'm', extra = {}) => worker(id, 'Siraj', {
 it('monthly manual overtime appears with zero base and overtime-only total alongside normal weekly pay', () => {
   const d = data([row('a', manual(120)), row('m', manual(360))]); d.workers = [worker('a'), monthlyWorker()]
   const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
-  expect(report.lines.find((l) => l.worker.id === 'a')).toMatchObject({ basePay: 100, transportAmount: 10, overtimeAmount: 40, finalAmount: 150 })
+  expect(report.lines.find((l) => l.worker.id === 'a')).toMatchObject({ lateDeduction: 0, basePay: 100, transportAmount: 10, overtimeAmount: 40, finalAmount: 150 })
   expect(report.lines.find((l) => l.worker.id === 'm')).toMatchObject({ monthlyOvertimeOnly: true, minutes: 360, basePay: 0, overtimeAmount: 15, finalAmount: 15 })
-  expect(report.groups[0].totals.currencies.CDF).toEqual({ basePay: 100, transportAmount: 10, overtimeAmount: 55, finalAmount: 165 })
-  expect(report.totals.currencies.CDF).toEqual({ basePay: 100, transportAmount: 10, overtimeAmount: 55, finalAmount: 165 })
+  expect(report.groups[0].totals.currencies.CDF).toEqual({ lateDeduction: 0, basePay: 100, transportAmount: 10, overtimeAmount: 55, finalAmount: 165 })
+  expect(report.totals.currencies.CDF).toEqual({ lateDeduction: 0, basePay: 100, transportAmount: 10, overtimeAmount: 55, finalAmount: 165 })
   expect(JSON.stringify(d)).toBe(before)
 })
 it('monthly zero extras remain visible without paying unapproved biometric overtime', () => {
   const d = data([row('a'), row('m', { check_out: '23:00' })]); d.workers = [worker('a'), monthlyWorker()]
   const report = teamWeeklyReport(d, week)
   expect(report.lines).toHaveLength(2)
-  expect(report.lines[1]).toMatchObject({ basePay: 0, minutes: 0, finalAmount: 0 })
-  expect(report.lines[0]).toMatchObject({ basePay: 100, transportAmount: 10, overtimeAmount: 0, finalAmount: 110 })
+  expect(report.lines[1]).toMatchObject({ lateDeduction: 0, basePay: 0, minutes: 0, finalAmount: 0 })
+  expect(report.lines[0]).toMatchObject({ lateDeduction: 0, basePay: 100, transportAmount: 10, overtimeAmount: 0, finalAmount: 110 })
 })
 it('monthly override replaces daily sum, zero retains worker, and clearing restores daily sum', () => {
   const d = data([row('m', manual(360))]); d.workers = [monthlyWorker()]
@@ -205,12 +205,12 @@ it('monthly salary, daily wage, transport, holiday multipliers and adjustments c
   d.payrollAdjustments = [{ payroll_line_id: 'monthly-line', adjustment_type: 'bonus', amount: 10000 }]
   const first = teamWeeklyReport(d, week).lines[0]
   d.workers[0].monthly_salary = 900000; d.workers[0].payroll_compensation.monthly_salary = 900000
-  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ basePay: 0, overtimeAmount: first.overtimeAmount, finalAmount: first.finalAmount })
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ lateDeduction: 0, basePay: 0, overtimeAmount: first.overtimeAmount, finalAmount: first.finalAmount })
 })
 it('all-team summary includes monthly OT money only and keeps currencies separate', () => {
   const d = data([row('a', manual(120)), row('m', manual(360))]); d.workers = [worker('a'), monthlyWorker('m', { team_id: 'Zarour', team_name: 'Zarour' })]
   const report = teamWeeklyReport(d, week)
-  expect(report.groups.find((g) => g.name === 'Zarour').totals.currencies.CDF).toEqual({ basePay: 0, transportAmount: 0, overtimeAmount: 15, finalAmount: 15 })
+  expect(report.groups.find((g) => g.name === 'Zarour').totals.currencies.CDF).toEqual({ lateDeduction: 0, basePay: 0, transportAmount: 0, overtimeAmount: 15, finalAmount: 15 })
   expect(report.totals.currencies.CDF.finalAmount).toBe(165)
 })
 it('recorded inactive monthly OT is retained; future-start and special-staff workers remain excluded', () => {
@@ -253,7 +253,7 @@ it('comprehensive grand totals never add CDF and USD payouts together', () => {
   const d = data([row('a', manual(120)), row('b', manual(60))])
   d.workers[1].payroll_compensation = { ...d.workers[1].payroll_compensation, currency_code: 'USD', overtime_rate_per_hour: 10 }
   const report = teamWeeklyReport(d, week)
-  expect(report.totals.currencies).toEqual({ CDF: { basePay: 100, transportAmount: 10, overtimeAmount: 40, finalAmount: 150 }, USD: { basePay: 100, transportAmount: 10, overtimeAmount: 10, finalAmount: 120 } })
+  expect(report.totals.currencies).toEqual({ CDF: { lateDeduction: 0, basePay: 100, transportAmount: 10, overtimeAmount: 40, finalAmount: 150 }, USD: { lateDeduction: 0, basePay: 100, transportAmount: 10, overtimeAmount: 10, finalAmount: 120 } })
   for (const currency of ['CDF', 'USD']) expect(report.totals.currencies[currency].finalAmount)
     .toBe(report.groups.reduce((sum, g) => sum + (g.totals.currencies[currency]?.finalAmount || 0), 0))
 })
@@ -365,7 +365,7 @@ it('FINAL outside-work overtime is rendered in worker, team, grand totals and th
   const workerRow = within(team).getByRole('row', { name: /^Worker a/ })
   expect(workerRow.children[10].textContent).toBe('2.5 h')
   expect(workerRow.children[12].textContent).toContain('50.00')
-  expect(workerRow.children[14].textContent).toContain('160.00')
+  expect(workerRow.children[15].textContent).toContain('160.00')
   expect(team.querySelector('tfoot').textContent).toContain('2.5 h')
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]
@@ -379,8 +379,8 @@ it.each([[30, 1.25], [300, 12.5], [1500, 62.5]])('monthly weekly override %s min
   const before = JSON.stringify(d), report = teamWeeklyReport(d, week)
   expect(report.lines).toHaveLength(1)
   expect(report.lines[0]).toMatchObject({ minutes, monthlyOvertimeOnly: true, basePay: 0, overtimeAmount: amount, finalAmount: amount })
-  expect(report.groups[0].totals).toMatchObject({ workers: 1, minutes, currencies: { CDF: { basePay: 0, overtimeAmount: amount, finalAmount: amount } } })
-  expect(report.totals).toMatchObject({ workers: 1, minutes, currencies: { CDF: { basePay: 0, overtimeAmount: amount, finalAmount: amount } } })
+  expect(report.groups[0].totals).toMatchObject({ workers: 1, minutes, currencies: { CDF: { lateDeduction: 0, basePay: 0, overtimeAmount: amount, finalAmount: amount } } })
+  expect(report.totals).toMatchObject({ workers: 1, minutes, currencies: { CDF: { lateDeduction: 0, basePay: 0, overtimeAmount: amount, finalAmount: amount } } })
   expect(JSON.stringify(d)).toBe(before)
 })
 it('all monthly overtime sources join weekly workers and reconcile every team and all-team total', () => {
@@ -394,11 +394,11 @@ it('all monthly overtime sources join weekly workers and reconcile every team an
   expect(report.lines.map((line) => line.worker.id).sort()).toEqual(['a', 'five', 'half', 'outside', 'twentyfive', 'zero'])
   expect(report.lines.find((line) => line.worker.id === 'a')).toEqual(originalWeekly)
   expect(report.groups.find((group) => group.id === 'Siraj').totals).toMatchObject({ workers: 4, minutes: 330,
-    currencies: { CDF: { basePay: 100, transportAmount: 10, overtimeAmount: 13.75, finalAmount: 123.75 } } })
+    currencies: { CDF: { lateDeduction: 0, basePay: 100, transportAmount: 10, overtimeAmount: 13.75, finalAmount: 123.75 } } })
   expect(report.groups.find((group) => group.id === 'Zarour').totals).toMatchObject({ workers: 2, minutes: 1650,
-    currencies: { CDF: { basePay: 0, overtimeAmount: 68.75, finalAmount: 68.75 } } })
+    currencies: { CDF: { lateDeduction: 0, basePay: 0, overtimeAmount: 68.75, finalAmount: 68.75 } } })
   expect(report.totals).toMatchObject({ workers: 6, minutes: 1980,
-    currencies: { CDF: { basePay: 100, transportAmount: 10, overtimeAmount: 82.5, finalAmount: 192.5 } } })
+    currencies: { CDF: { lateDeduction: 0, basePay: 100, transportAmount: 10, overtimeAmount: 82.5, finalAmount: 192.5 } } })
   for (const line of report.lines.filter((line) => line.monthlyOvertimeOnly)) {
     expect(line.basePay).toBe(0); expect(line.finalAmount).toBe(line.overtimeAmount)
   }
@@ -425,7 +425,7 @@ it('monthly 5h row appears on screen and print with six daily columns and no sal
   expect(workerRow.children[10].textContent).toBe('5 h')
   expect(workerRow.children[11].textContent).toContain('0.00')
   expect(workerRow.children[12].textContent).toContain('12.50')
-  expect(workerRow.children[14].textContent).toContain('12.50')
+  expect(workerRow.children[15].textContent).toContain('12.50')
   expect(within(team).getByText('شهري — بدل نقل وإضافي')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]

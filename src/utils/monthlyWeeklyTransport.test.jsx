@@ -30,16 +30,16 @@ it.each([[5000, 0, 30000], [0, 300, 12500], [5000, 300, 42500]])('monthly transp
   expect(payrollDraftEligibleLines('weekly', lines, end)).toEqual(lines)
   expect(line).toMatchObject({ baseAmount: 0, attendanceWage: 0, monthlySalary: 0, holidayAmount: 0, transportAmount: 6 * transport, eveningOvertimeMinutes: minutes, finalAmount: total })
   const report = teamWeeklyReport(d, week)
-  expect(report.lines[0]).toMatchObject({ basePay: 0, transportAmount: 6 * transport, minutes, finalAmount: total })
+  expect(report.lines[0]).toMatchObject({ lateDeduction: 0, basePay: 0, transportAmount: 6 * transport, minutes, finalAmount: total })
   expect(report.groups[0].totals.currencies.CDF.finalAmount).toBe(total)
-  expect(report.totals.currencies.CDF).toEqual({ basePay: 0, transportAmount: 6 * transport, overtimeAmount: minutes / 60 * 2500, finalAmount: total })
+  expect(report.totals.currencies.CDF).toEqual({ lateDeduction: 0, basePay: 0, transportAmount: 6 * transport, overtimeAmount: minutes / 60 * 2500, finalAmount: total })
   expect(JSON.stringify(d)).toBe(before)
 })
 it('monthly zero transport and OT stays in canonical payroll and report population', () => {
   const d = data(0, 0), lines = weeklyPayoutLines(d, week)
   expect(lines).toHaveLength(1)
   expect(payrollDraftEligibleLines('weekly', lines, end)).toEqual(lines)
-  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ basePay: 0, transportAmount: 0, minutes: 0, overtimeAmount: 0, finalAmount: 0 })
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ lateDeduction: 0, basePay: 0, transportAmount: 0, minutes: 0, overtimeAmount: 0, finalAmount: 0 })
 })
 it('inactive monthly workers with historical attendance remain visible; future empty weeks exclude them', () => {
   const d = data(0, 0); d.workers[0].is_active = false
@@ -56,7 +56,7 @@ it('zero-extra monthly rows persist in reviewed/finalized snapshots without addi
   d.payrollLines = saved; d.runs = [{ id: 'run', payment_type: 'weekly', weekly_period_start: week, weekly_period_end: end, status: 'paid' }]
   d.workers = []; d.attendance = []
   expect(teamWeeklyReport(d, week).lines).toHaveLength(1)
-  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ basePay: 0, minutes: 0, transportAmount: 0, finalAmount: 0 })
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ lateDeduction: 0, basePay: 0, minutes: 0, transportAmount: 0, finalAmount: 0 })
 })
 it('DIDIER #81 with missing matching monthly compensation shows six days and zero extras in payroll and print', async () => {
   const d = data(0, 0), currentWeek = '2026-10-26'
@@ -69,7 +69,7 @@ it('DIDIER #81 with missing matching monthly compensation shows six days and zer
   expect(lines[0]).toMatchObject({ paymentType: 'monthly', presentDays: 6, baseAmount: 0, transportAmount: 0, eveningOvertimeMinutes: 0, overtimeAmount: 0, finalAmount: 0 })
   const sheet = render(<LanguageProvider><WeeklyPayrollSheet lines={lines} dates={weeklyDates(currentWeek)} editable onEdit={() => {}} /></LanguageProvider>)
   const payrollRow = screen.getByText('DIDIER').closest('tr')
-  expect([...payrollRow.children].slice(-5).map(cell => cell.textContent)).toEqual(['0', '—', '—', '0', '0'])
+  expect([...payrollRow.children].slice(-6).map(cell => cell.textContent)).toEqual(['0', '—', '—', '0', '0', '0'])
   expect(sheet.container.querySelectorAll('tbody tr')).toHaveLength(1)
   cleanup(); window.history.replaceState({}, '', `/?date=${currentWeek}`); mocks.load.mockResolvedValue(d)
   const popup = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
@@ -77,7 +77,7 @@ it('DIDIER #81 with missing matching monthly compensation shows six days and zer
   render(<LanguageProvider><TeamWeeklyReport /></LanguageProvider>)
   await screen.findByText('DIDIER')
   const row = screen.getByText('DIDIER').closest('tr')
-  expect([...row.children].slice(10).map(cell => cell.textContent)).toEqual(['—', '0', '—', '0', '0'])
+  expect([...row.children].slice(10).map(cell => cell.textContent)).toEqual(['—', '0', '—', '0', '0', '0'])
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const printed = new DOMParser().parseFromString(popup.document.write.mock.calls[0][0], 'text/html')
   expect(printed.querySelectorAll('.team-report-team tbody tr')).toHaveLength(1)
@@ -98,7 +98,7 @@ it('canonical transport eligibility is reused for half-day/late/outside-work and
 })
 it('missing OT rate retains transport and hours, but does not invent overtime pay or complete net', () => {
   const d = data(5000, 300, null), line = teamWeeklyReport(d, week).lines[0]
-  expect(line).toMatchObject({ basePay: 0, transportAmount: 30000, minutes: 300, overtimeAmount: null, finalAmount: null, unresolved: true })
+  expect(line).toMatchObject({ lateDeduction: 0, basePay: 0, transportAmount: 30000, minutes: 300, overtimeAmount: null, finalAmount: null, unresolved: true })
   expect(() => assertWeeklyPayoutDraftReady([], weeklyPayoutLines(d, week))).toThrow()
 })
 it.each(['reviewed', 'finalized', 'paid'])('frozen %s monthly transport/OT/rate/net never follows later live changes', status => {
@@ -110,7 +110,7 @@ it.each(['reviewed', 'finalized', 'paid'])('frozen %s monthly transport/OT/rate/
   d.attendance = []; d.weeklyOvertimeOverrides = []; d.workers[0].is_active = false
   d.workers[0].payroll_compensation.daily_transport_allowance = 999999
   d.workers[0].payroll_compensation.overtime_rate_per_hour = 999999
-  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ basePay: 0, transportAmount: 30000, minutes: 300, overtimeAmount: 12500, finalAmount: 42500 })
+  expect(teamWeeklyReport(d, week).lines[0]).toMatchObject({ lateDeduction: 0, basePay: 0, transportAmount: 30000, minutes: 300, overtimeAmount: 12500, finalAmount: 42500 })
   expect(payload[0].compensation_snapshot.overtime_rate_per_hour).toBe(2500)
   expect(JSON.stringify(payload)).toBe(frozen)
 })
@@ -152,7 +152,7 @@ it('monthly transport is visible in main payroll and all-teams print, with zero 
   expect(row.children[11].textContent).toContain('0.00')
   expect(row.children[12].textContent).toContain('12,500')
   expect(row.children[13].textContent).toContain('30,000')
-  expect(row.children[14].textContent).toContain('42,500')
+  expect(row.children[15].textContent).toContain('42,500')
   expect(printed.body.textContent).not.toContain('900,000')
 })
 it.skipIf(!process.env.MONTHLY_PAYOUT_AUDIT_INPUT)('all production monthly workers including zero extras reach the canonical report', async () => {
