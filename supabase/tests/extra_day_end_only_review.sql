@@ -26,7 +26,7 @@ begin
  select value into strict r from jsonb_array_elements(rows) where value->'source'->>'configuration_error' is null
    and not exists(select 1 from public.worker_weekly_overtime_override o where o.worker_id=(value->>'worker_id')::uuid and o.minutes>0 and '2026-11-13'::date between o.week_start and o.week_start+5) limit 1;
  config:=r->'review'->'rule_snapshot';
- assert config->'session_settings'->>'mode'='end_only' and not (config->'session_settings' ? 'start'),'Start dependency remains';
+ assert config->'session_settings'->>'mode'='end_only_canonical' and not (config->'session_settings' ? 'start'),'Start dependency remains';
  select w.id into ordinary from public.workers w join public.attendance a on a.worker_id=w.id and a.attendance_date='2026-11-13'
    where w.team_id=team and a.check_out between time '17:00' and time '17:10' limit 1;
  assert ordinary is not null,'Missing ordinary fixture';

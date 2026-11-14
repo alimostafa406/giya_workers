@@ -59,3 +59,12 @@ it('manual/fabricated checkout and zero overtime are excluded; recorded inactive
  }
  const s=source();s.worker={...worker,is_active:false};expect(biometricReviewRows([s])).toHaveLength(1)
 })
+it('uses the backend canonical next-day checkout shared with Double OT, preserving seconds and raw clocks',()=>{
+ const s=source()
+ s.attendance={...s.attendance,check_out:'00:31:44',canonical_final_checkout_at:'2026-10-24T00:31:44+01:00'}
+ const before=JSON.stringify(s)
+ expect(biometricReviewRows([s])[0]).toMatchObject({minutes:451,status:'pending'})
+ expect(JSON.stringify(s)).toBe(before)
+ s.attendance.canonical_final_checkout_at='2026-10-23T00:31:44+01:00'
+ expect(biometricReviewRows([s])).toHaveLength(0)
+})
