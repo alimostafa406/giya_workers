@@ -1,6 +1,7 @@
 import { calculateWeeklyOvertimePay, isChauffeurNormalOvertimeExcluded } from './weeklyPayrollOvertime.js'
 import { outsideWorkOvertimeDays } from './outsideWorkPayableOvertime.js'
 import { approvedBiometricOvertime } from './biometricOvertimeReview.js'
+import { approvedExtraDays } from './extraDayOvertime.js'
 export const hasDailyManualOvertime = (row) => row?.manual_override === true
   && row.emergency_overtime_mode === 'manual_overtime_duration'
   && row.emergency_overtime_minutes != null && Number.isInteger(Number(row.emergency_overtime_minutes)) && Number(row.emergency_overtime_minutes) >= 0
@@ -14,7 +15,7 @@ export const parseWeeklyDuration = (value) => {
   const minutes = match ? Number(match[1]) * 60 + Number(match[2]) : NaN
   return Number.isInteger(minutes) && minutes >= 0 && minutes <= 8640 ? minutes : null
 }
-export function applyManualWeeklyOvertime(line, override, movements = [], biometricReviews = []) {
+export function applyManualWeeklyOvertime(line, override, movements = [], biometricReviews = [], extraDayReviews = []) {
   const dailyManualMinutes = (line.details || []).reduce((sum, d) => sum + manualReportMinutes(d.row), 0)
   const manualOnly = isChauffeurNormalOvertimeExcluded(line)
   const outsideDays = manualOnly ? [] : outsideWorkOvertimeDays(line.worker || {}, (line.details || []).map((d) => d.date), movements)
@@ -28,10 +29,15 @@ export function applyManualWeeklyOvertime(line, override, movements = [], biomet
       outside_work_minutes: outside?.minutes || 0, movement_ids: outside?.movement_ids || [] }
   })
   const weeklyManualOverrideMinutes = override?.minutes ?? null
-  const minutes = weeklyManualOverrideMinutes ?? payableOvertimeDays.reduce((sum, d) => sum + d.minutes, 0)
+  const extraDates=new Set(approvedExtraDays(line.worker,(line.details||[]).map(d=>d.date),extraDayReviews).map(p=>p.date))
+  for(const day of payableOvertimeDays) if(extraDates.has(day.date)) {
+    day.superseded_hourly_overtime={source:day.source,minutes:day.minutes}; day.minutes=0; day.source='extra_day_supersedes_hourly'
+  }
+  const extraDayConflict=extraDates.size>0 && Number(weeklyManualOverrideMinutes)>0
+  const minutes = extraDayConflict ? 0 : weeklyManualOverrideMinutes ?? payableOvertimeDays.reduce((sum, d) => sum + d.minutes, 0)
   const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: line.term?.overtime_rate_per_hour })
   return { ...line, ...overtime, overtimeRate: line.term?.overtime_rate_per_hour ?? null,
-    manualOvertimeOnly: true, payableOvertimeSourceVersion: 2, payableOvertimeDays, dailyManualMinutes, weeklyManualOverrideMinutes, weeklyManualOverrideVersion: override?.version || 0,
+    manualOvertimeOnly: true, payableOvertimeSourceVersion: 2, payableOvertimeDays, dailyManualMinutes, weeklyManualOverrideMinutes, weeklyManualOverrideVersion: override?.version || 0, extraDayConflict,
     overtimeAmount: overtime.overtimePay ?? 0,
     finalAmount: Math.round((Number(line.finalAmount) - Number(line.overtimeAmount) + (overtime.overtimePay ?? 0)) * 100) / 100 }
 }

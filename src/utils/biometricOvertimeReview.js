@@ -1,5 +1,6 @@
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime.js'
 import { isBiometricOvertimeEligibleWorker } from './overtimeWorkerScope.js'
+import { approvedExtraDays } from './extraDayOvertime.js'
 
 export const biometricReviewTitle = 'مراجعة الوقت الإضافي من البصمة'
 export function biometricOvertimeMinutes(worker, row, date) {
@@ -49,6 +50,7 @@ export function approvedBiometricOvertime(worker, detail, sources = []) {
 export function unresolvedBiometricOvertime(data, dates) {
   return biometricReviewRows(data.biometricOvertimeReviews || []).filter((entry) => {
     if (!dates.includes(entry.attendance.attendance_date)) return false
+    if (approvedExtraDays(entry.worker,dates,data.extraDayReviews||[]).some(day=>day.date===entry.attendance.attendance_date)) return false
     const override = (data.weeklyOvertimeOverrides || []).find((o) => String(o.worker_id) === String(entry.worker.id))
     if (override?.minutes != null) return false
     const row = (data.attendance || []).find((a) => String(a.worker_id) === String(entry.worker.id) && a.attendance_date === entry.attendance.attendance_date)

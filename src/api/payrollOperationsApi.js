@@ -11,6 +11,7 @@ import { getBiometricOvertimeReviews } from './biometricOvertimeReviewApi'
 import { assertBiometricReviewsResolved } from '../utils/biometricOvertimeReview'
 import { weeklyDates } from '../utils/payrollCalculations'
 import { getBiometricLatenessReviews } from './biometricLatenessApi'
+import { getExtraDayReviews } from './extraDayOvertimeApi'
 
 const isMissingSundayPaymentsError = (error) => (
   error?.code === '42P01'
@@ -44,7 +45,7 @@ const readSundayPayments = async (client) => {
 
 export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => {
   const client = getSupabaseClient()
-  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult, weeklyOvertimeOverrides, outsideWorkMovements, biometricOvertimeReviews, latenessReviews, populationResult] = await Promise.all([
+  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult, weeklyOvertimeOverrides, outsideWorkMovements, biometricOvertimeReviews, latenessReviews, extraDayReviews, populationResult] = await Promise.all([
     getPayrollSettingsWorkersRequest(), getAttendanceRequest(attendanceParams),
     client.from('payroll_rule_set').select('*').eq('is_active', true).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
     client.from('company_holiday').select('holiday_date,name').eq('is_active', true),
@@ -56,6 +57,7 @@ export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => 
     getPayrollOutsideWork(attendanceParams.date_from, attendanceParams.date_to),
     getBiometricOvertimeReviews(attendanceParams.date_from, attendanceParams.date_to),
     getBiometricLatenessReviews(attendanceParams.date_from, attendanceParams.date_to),
+    getExtraDayReviews(attendanceParams.date_from, attendanceParams.date_to),
     attendanceParams.date_from && attendanceParams.date_to
       ? client.rpc('admin_get_weekly_payroll_population', { p_start: attendanceParams.date_from, p_end: attendanceParams.date_to })
       : Promise.resolve({ data: [], error: null }),
@@ -66,7 +68,7 @@ export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => 
   if (linesResult.error) throw linesResult.error
   if (adjustmentsResult.error) throw adjustmentsResult.error
   if (populationResult.error) throw populationResult.error
-  return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [], sundayPayments: sundayResult.data, sundayPaymentsAvailable: sundayResult.available, weeklyOvertimeOverrides, outsideWorkMovements, biometricOvertimeReviews, latenessReviews, weeklyPayrollPopulation: populationResult.data || [] }
+  return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [], sundayPayments: sundayResult.data, sundayPaymentsAvailable: sundayResult.available, weeklyOvertimeOverrides, outsideWorkMovements, biometricOvertimeReviews, latenessReviews, extraDayReviews, weeklyPayrollPopulation: populationResult.data || [] }
 }
 
 export const payrollDraftLinePayload = (runId, line, periodStart, periodEnd, dueDate) => ({
@@ -74,7 +76,7 @@ export const payrollDraftLinePayload = (runId, line, periodStart, periodEnd, due
   worker_name_snapshot: line.worker.full_name || '-', payment_type_snapshot: line.paymentType, currency_code_snapshot: payrollLineCurrencySnapshot(line),
   monthly_payroll_cycle_start_date_snapshot: line.term?.monthly_payroll_cycle_start_date || null,
   compensation_snapshot: line.term || {}, rule_snapshot: line.rules || {},
-  attendance_summary_snapshot: { ...weeklyPayoutSourceSnapshot(line), lateness_deductions: line.latenessDeductions || [], weekly_payout_source_version: line.payableOvertimeSourceVersion === 2 ? 3 : null, monthly_overtime_only: line.monthlyOvertimeOnly === true, worker_identity_snapshot: { employee_code: line.worker.employee_code, team_id: line.worker.team_id, team_name: line.worker.team_name || line.worker.team?.name }, payable_overtime_source_version: line.payableOvertimeSourceVersion || null, payable_overtime_days: line.payableOvertimeDays || [], manual_overtime_source_version: 1, weekly_manual_overtime_override_minutes: line.weeklyManualOverrideMinutes ?? null, manual_overtime_only: line.manualOvertimeOnly === true, present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
+  attendance_summary_snapshot: { ...weeklyPayoutSourceSnapshot(line), extra_day_premiums: line.extraDayPremiums || [], lateness_deductions: line.latenessDeductions || [], weekly_payout_source_version: line.payableOvertimeSourceVersion === 2 ? 3 : null, monthly_overtime_only: line.monthlyOvertimeOnly === true, worker_identity_snapshot: { employee_code: line.worker.employee_code, team_id: line.worker.team_id, team_name: line.worker.team_name || line.worker.team?.name }, payable_overtime_source_version: line.payableOvertimeSourceVersion || null, payable_overtime_days: line.payableOvertimeDays || [], manual_overtime_source_version: 1, weekly_manual_overtime_override_minutes: line.weeklyManualOverrideMinutes ?? null, manual_overtime_only: line.manualOvertimeOnly === true, present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, unresolved_days: line.unresolvedDays, days: (line.details || []).map((detail) => ({
     date: detail.date,
     status: detail.status,
     manual_override: detail.row?.manual_override === true,
@@ -87,7 +89,7 @@ export const payrollDraftLinePayload = (runId, line, periodStart, periodEnd, due
     check_out_event_timestamp: detail.row?.biometric_sync_metadata?.check_out_event_timestamp || null,
     review_approved_check_out_at: detail.row?.review_approved_check_out_at || null,
   })) },
-  calculation_snapshot: { late_deduction: line.lateDeduction || 0, late_before_amount: Math.round((line.finalAmount + Number(line.lateDeduction || 0)) * 100) / 100, daily_value: line.dailyValue, attendance_wage: line.attendanceWage, absence_deduction: line.absenceDeduction, half_day_deduction: line.halfDayDeduction, transport_days: line.transportDays, morning_overtime_minutes: line.morningOvertimeMinutes || 0, evening_overtime_minutes: line.eveningOvertimeMinutes || 0, overtime_hourly_rate: line.overtimeRate ?? null, overtime_pay: line.overtimeAmount || 0, unresolved_configuration: { daily_rate: line.term?.daily_rate == null, monthly_salary: line.paymentType === 'monthly' && line.term?.monthly_salary == null, transport: line.term?.daily_transport_allowance == null, overtime_rate: Number(line.eveningOvertimeMinutes || 0) > 0 && line.term?.overtime_rate_per_hour == null }, adjustment_summary: line.adjustmentSummary || {}, final_amount: line.finalAmount },
+  calculation_snapshot: { extra_day_amount: line.extraDayAmount || 0, extra_days: line.extraDays || 0, late_deduction: line.lateDeduction || 0, late_before_amount: Math.round((line.finalAmount + Number(line.lateDeduction || 0)) * 100) / 100, daily_value: line.dailyValue, attendance_wage: line.attendanceWage, absence_deduction: line.absenceDeduction, half_day_deduction: line.halfDayDeduction, transport_days: line.transportDays, morning_overtime_minutes: line.morningOvertimeMinutes || 0, evening_overtime_minutes: line.eveningOvertimeMinutes || 0, overtime_hourly_rate: line.overtimeRate ?? null, overtime_pay: line.overtimeAmount || 0, unresolved_configuration: { daily_rate: line.term?.daily_rate == null, monthly_salary: line.paymentType === 'monthly' && line.term?.monthly_salary == null, transport: line.term?.daily_transport_allowance == null, overtime_rate: Number(line.eveningOvertimeMinutes || 0) > 0 && line.term?.overtime_rate_per_hour == null }, adjustment_summary: line.adjustmentSummary || {}, final_amount: line.finalAmount },
   present_days: line.presentDays, half_days: line.halfDays, absent_days: line.absentDays, base_amount: line.baseAmount, transport_amount: line.transportAmount,
   overtime_hours: line.overtimeHours, overtime_amount: line.overtimeAmount, holiday_amount: line.holidayAmount,
   // A Draft line is recalculable, but its persisted snapshot must still include

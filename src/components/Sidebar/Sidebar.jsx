@@ -31,6 +31,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/attendance/overtime-entry', label: (overtimeEntryLabels[language] || overtimeEntryLabels.en).title, icon: 'attendance' },
     { to: '/attendance/overtime-review', label: 'مراجعة الوقت الإضافي من البصمة', icon: 'attendance' },
     { to: '/attendance/late-review', label: 'مراجعة التأخير من البصمة', icon: 'attendance' },
+    { to: '/attendance/double-overtime-review', label: 'إضافي يوم كامل', icon: 'attendance' },
     { to: '/workers', label: t('navigation.workers'), icon: 'workers' },
     { to: '/inactive-workers', label: t('navigation.inactiveWorkers'), icon: 'inactiveWorkers' },
     { to: '/worker-control-center', label: 'مركز مراقبة العمال', icon: 'alert' },

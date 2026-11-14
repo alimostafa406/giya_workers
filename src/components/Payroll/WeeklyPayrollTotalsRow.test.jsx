@@ -15,7 +15,7 @@ it('last aligned table row contains attendance, wages, effective OT, transport a
  expect(total.parentElement.tagName).toBe('TFOOT')
  expect(total.closest('table').rows[total.closest('table').rows.length-1]).toBe(total)
  expect(total.querySelector('th').colSpan).toBe(7)
- expect(total.querySelectorAll('td')).toHaveLength(6)
+ expect(total.querySelectorAll('td')).toHaveLength(8)
  expect(total.textContent).toContain('إجمالي الفرقة')
  expect(total.textContent).toContain('payroll.presentDays: 4')
  expect(total.querySelector('[data-total="wages"]').textContent).toMatch(/500/)

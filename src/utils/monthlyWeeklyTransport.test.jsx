@@ -69,7 +69,7 @@ it('DIDIER #81 with missing matching monthly compensation shows six days and zer
   expect(lines[0]).toMatchObject({ paymentType: 'monthly', presentDays: 6, baseAmount: 0, transportAmount: 0, eveningOvertimeMinutes: 0, overtimeAmount: 0, finalAmount: 0 })
   const sheet = render(<LanguageProvider><WeeklyPayrollSheet lines={lines} dates={weeklyDates(currentWeek)} editable onEdit={() => {}} /></LanguageProvider>)
   const payrollRow = screen.getByText('DIDIER').closest('tr')
-  expect([...payrollRow.children].slice(-6).map(cell => cell.textContent)).toEqual(['0', '—', '—', '0', '0', '0'])
+  expect([...payrollRow.children].slice(-8).map(cell => cell.textContent)).toEqual(['0', '—', '—', '0', '0', '0', '0', '0'])
   expect(sheet.container.querySelectorAll('tbody tr')).toHaveLength(1)
   cleanup(); window.history.replaceState({}, '', `/?date=${currentWeek}`); mocks.load.mockResolvedValue(d)
   const popup = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
@@ -77,7 +77,7 @@ it('DIDIER #81 with missing matching monthly compensation shows six days and zer
   render(<LanguageProvider><TeamWeeklyReport /></LanguageProvider>)
   await screen.findByText('DIDIER')
   const row = screen.getByText('DIDIER').closest('tr')
-  expect([...row.children].slice(10).map(cell => cell.textContent)).toEqual(['—', '0', '—', '0', '0', '0'])
+  expect([...row.children].slice(10).map(cell => cell.textContent)).toEqual(['—', '0', '—', '0', '0', '0', '0', '0'])
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const printed = new DOMParser().parseFromString(popup.document.write.mock.calls[0][0], 'text/html')
   expect(printed.querySelectorAll('.team-report-team tbody tr')).toHaveLength(1)
@@ -152,7 +152,7 @@ it('monthly transport is visible in main payroll and all-teams print, with zero 
   expect(row.children[11].textContent).toContain('0.00')
   expect(row.children[12].textContent).toContain('12,500')
   expect(row.children[13].textContent).toContain('30,000')
-  expect(row.children[15].textContent).toContain('42,500')
+  expect(row.children[17].textContent).toContain('42,500')
   expect(printed.body.textContent).not.toContain('900,000')
 })
 it.skipIf(!process.env.MONTHLY_PAYOUT_AUDIT_INPUT)('all production monthly workers including zero extras reach the canonical report', async () => {
