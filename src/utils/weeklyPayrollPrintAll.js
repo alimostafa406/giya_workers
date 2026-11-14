@@ -2,6 +2,7 @@ import { formatPayrollMoney } from './payrollCurrency.js'
 import { formatEveningOvertimeMinutes, weeklyPayrollDisplayStatus, weeklyPayrollOvertimeForLine } from './weeklyPayrollOvertime.js'
 import { payrollDayPresentation } from './teamWeeklyReportDayOvertime.js'
 import { lateDeductionLabel } from './biometricLateness.js'
+import { extraDayLabels } from './extraDayOvertime.js'
 
 const escapeHtml = (value) => String(value ?? '—').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]))
 const money = (amount, line) => formatPayrollMoney(amount, { currency: line.currency, paymentType: 'weekly' })
@@ -10,7 +11,7 @@ const dayLabel = (date, language) => new Intl.DateTimeFormat(language === 'ar' ?
 
 export const buildWeeklyPayrollAllTeamsHtml = ({ title, periodStart, periodEnd, groups, overallTotalsByCurrency, dates, labels, language = 'ar', direction = 'rtl' }) => {
   const workDates = dates.filter((date) => new Date(`${date}T12:00:00Z`).getUTCDay() !== 0)
-  const headers = [labels.worker, ...workDates.map((date) => dayLabel(date, language)), labels.workDayPay, labels.overtimeHours, labels.overtimeAmount, labels.transport, lateDeductionLabel(language), labels.total]
+  const headers = [labels.worker, ...workDates.map((date) => dayLabel(date, language)), labels.workDayPay, labels.overtimeHours, labels.overtimeAmount, labels.transport, lateDeductionLabel(language), (extraDayLabels[language]||extraDayLabels.en).days, (extraDayLabels[language]||extraDayLabels.en).amount, labels.total]
   const sections = groups.map((group) => {
     const rows = group.lines.map((line) => {
       const overtime = weeklyPayrollOvertimeForLine(line)
@@ -29,6 +30,8 @@ export const buildWeeklyPayrollAllTeamsHtml = ({ title, periodStart, periodEnd, 
         escapeHtml(rateConfigured && Number(line.overtimeHours) > 0 && line.overtimeAmount != null ? money(line.overtimeAmount, line) : '—'),
         escapeHtml(transportConfigured ? money(line.transportAmount, line) : '—'),
         escapeHtml(money(line.lateDeduction || 0, line)),
+        escapeHtml(line.extraDays||0),
+        escapeHtml(money(line.extraDayAmount||0,line)),
         escapeHtml(money(line.finalAmount, line)),
       ]
       return `<tr>${cells.map((cell, index) => `<td${index === cells.length - 1 ? ' class="final"' : ''}>${cell}</td>`).join('')}</tr>`

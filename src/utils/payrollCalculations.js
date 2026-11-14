@@ -181,7 +181,7 @@ export const applyPayrollAdjustments = (line, adjustments = []) => {
   const transportAmount = money(line.transportAmount + adjustmentSummary.transportCorrection)
   const overtimeAmount = money(line.overtimeAmount + adjustmentSummary.overtimeCorrection)
   const holidayAmount = money(line.holidayAmount + adjustmentSummary.holidayCorrection)
-  const bonusAmount = money(adjustmentSummary.bonusAmount)
+  const bonusAmount = money(adjustmentSummary.bonusAmount + Number(line.extraDayAmount || 0))
   const deductionAmount = money(adjustmentSummary.deductionAmount + Number(line.lateDeduction || 0))
   const advanceAmount = money(adjustmentSummary.advanceAmount)
   const manualAdjustmentAmount = money(adjustmentSummary.otherAmount)

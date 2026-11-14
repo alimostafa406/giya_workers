@@ -109,13 +109,13 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(screen.queryByRole('combobox')).toBeNull()
   const teams = screen.getAllByRole('region', { name: /^تقرير الفريق:/ })
   expect(teams).toHaveLength(2)
-  const summaryColumns = ['العامل', 'الكود', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'بدل النقل', 'خصم التأخير', 'إجمالي القبض']
+  const summaryColumns = ['العامل', 'الكود', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'بدل النقل', 'خصم التأخير', 'أيام إضافية', 'مبلغ الأيام الإضافية', 'إجمالي القبض']
   for (const team of teams) {
     expect(within(team).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(summaryColumns)
     const table = within(team).getByRole('table')
     const totalRow = within(table).getByRole('row', { name: /^إجمالي الفرقة/ })
     expect(totalRow.parentElement.tagName).toBe('TFOOT')
-    expect(totalRow.children).toHaveLength(16)
+    expect(totalRow.children).toHaveLength(18)
     expect(table.tFoot.rows).toHaveLength(1)
     expect(team.querySelector('.team-report-totals')).toBeNull()
     const expectedGroup = teamWeeklyReport(fixture, week).groups.find((g) => team.getAttribute('aria-label') === `تقرير الفريق: ${g.name}`)
@@ -149,8 +149,8 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(teamReportPrintCss).toContain('font-size:10pt')
   expect(teamReportPrintCss).toContain('width:100%;max-width:none;min-width:0;height:auto;min-height:0')
   expect(teamReportPrintCss).not.toMatch(/scale\(|zoom:|\d+vh|height:\s*100%|font-size:\s*10px/)
-  const widths=[13,4,...Array(6).fill(4.5),4,4,6,8,8,8,7,11]
-  expect(widths).toHaveLength(16)
+  const widths=[11,4,...Array(6).fill(3.5),4,4,5,7,7,7,6,4,9,11]
+  expect(widths).toHaveLength(18)
   expect(widths.reduce((sum,width)=>sum+width,0)).toBe(100)
   expect(html).not.toContain('font-size:10px')
   expect(teamReportPrintCss).toContain('.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}')
@@ -159,7 +159,7 @@ it('all eligible teams render together; one print includes every worker and the 
   const summary = screen.getByRole('region', { name: 'ملخص أجور جميع الفرق' })
   const summaryTable = within(summary).getByRole('table')
   expect([...summaryTable.tHead.querySelectorAll('th')].map((h) => h.textContent))
-    .toEqual(['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي بدل النقل', 'خصم التأخير', 'إجمالي القبض'])
+    .toEqual(['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي بدل النقل', 'خصم التأخير', 'أيام إضافية', 'مبلغ الأيام الإضافية', 'إجمالي القبض'])
   expect(within(summaryTable).getByRole('row', { name: /^الإجمالي العام/ }).parentElement.tagName).toBe('TFOOT')
 })
 it('print popup failure is reported and the admin route/navigation are wired', () => {
@@ -365,7 +365,7 @@ it('FINAL outside-work overtime is rendered in worker, team, grand totals and th
   const workerRow = within(team).getByRole('row', { name: /^Worker a/ })
   expect(workerRow.children[10].textContent).toBe('2.5 h')
   expect(workerRow.children[12].textContent).toContain('50.00')
-  expect(workerRow.children[15].textContent).toContain('160.00')
+  expect(workerRow.children[17].textContent).toContain('160.00')
   expect(team.querySelector('tfoot').textContent).toContain('2.5 h')
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]
@@ -425,7 +425,7 @@ it('monthly 5h row appears on screen and print with six daily columns and no sal
   expect(workerRow.children[10].textContent).toBe('5 h')
   expect(workerRow.children[11].textContent).toContain('0.00')
   expect(workerRow.children[12].textContent).toContain('12.50')
-  expect(workerRow.children[15].textContent).toContain('12.50')
+  expect(workerRow.children[17].textContent).toContain('12.50')
   expect(within(team).getByText('شهري — بدل نقل وإضافي')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]

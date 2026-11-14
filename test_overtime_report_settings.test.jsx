@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react'
 import { test, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import OvertimeReportSettings from './src/components/Reports/OvertimeReportSettings.jsx'
 import { getOvertimeReportSettings, saveOvertimeReportSettings } from './src/api/overtimeReportSettingsApi.js'
 import { useOvertimeReportSettings } from './src/utils/useOvertimeReportSettings.js'
 import { dailyReportData } from './src/utils/dailyReportCenter.js'
 import AttendanceOvertimeSettings from './src/pages/AttendanceOvertimeSettings.jsx'
+// Existing report-team settings are independent of the separately tested
+// temporary extra-day rule editor mounted on the same settings page.
+vi.mock('./src/pages/ExtraDayOvertime.jsx',()=>({default:()=>null}))
 vi.mock('./src/api/overtimeReportSettingsApi.js', () => ({ getOvertimeReportSettings: vi.fn(), saveOvertimeReportSettings: vi.fn(async () => ({})) }))
 const auth = vi.hoisted(() => ({ admin: { is_active: true } }))
 vi.mock('./src/store/authStore.js', () => ({ useAuthStore: selector => selector(auth) }))
@@ -36,7 +39,7 @@ test('site settings loads saved teams, cancel is local, and save uses the canoni
   render(<AttendanceOvertimeSettings />)
   const zarour = await screen.findByRole('checkbox', { name: 'Zarour' })
   const siraj = screen.getByRole('checkbox', { name: 'Siraj' })
-  expect(zarour.checked).toBe(true)
+  await waitFor(()=>expect(zarour.checked).toBe(true))
   expect(siraj.checked).toBe(false)
   fireEvent.click(siraj)
   fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))

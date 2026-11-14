@@ -23,6 +23,8 @@ export default function WeeklyPayrollTotalsRow({ lines, dayCount }) {
     <td className="px-2 py-3 text-center" data-total="overtime-amount">{money('overtimePay')}</td>
     <td className="px-2 py-3 text-center" data-total="transport">{money('transport')}</td>
     <td className="px-2 py-3 text-center" data-total="late-deduction">{money('lateDeduction')}</td>
+    <td className="px-2 py-3 text-center" data-total="extra-days">{count('extraDays')}</td>
+    <td className="px-2 py-3 text-center" data-total="extra-day-amount">{money('extraDayAmount')}</td>
     <td className="px-2 py-3 text-center" data-total="payable">{money('payrollTotal')}</td>
   </tr></tfoot>
 }

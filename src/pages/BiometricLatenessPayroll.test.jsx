@@ -28,7 +28,7 @@ it.each(['weekly', 'monthly'])('%s deductions render identically in main payroll
   expect(row.cells[11].textContent).toContain('2,000')
   const mainPrint = new DOMParser().parseFromString(renderedPayrollTableHtml(view.container), 'text/html')
   expect(mainPrint.querySelector('tbody tr').cells[11].textContent).toBe(row.cells[11].textContent)
-  expect(mainPrint.querySelector('tbody tr').cells[12].textContent).toBe(row.cells[12].textContent)
+  expect(mainPrint.querySelector('tbody tr').cells[14].textContent).toBe(row.cells[14].textContent)
   cleanup(); window.history.replaceState({}, '', `/?date=${date}`)
   mock.load.mockResolvedValue(data)
   const popup = { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: Promise.resolve() } }, focus: vi.fn(), print: vi.fn() }

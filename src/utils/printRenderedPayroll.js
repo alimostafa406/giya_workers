@@ -15,11 +15,11 @@ export function renderedPayrollTableHtml(element) {
   table.removeAttribute('class')
   // Column sizing is presentation only; preserve every original cell/value.
   // Worker + weekdays + wages/OT hours/OT amount/transport/late deduction/net.
-  const dayCount = table.tHead?.rows[0]?.cells.length - 7
+  const dayCount = table.tHead?.rows[0]?.cells.length - 9
   if (dayCount > 0) {
     table.querySelectorAll('colgroup').forEach(node=>node.remove())
     const columns = table.ownerDocument.createElement('colgroup')
-    for (const width of [16,...Array(dayCount).fill(30/dayCount),10,7,10,9,7,11]) {
+    for (const width of [14,...Array(dayCount).fill(24/dayCount),9,5,8,8,6,5,10,11]) {
       const col = table.ownerDocument.createElement('col')
       col.style.width = `${width}%`
       columns.appendChild(col)
