@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
+import {readFileSync} from 'node:fs'
 import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import ExtraDayOvertime from './ExtraDayOvertime'
 globalThis.React=React
@@ -45,12 +46,15 @@ it('changing tolerance clears previous results and requires an explicit new sear
  expect(m.decide).not.toHaveBeenCalled()
 })
 it.each(['approved','rejected'])('bulk %s sends selected workers only, selection itself never pays',async decision=>{
+ m.reviews.mockResolvedValueOnce([row('A'),row('B')]).mockResolvedValue([{...row('A'),status:decision},row('B')])
  render(<ExtraDayOvertime />);await chooseTeam()
  fireEvent.click(screen.getByLabelText('اختيار A'))
  expect(m.decide).not.toHaveBeenCalled()
  fireEvent.click(screen.getByRole('button',{name:decision==='approved'?'موافقة على المختارين':'رفض المختارين'}))
  await waitFor(()=>expect(m.decide).toHaveBeenCalledWith([row('A')],decision))
- expect(screen.getAllByText(/20,000/)).toHaveLength(4)
+ await screen.findByText('تم حفظ القرارات بنجاح')
+ await waitFor(()=>expect(screen.queryByLabelText('اختيار A')).toBeNull())
+ expect(screen.getAllByText(/20,000/)).toHaveLength(2)
 })
 it('select all visible excludes locked workers and reload displays persisted decision',async()=>{
  m.reviews.mockResolvedValueOnce([row('A'),{...row('B'),locked:true}]).mockResolvedValue([{...row('A'),status:'approved'},{...row('B'),locked:true}])
@@ -59,7 +63,11 @@ it('select all visible excludes locked workers and reload displays persisted dec
  expect(screen.getByLabelText('اختيار A').checked).toBe(true)
  expect(screen.getByLabelText('اختيار B').checked).toBe(false)
  fireEvent.click(screen.getByRole('button',{name:'موافقة على المختارين'}))
- await screen.findByText('موافق عليه')
+ await screen.findByText('تم حفظ القرارات بنجاح')
+ await waitFor(()=>expect(screen.queryByLabelText('اختيار A')).toBeNull())
+ fireEvent.change(screen.getByLabelText('الحالة'),{target:{value:'approved'}})
+ expect(screen.getByLabelText('اختيار A').disabled).toBe(true)
+ expect(screen.getByRole('button',{name:'موافقة',exact:true}).disabled).toBe(true)
  expect(m.decide).toHaveBeenCalledWith([row('A')],'approved')
 })
 it('ignores stale asynchronous responses when date/team changes',async()=>{
@@ -113,4 +121,50 @@ it.each(['24:00:00','23:60:00','23:45','12:31 AM'])('does not submit malformed o
  fireEvent.change(screen.getByLabelText('نهاية العمل الخاص'),{target:{value}})
  expect(screen.getByRole('button',{name:'عرض العمال المستحقين'}).disabled).toBe(true)
  expect(m.reviews).not.toHaveBeenCalled()
+})
+
+it('default includes Pending/Stale only; all-view bulk selection excludes approved/rejected/locked rows',async()=>{
+ const rows=[row('A'),{...row('Stale'),status:'stale'},{...row('Approved'),status:'approved'},{...row('Rejected'),status:'rejected'},{...row('Locked'),locked:true}]
+ m.reviews.mockResolvedValueOnce(rows).mockResolvedValue(rows.map(r=>['A','Stale'].includes(r.worker_id)?{...r,status:'approved'}:r))
+ render(<ExtraDayOvertime />);await chooseTeam()
+ expect(screen.getByLabelText('الحالة').value).toBe('pending')
+ expect(screen.getByLabelText('اختيار Stale')).toBeTruthy()
+ expect(screen.queryByLabelText('اختيار Approved')).toBeNull()
+ expect(screen.queryByLabelText('اختيار Rejected')).toBeNull()
+ fireEvent.change(screen.getByLabelText('الحالة'),{target:{value:'rejected'}})
+ expect(screen.getByRole('button',{name:'رفض',exact:true}).disabled).toBe(true)
+ fireEvent.change(screen.getByLabelText('الحالة'),{target:{value:'all'}})
+ fireEvent.click(screen.getByRole('button',{name:'اختيار الكل الظاهر'}))
+ for(const name of ['Approved','Rejected','Locked']){
+   expect(screen.getByLabelText(`اختيار ${name}`).checked).toBe(false)
+   expect(screen.getByLabelText(`اختيار ${name}`).disabled).toBe(true)
+ }
+ fireEvent.click(screen.getByRole('button',{name:'موافقة على المختارين'}))
+ await waitFor(()=>expect(m.decide).toHaveBeenCalledWith(rows.slice(0,2),'approved'))
+ await screen.findByText('تم حفظ القرارات بنجاح')
+ expect(screen.getByRole('button',{name:'موافقة على المختارين'}).disabled).toBe(true)
+})
+it.skipIf(!process.env.DOUBLE_OT_APPROVED_AUDIT)('real 19 approved workers are hidden by default and read-only under Approved/All',async()=>{
+ const approved=JSON.parse(readFileSync(process.env.DOUBLE_OT_APPROVED_AUDIT,'utf8'))
+ expect(approved).toHaveLength(19)
+ expect(approved.reduce((sum,r)=>sum+Number(r.review.approved_amount),0)).toBe(391500)
+ m.reviews.mockResolvedValue(approved)
+ const before=JSON.stringify(approved)
+ render(<ExtraDayOvertime />)
+ await screen.findByRole('option',{name:'Peinture Raghibe'})
+ fireEvent.change(screen.getByLabelText('التاريخ'),{target:{value:'2026-11-12'}})
+ fireEvent.change(screen.getByLabelText('الفريق'),{target:{value:'painting'}})
+ fireEvent.click(screen.getByRole('button',{name:'عرض العمال المستحقين'}))
+ await screen.findByText('لا توجد حالات مطابقة')
+ expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+ for(const status of ['approved','all']){
+   fireEvent.change(screen.getByLabelText('الحالة'),{target:{value:status}})
+   expect(screen.getAllByRole('checkbox')).toHaveLength(19)
+   expect(screen.getAllByRole('checkbox').every(input=>input.disabled)).toBe(true)
+   expect(screen.getAllByRole('button',{name:'موافقة',exact:true}).every(button=>button.disabled)).toBe(true)
+   expect(screen.getByRole('button',{name:'اختيار الكل الظاهر'}).disabled).toBe(true)
+   expect(screen.getByRole('button',{name:'موافقة على المختارين'}).disabled).toBe(true)
+ }
+ expect(m.decide).not.toHaveBeenCalled()
+ expect(JSON.stringify(approved)).toBe(before)
 })
