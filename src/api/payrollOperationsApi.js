@@ -1,5 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
-import { getAttendanceRequest } from './attendanceApi'
+import { getAttendanceRequest, getAttendanceRowsRequest } from './attendanceApi'
 import { getPayrollSettingsWorkersRequest } from './payrollSettingsApi'
 import { applyPayrollAdjustments } from '../utils/payrollCalculations'
 import { assertPayrollLineCurrencies, payrollLineCurrencySnapshot } from '../utils/payrollLineCurrency'
@@ -7,11 +7,27 @@ import { payrollDraftEligibleLines, removableStaleWeeklyPayrollLineIds } from '.
 import { getWeeklyOvertimeOverrides } from './weeklyOvertimeApi'
 import { getPayrollOutsideWork } from './payrollOutsideWorkApi'
 import { assertWeeklyPayoutDraftReady, assertWeeklyPayoutSnapshotComplete, weeklyPayoutLines, weeklyPayoutSourceSnapshot } from '../utils/weeklyPayoutLines'
-import { getBiometricOvertimeReviews } from './biometricOvertimeReviewApi'
+import { getPayrollOvertimeContext } from './payrollOvertimeContextApi'
 import { assertBiometricReviewsResolved } from '../utils/biometricOvertimeReview'
-import { weeklyDates } from '../utils/payrollCalculations'
+import { weeklyDates, sundayBefore } from '../utils/payrollCalculations'
 import { getBiometricLatenessReviews } from './biometricLatenessApi'
-import { getExtraDayReviews } from './extraDayOvertimeApi'
+
+// Batch selected-period history at the database, including pagination. These
+// reads are per family, never per worker/team. Undated monthly/history callers
+// retain their existing contract.
+const readPeriodRows = async (client, table, fields, period, first, last = first, order = 'id', ascending = true) => {
+  const bounded = period.date_from && period.date_to
+  const rows = []
+  for (let offset = 0; ; offset += 500) {
+    let query = client.from(table).select(fields).order(order, { ascending })
+    if (bounded) query = query.lte(first, period.date_to).gte(last, period.date_from).range(offset, offset + 499)
+    const result = await query
+    if (result.error) return result
+    if (!bounded) return result
+    rows.push(...(result.data || []))
+    if ((result.data || []).length < 500) return { data: rows, error: null }
+  }
+}
 
 const isMissingSundayPaymentsError = (error) => (
   error?.code === '42P01'
@@ -25,17 +41,19 @@ const isMissingSundayCancellationColumnError = (error) => (
   || /cancelled_at|cancelled_by|cancellation_reason/i.test(String(error?.message || ''))
 )
 
-const readSundayPayments = async (client) => {
-  const result = await client
+const readSundayPayments = async (client, period = {}) => {
+  const bounded = query => period.date_from && period.date_to
+    ? query.gte('work_date', sundayBefore(period.date_from)).lte('work_date', period.date_to) : query
+  const result = await bounded(client
     .from('worker_sunday_payment')
     .select('id,worker_id,work_date,payment_type_snapshot,currency_code,daily_value,multiplier,amount,payment_status,settlement_method,settled_payroll_run_id,settled_payroll_line_id,paid_at,paid_by,cancelled_at,cancelled_by,cancellation_reason,confirmed_by,note,created_at,updated_at')
-    .order('work_date', { ascending: false })
+    .order('work_date', { ascending: false }))
   if (result.error && isMissingSundayPaymentsError(result.error)) return { data: [], available: false }
   if (result.error && isMissingSundayCancellationColumnError(result.error)) {
-    const fallback = await client
+    const fallback = await bounded(client
       .from('worker_sunday_payment')
       .select('id,worker_id,work_date,payment_type_snapshot,currency_code,daily_value,multiplier,amount,payment_status,settlement_method,settled_payroll_run_id,settled_payroll_line_id,paid_at,paid_by,confirmed_by,note,created_at,updated_at')
-      .order('work_date', { ascending: false })
+      .order('work_date', { ascending: false }))
     if (fallback.error) throw fallback.error
     return { data: (fallback.data || []).map((payment) => ({ ...payment, cancelled_at: null, cancelled_by: null, cancellation_reason: null })), available: true }
   }
@@ -43,21 +61,32 @@ const readSundayPayments = async (client) => {
   return { data: result.data || [], available: true }
 }
 
-export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => {
+const readPayrollOperationsData = async (attendanceParams = {}) => {
   const client = getSupabaseClient()
-  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult, weeklyOvertimeOverrides, outsideWorkMovements, biometricOvertimeReviews, latenessReviews, extraDayReviews, populationResult] = await Promise.all([
-    getPayrollSettingsWorkersRequest(), getAttendanceRequest(attendanceParams),
+  const bounded = attendanceParams.date_from && attendanceParams.date_to
+  const workersRead = getPayrollSettingsWorkersRequest(attendanceParams)
+  const attendanceRead = bounded ? getAttendanceRowsRequest(attendanceParams).then(async result => {
+    const workers = new Map((await workersRead).data.map(worker => [String(worker.id), worker]))
+    return { data: result.data.map(row => {
+      const worker = workers.get(String(row.worker_id)) || null
+      return { ...row, worker, team: worker?.team || null, worker_name: worker?.full_name || '-',
+        team_name: worker?.team_name || '-', staff_classification: worker?.staff_classification || 'normal', date: row.attendance_date }
+    }) }
+  }) : getAttendanceRequest(attendanceParams)
+  const [workersResult, attendanceResult, rulesResult, holidaysResult, runsResult, linesResult, adjustmentsResult, sundayResult, weeklyOvertimeOverrides, outsideWorkMovements, overtimeContext, latenessReviews, populationResult] = await Promise.all([
+    workersRead, attendanceRead,
     client.from('payroll_rule_set').select('*').eq('is_active', true).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
-    client.from('company_holiday').select('holiday_date,name').eq('is_active', true),
-    client.from('payroll_run').select('id,payment_type,status,scheduled_payment_date,weekly_period_start,weekly_period_end,currency_code,created_at,reviewed_by,reviewed_at,finalized_by,finalized_at,paid_by,paid_at').order('created_at', { ascending: false }),
-    client.from('payroll_line').select('id,payroll_run_id,worker_id,attendance_period_start,attendance_period_end,payment_due_date,worker_name_snapshot,payment_type_snapshot,currency_code_snapshot,compensation_snapshot,rule_snapshot,attendance_summary_snapshot,calculation_snapshot,present_days,half_days,absent_days,base_amount,transport_amount,overtime_hours,overtime_amount,holiday_amount,bonus_amount,deduction_amount,advance_amount,manual_adjustment_amount,final_amount'),
-    client.from('payroll_adjustment').select('id,payroll_line_id,adjustment_type,amount,reason,created_at,created_by,voided_at,voided_by,void_reason').order('created_at', { ascending: false }),
-    readSundayPayments(client),
+    attendanceParams.date_from && attendanceParams.date_to
+      ? client.from('company_holiday').select('holiday_date,name').eq('is_active', true).gte('holiday_date', attendanceParams.date_from).lte('holiday_date', attendanceParams.date_to)
+      : client.from('company_holiday').select('holiday_date,name').eq('is_active', true),
+    readPeriodRows(client, 'payroll_run', 'id,payment_type,status,scheduled_payment_date,weekly_period_start,weekly_period_end,currency_code,created_at,reviewed_by,reviewed_at,finalized_by,finalized_at,paid_by,paid_at', attendanceParams, 'weekly_period_start', 'weekly_period_end', 'created_at', false),
+    readPeriodRows(client, 'payroll_line', 'id,payroll_run_id,worker_id,attendance_period_start,attendance_period_end,payment_due_date,worker_name_snapshot,payment_type_snapshot,currency_code_snapshot,compensation_snapshot,rule_snapshot,attendance_summary_snapshot,calculation_snapshot,present_days,half_days,absent_days,base_amount,transport_amount,overtime_hours,overtime_amount,holiday_amount,bonus_amount,deduction_amount,advance_amount,manual_adjustment_amount,final_amount', attendanceParams, 'attendance_period_start', 'attendance_period_end'),
+    readPeriodRows(client, 'payroll_adjustment', 'id,payroll_line_id,adjustment_type,amount,reason,created_at,created_by,voided_at,voided_by,void_reason,payroll_line!inner(attendance_period_start,attendance_period_end)', attendanceParams, 'payroll_line.attendance_period_start', 'payroll_line.attendance_period_end', 'created_at', false),
+    readSundayPayments(client, attendanceParams),
     attendanceParams.date_from ? getWeeklyOvertimeOverrides(attendanceParams.date_from) : Promise.resolve([]),
     getPayrollOutsideWork(attendanceParams.date_from, attendanceParams.date_to),
-    getBiometricOvertimeReviews(attendanceParams.date_from, attendanceParams.date_to),
+    getPayrollOvertimeContext(attendanceParams.date_from, attendanceParams.date_to),
     getBiometricLatenessReviews(attendanceParams.date_from, attendanceParams.date_to),
-    getExtraDayReviews(attendanceParams.date_from, attendanceParams.date_to),
     attendanceParams.date_from && attendanceParams.date_to
       ? client.rpc('admin_get_weekly_payroll_population', { p_start: attendanceParams.date_from, p_end: attendanceParams.date_to })
       : Promise.resolve({ data: [], error: null }),
@@ -68,7 +97,23 @@ export const getPayrollOperationsDataRequest = async (attendanceParams = {}) => 
   if (linesResult.error) throw linesResult.error
   if (adjustmentsResult.error) throw adjustmentsResult.error
   if (populationResult.error) throw populationResult.error
+  const { biometricOvertimeReviews, extraDayReviews } = overtimeContext
   return { workers: workersResult.data, attendance: attendanceResult.data, rules: rulesResult.data, holidays: holidaysResult.data || [], runs: runsResult.data || [], payrollLines: linesResult.data || [], payrollAdjustments: adjustmentsResult.data || [], sundayPayments: sundayResult.data, sundayPaymentsAvailable: sundayResult.available, weeklyOvertimeOverrides, outsideWorkMovements, biometricOvertimeReviews, latenessReviews, extraDayReviews, weeklyPayrollPopulation: populationResult.data || [] }
+}
+
+// Coalesce overlapping mounts/refreshes only while the read is running. Never
+// retain a settled result: edits and explicit reloads always fetch current data.
+const pendingPeriodReads = new Map()
+export const getPayrollOperationsDataRequest = (params = {}) => {
+  if (!params.date_from || !params.date_to || params.signal) return readPayrollOperationsData(params)
+  const key = JSON.stringify(params)
+  if (!pendingPeriodReads.has(key)) {
+    const request = readPayrollOperationsData(params)
+    pendingPeriodReads.set(key, request)
+    const clear = () => { if (pendingPeriodReads.get(key) === request) pendingPeriodReads.delete(key) }
+    request.then(clear, clear)
+  }
+  return pendingPeriodReads.get(key)
 }
 
 export const payrollDraftLinePayload = (runId, line, periodStart, periodEnd, dueDate) => ({

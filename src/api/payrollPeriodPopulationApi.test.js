@@ -5,7 +5,7 @@ vi.mock('../lib/supabase',()=>({getSupabaseClient:()=>({rpc:state.rpc,from:table
  let query;query=new Proxy({}, {get:(_target,key)=>key==='then'?Promise.resolve(result).then.bind(Promise.resolve(result)):()=>query})
  return query
 }})}))
-vi.mock('./attendanceApi',()=>({getAttendanceRequest:async()=>({data:[]})}))
+vi.mock('./attendanceApi',()=>({getAttendanceRequest:async()=>({data:[]}),getAttendanceRowsRequest:async()=>({data:[]})}))
 vi.mock('./payrollSettingsApi',()=>({getPayrollSettingsWorkersRequest:async()=>({data:[{id:'inactive',is_active:false}]})}))
 vi.mock('./weeklyOvertimeApi',()=>({getWeeklyOvertimeOverrides:async()=>[]}))
 vi.mock('./payrollOutsideWorkApi',()=>({getPayrollOutsideWork:async()=>[]}))
