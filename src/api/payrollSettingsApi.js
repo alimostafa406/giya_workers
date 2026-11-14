@@ -15,14 +15,16 @@ const currentTermFor = (terms, today) => terms
   .filter((term) => term.effective_from <= today && (!term.effective_to || term.effective_to >= today))
   .sort((a, b) => String(b.effective_from).localeCompare(String(a.effective_from)))[0] || null
 
-export const getPayrollSettingsWorkersRequest = async () => {
+export const getPayrollSettingsWorkersRequest = async (period = {}) => {
   const client = getSupabaseClient()
+  let compensationQuery = client.from('worker_payroll_compensation')
+    .select('id,worker_id,payment_type,effective_from,effective_to,currency_code,daily_rate,daily_transport_allowance,overtime_rate_per_hour,overtime_start_time,monthly_salary,monthly_payroll_cycle_start_date')
+    .order('effective_from', { ascending: false })
+  if (period.date_from && period.date_to) compensationQuery = compensationQuery
+    .lte('effective_from', period.date_to).or(`effective_to.is.null,effective_to.gte.${period.date_from}`)
   const [{ data: workers }, compensationResult, ruleResult] = await Promise.all([
     getWorkersRequest(),
-    client
-      .from('worker_payroll_compensation')
-      .select('id,worker_id,payment_type,effective_from,effective_to,currency_code,daily_rate,daily_transport_allowance,overtime_rate_per_hour,overtime_start_time,monthly_salary,monthly_payroll_cycle_start_date')
-      .order('effective_from', { ascending: false }),
+    compensationQuery,
     client
       .from('payroll_rule_set')
       .select('id,monthly_working_day_divisor,effective_from')
