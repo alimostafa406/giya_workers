@@ -30,7 +30,9 @@ function derivedBiometricRows(sources = []) {
 export function biometricReviewRows(sources = []) {
   // The canonical calculation owns the strict >30-minute eligibility check,
   // before whole-minute precision. Do not apply a second threshold afterwards.
-  return derivedBiometricRows(sources)
+  // Backend ownership uses the same payable source as payroll, including frozen
+  // payroll history. Pending/rejected/non-payable stale extra days do not hide OT.
+  return derivedBiometricRows(sources).filter(row => !row.extra_day_payable)
 }
 export function formatBiometricOvertimeDuration(minutes) {
   const wholeMinutes = Math.max(0, Math.floor(Number(minutes) || 0))
@@ -38,7 +40,7 @@ export function formatBiometricOvertimeDuration(minutes) {
 }
 export function approvedBiometricOvertime(worker, detail, sources = []) {
   const entry = sources.find((s) => String(s.worker.id) === String(worker.id) && s.attendance.attendance_date === detail.date)
-  if (!entry || !detail.row || String(entry.attendance.id) !== String(detail.row.id)
+  if (!entry || entry.extra_day_payable || !detail.row || String(entry.attendance.id) !== String(detail.row.id)
     || ['check_in','check_out','status','attendance_source'].some((key) => String(entry.attendance[key] || '') !== String(detail.row[key] || ''))
     || entry.attendance.biometric_sync_metadata?.check_out_event_timestamp !== detail.row.biometric_sync_metadata?.check_out_event_timestamp) return null
   const reviewed = derivedBiometricRows([entry])[0]
