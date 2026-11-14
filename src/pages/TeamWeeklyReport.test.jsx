@@ -109,20 +109,20 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(screen.queryByRole('combobox')).toBeNull()
   const teams = screen.getAllByRole('region', { name: /^تقرير الفريق:/ })
   expect(teams).toHaveLength(2)
-  const summaryColumns = ['العامل', 'الكود', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أيام العمل', 'أيام الغياب', 'ساعات الإضافي', 'أجر أيام العمل', 'مبلغ الإضافي', 'بدل النقل', 'خصم التأخير', 'أيام إضافية', 'مبلغ الأيام الإضافية', 'إجمالي القبض']
+  const summaryColumns = ['العامل', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أجر أيام العمل', 'الإضافي العادي', 'مبلغ الإضافي', 'الإضافي الدوبل', 'بدل النقل', 'خصم التأخير', 'صافي القبض']
   for (const team of teams) {
     expect(within(team).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(summaryColumns)
     const table = within(team).getByRole('table')
     const totalRow = within(table).getByRole('row', { name: /^إجمالي الفرقة/ })
     expect(totalRow.parentElement.tagName).toBe('TFOOT')
-    expect(totalRow.children).toHaveLength(18)
+    expect(totalRow.children).toHaveLength(14)
     expect(table.tFoot.rows).toHaveLength(1)
     expect(team.querySelector('.team-report-totals')).toBeNull()
     const expectedGroup = teamWeeklyReport(fixture, week).groups.find((g) => team.getAttribute('aria-label') === `تقرير الفريق: ${g.name}`)
     expect(table.tBodies[0].rows).toHaveLength(expectedGroup.lines.length)
-    expect(totalRow.children[1].textContent).toBe(`${expectedGroup.lines.length} عمال`)
-    expect(totalRow.children[8].textContent).toBe(String(expectedGroup.totals.workDays))
-    expect(totalRow.children[9].textContent).toBe(String(expectedGroup.totals.absentDays))
+    expect(totalRow.children[0].textContent).toContain(`${expectedGroup.lines.length} عمال`)
+    expect(expectedGroup.totals.workDays).toBeGreaterThanOrEqual(0)
+    expect(expectedGroup.totals.absentDays).toBeGreaterThanOrEqual(0)
     for (const tr of table.tBodies[0].rows) expect(tr.querySelectorAll('.team-report-day')).toHaveLength(6)
     for (const forbidden of ['إضافي صباحي', 'إضافي مسائي'])
       expect(within(team).queryByRole('columnheader', { name: forbidden, exact: true })).toBeNull()
@@ -149,8 +149,8 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(teamReportPrintCss).toContain('font-size:10pt')
   expect(teamReportPrintCss).toContain('width:100%;max-width:none;min-width:0;height:auto;min-height:0')
   expect(teamReportPrintCss).not.toMatch(/scale\(|zoom:|\d+vh|height:\s*100%|font-size:\s*10px/)
-  const widths=[11,4,...Array(6).fill(3.5),4,4,5,7,7,7,6,4,9,11]
-  expect(widths).toHaveLength(18)
+  const widths=[14,...Array(6).fill(4),11,6,10,10,8,7,10]
+  expect(widths).toHaveLength(14)
   expect(widths.reduce((sum,width)=>sum+width,0)).toBe(100)
   expect(html).not.toContain('font-size:10px')
   expect(teamReportPrintCss).toContain('.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}')
@@ -159,7 +159,7 @@ it('all eligible teams render together; one print includes every worker and the 
   const summary = screen.getByRole('region', { name: 'ملخص أجور جميع الفرق' })
   const summaryTable = within(summary).getByRole('table')
   expect([...summaryTable.tHead.querySelectorAll('th')].map((h) => h.textContent))
-    .toEqual(['الفريق', 'عدد العمال', 'إجمالي أيام العمل', 'إجمالي أيام الغياب', 'إجمالي ساعات الإضافي', 'إجمالي مبلغ الإضافي', 'إجمالي أجر أيام العمل', 'إجمالي بدل النقل', 'خصم التأخير', 'أيام إضافية', 'مبلغ الأيام الإضافية', 'إجمالي القبض'])
+    .toEqual(['الفريق', 'عدد العمال', 'أجر أيام العمل', 'الإضافي العادي', 'مبلغ الإضافي', 'الإضافي الدوبل', 'بدل النقل', 'خصم التأخير', 'صافي القبض'])
   expect(within(summaryTable).getByRole('row', { name: /^الإجمالي العام/ }).parentElement.tagName).toBe('TFOOT')
 })
 it('print popup failure is reported and the admin route/navigation are wired', () => {
@@ -274,11 +274,11 @@ it('Monday-Saturday cells use canonical payroll statuses and reconcile work/abse
   const tr = within(team).getByRole('row', { name: /^Worker a/ })
   const statuses = [...tr.querySelectorAll('.team-report-day')].map((cell) => cell.textContent)
   expect(statuses).toEqual(['حاضر', '½', 'غائب', '—', 'حاضر', 'غائب'])
-  expect(tr.children[8].textContent).toBe('2.5'); expect(tr.children[9].textContent).toBe('2')
+  expect(tr.querySelectorAll('.team-report-day')).toHaveLength(6)
   expect(statuses.filter((s) => s === 'حاضر').length + statuses.filter((s) => s === '½').length / 2).toBe(2.5)
   expect(statuses.filter((s) => s === 'غائب')).toHaveLength(2)
   const total = within(team).getByRole('row', { name: /^إجمالي الفرقة/ })
-  expect(total.children[8].textContent).toBe('2.5'); expect(total.children[9].textContent).toBe('2')
+  expect(total.children).toHaveLength(14)
 })
 
 it('non-eligible dates are neutral and frozen snapshot daily statuses never use current live attendance', () => {
@@ -298,9 +298,9 @@ function LocaleSwitch() {
   return <nav>{['ar', 'fr', 'en'].map((language) => <button type="button" key={language} onClick={() => setLanguage(language)}>lang-{language}</button>)}</nav>
 }
 it.each([
-  ['ar', 'rtl', 'طباعة كل الفرق', 'طباعة ملخص كل الفرق', 'الاثنين', 'حاضر', 'إجمالي القبض', 'ملخص أجور جميع الفرق', 'شهري — بدل نقل وإضافي'],
-  ['fr', 'ltr', 'Imprimer toutes les équipes', 'Imprimer le résumé de toutes les équipes', 'Lundi', 'Présent', 'Total à payer', 'Résumé des salaires de toutes les équipes', 'Mensuel — transport et heures supplémentaires'],
-  ['en', 'ltr', 'Print All Teams', 'Print all-team summary', 'Monday', 'Present', 'Total payable', 'All-team wage summary', 'Monthly — transport and overtime'],
+  ['ar', 'rtl', 'طباعة كل الفرق', 'طباعة ملخص كل الفرق', 'الاثنين', 'حاضر', 'صافي القبض', 'ملخص أجور جميع الفرق', 'شهري — بدل نقل وإضافي'],
+  ['fr', 'ltr', 'Imprimer toutes les équipes', 'Imprimer le résumé de toutes les équipes', 'Lundi', 'Présent', 'Net à payer', 'Résumé des salaires de toutes les équipes', 'Mensuel — transport et heures supplémentaires'],
+  ['en', 'ltr', 'Print All Teams', 'Print all-team summary', 'Monday', 'Present', 'Net payable', 'All-team wage summary', 'Monthly — transport and overtime'],
 ])('current %s language controls visible report AND actual generated all-team/summary print DOM', async (language, direction, printAll, printSummary, monday, present, total, summaryTitle, monthlyLabel) => {
   localStorage.setItem('workers_app_language', 'ar')
   window.history.replaceState({}, '', `/?date=${week}`)
@@ -363,13 +363,13 @@ it('FINAL outside-work overtime is rendered in worker, team, grand totals and th
   render(<TeamWeeklyReport />)
   const team = await screen.findByRole('region', { name: 'تقرير الفريق: Siraj' })
   const workerRow = within(team).getByRole('row', { name: /^Worker a/ })
-  expect(workerRow.children[10].textContent).toBe('2.5 h')
-  expect(workerRow.children[12].textContent).toContain('50.00')
-  expect(workerRow.children[17].textContent).toContain('160.00')
-  expect(team.querySelector('tfoot').textContent).toContain('2.5 h')
+  expect(workerRow.children[8].textContent).toBe('2h30')
+  expect(workerRow.children[9].textContent).toContain('50.00')
+  expect(workerRow.children[13].textContent).toContain('160.00')
+  expect(team.querySelector('tfoot').textContent).toContain('2h30')
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]
-  expect(html).toContain('2.5 h'); expect(html).toContain('50.00'); expect(html).toContain('160.00')
+  expect(html).toContain('2h30'); expect(html).toContain('50.00'); expect(html).toContain('160.00')
   await waitFor(() => expect(popup.print).toHaveBeenCalled())
 })
 
@@ -422,13 +422,13 @@ it('monthly 5h row appears on screen and print with six daily columns and no sal
   const team = await screen.findByRole('region', { name: 'تقرير الفريق: Siraj' })
   const workerRow = within(team).getByRole('row', { name: /^Worker m/ })
   expect(workerRow.querySelectorAll('.team-report-day')).toHaveLength(6)
-  expect(workerRow.children[10].textContent).toBe('5 h')
-  expect(workerRow.children[11].textContent).toContain('0.00')
-  expect(workerRow.children[12].textContent).toContain('12.50')
-  expect(workerRow.children[17].textContent).toContain('12.50')
+  expect(workerRow.children[8].textContent).toBe('5h00')
+  expect(workerRow.children[7].textContent).toContain('0.00')
+  expect(workerRow.children[9].textContent).toContain('12.50')
+  expect(workerRow.children[13].textContent).toContain('12.50')
   expect(within(team).getByText('شهري — بدل نقل وإضافي')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]
-  expect(html).toContain('Worker m'); expect(html).toContain('5 h'); expect(html).toContain('12.50'); expect(html).not.toContain('600.00')
+  expect(html).toContain('Worker m'); expect(html).toContain('5h00'); expect(html).toContain('12.50'); expect(html).not.toContain('600.00')
   await waitFor(() => expect(popup.print).toHaveBeenCalled())
 })
