@@ -45,7 +45,7 @@ it('PAYIKE monthly Chauffeur saves manual weekly OT from actual payroll controls
 
 it('one OT column, visible 5h -> 15h save, canonical versioned override, monthly-only payouts, clear fallback and report/team totals',async()=>{
   const table=await openTeam()
-  expect(within(table).getAllByRole('columnheader',{name:'Overtime Hours'})).toHaveLength(1)
+  expect(within(table).getAllByRole('columnheader',{name:'Hourly overtime'})).toHaveLength(1)
   expect(table.textContent).not.toMatch(/Morning Overtime|Evening Overtime/)
   for(const name of ['weekly','monthly']){
     const r=row(table,name)

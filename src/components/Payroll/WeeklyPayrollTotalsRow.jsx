@@ -1,3 +1,4 @@
+import { DoubleOvertime } from './PayrollTablePresentation'
 import { useTranslation } from '../../i18n/LanguageContext'
 import { weeklyPayrollTeamFooter } from '../../utils/weeklyPayrollTeamFooter'
 import { formatEveningOvertimeMinutes } from '../../utils/weeklyPayrollOvertime'
@@ -21,10 +22,8 @@ export default function WeeklyPayrollTotalsRow({ lines, dayCount }) {
     <td className="px-2 py-3 text-center" data-total="wages">{money('wages')}</td>
     <td className="px-2 py-3 text-center" dir="ltr" data-total="overtime-hours">{formatEveningOvertimeMinutes(footer.eveningOvertimeMinutes)}</td>
     <td className="px-2 py-3 text-center" data-total="overtime-amount">{money('overtimePay')}</td>
+    <td data-total="double-overtime">{footer.currencies.map(currency=><DoubleOvertime key={currency} days={lines.filter(line=>(line.currency || line.term?.currency_code || 'CDF')===currency).reduce((sum,line)=>sum+(Number(line.extraDays)||0),0)} amount={footer.byCurrency[currency].extraDayAmount} currency={currency} />)}</td>
     <td className="px-2 py-3 text-center" data-total="transport">{money('transport')}</td>
-    <td className="px-2 py-3 text-center" data-total="late-deduction">{money('lateDeduction')}</td>
-    <td className="px-2 py-3 text-center" data-total="extra-days">{count('extraDays')}</td>
-    <td className="px-2 py-3 text-center" data-total="extra-day-amount">{money('extraDayAmount')}</td>
     <td className="px-2 py-3 text-center" data-total="payable">{money('payrollTotal')}</td>
   </tr></tfoot>
 }

@@ -1,3 +1,4 @@
+import { displayLabels, DoubleOvertime } from '../components/Payroll/PayrollTablePresentation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getPayrollOperationsDataRequest } from '../api/payrollOperationsApi'
 import { getErrorMessage } from '../api/axios'
@@ -14,7 +15,6 @@ import { formatBiometricOvertimeDuration } from '../utils/biometricOvertimeRevie
 
 const money = (value, currency) => value == null ? '—' : formatPayrollMoney(value, { currency, paymentType: 'weekly' })
 const hours = (minutes) => minutes > 0 ? formatBiometricOvertimeDuration(minutes) : '—'
-const displayLabels={ar:{normalOvertime:'الإضافي',doubleOvertime:'الإضافي الدوبل',netPay:'صافي القبض',basePay:'أجر العمل',transport:'النقل',doubleMarker:'دوبل'},fr:{normalOvertime:'Heures supplémentaires',doubleOvertime:'Prime double',netPay:'Net à payer',basePay:'Salaire des jours travaillés',transport:'Transport',doubleMarker:'double'},en:{normalOvertime:'Hourly overtime',doubleOvertime:'Double overtime',netPay:'Net payable',basePay:'Workday pay',transport:'Transport',doubleMarker:'double'}}
 const dateLabel = (date) => `${date.slice(8)}/${date.slice(5, 7)}/${date.slice(0, 4)}`
 const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 const headerKeys = ['worker', ...dayKeys, 'basePay', 'normalOvertime', 'overtimeAmount', 'doubleOvertime', 'transport', 'netPay']
@@ -29,11 +29,6 @@ function DayCell({ line, date, t, language }) {
   </td>
 }
 function Amounts({ totals, field }) { return Object.entries(totals.currencies).map(([currency, values]) => <bdi dir="ltr" className="block" key={currency}>{money(values[field] ?? (field==='extraDayAmount'?0:null), currency)}</bdi>) }
-function DoubleOvertime({days=0,amount=0,currency}) {
-  const {language}=useTranslation()
-  const dayWord=({ar:'يوم',fr:'j',en:'days'})[language]||'days'
-  return days>0?<span className="team-report-double"><span>{days} {dayWord}</span> · <bdi dir="ltr">{money(amount,currency)}</bdi></span>:<>—</>
-}
 function DoubleTotal({totals}) {
   const {language}=useTranslation()
   const dayWord=({ar:'يوم',fr:'j',en:'days'})[language]||'days'

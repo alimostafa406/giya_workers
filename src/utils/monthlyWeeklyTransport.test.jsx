@@ -69,7 +69,7 @@ it('DIDIER #81 with missing matching monthly compensation shows six days and zer
   expect(lines[0]).toMatchObject({ paymentType: 'monthly', presentDays: 6, baseAmount: 0, transportAmount: 0, eveningOvertimeMinutes: 0, overtimeAmount: 0, finalAmount: 0 })
   const sheet = render(<LanguageProvider><WeeklyPayrollSheet lines={lines} dates={weeklyDates(currentWeek)} editable onEdit={() => {}} /></LanguageProvider>)
   const payrollRow = screen.getByText('DIDIER').closest('tr')
-  expect([...payrollRow.children].slice(-8).map(cell => cell.textContent)).toEqual(['0', '—', '—', '0', '0', '0', '0', '0'])
+  expect([...payrollRow.children].slice(7).map(cell => cell.textContent)).toEqual(['0', '—', '—', '—', '0', '0'])
   expect(sheet.container.querySelectorAll('tbody tr')).toHaveLength(1)
   cleanup(); window.history.replaceState({}, '', `/?date=${currentWeek}`); mocks.load.mockResolvedValue(d)
   const popup = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }

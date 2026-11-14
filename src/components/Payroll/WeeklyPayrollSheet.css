@@ -1,0 +1,11 @@
+[data-weekly-payroll-sheet] table{width:100%;min-width:0;table-layout:fixed;font-size:.76rem}
+[data-weekly-payroll-sheet] th,[data-weekly-payroll-sheet] td{width:auto;padding:.35rem .22rem;overflow-wrap:anywhere;vertical-align:middle}
+[data-weekly-payroll-sheet] thead th{font-size:.73rem}
+[data-weekly-payroll-sheet] thead th:first-child{width:14%}
+[data-weekly-payroll-sheet] thead th:nth-child(n+2):nth-child(-n+7){width:5%}
+[data-weekly-payroll-sheet] thead th:nth-child(8),[data-weekly-payroll-sheet] thead th:nth-child(10),[data-weekly-payroll-sheet] thead th:nth-child(13){width:10%}
+[data-weekly-payroll-sheet] thead th:nth-child(9){width:5%}
+[data-weekly-payroll-sheet] thead th:nth-child(11){width:13%}
+[data-weekly-payroll-sheet] thead th:nth-child(12){width:8%}
+[data-weekly-payroll-sheet] .team-report-double bdi{display:inline-block}
+@media screen and (max-width:900px){[data-weekly-payroll-sheet] table{min-width:820px}}
