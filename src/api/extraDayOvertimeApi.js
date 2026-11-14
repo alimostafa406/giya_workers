@@ -1,4 +1,12 @@
 import {getSupabaseClient} from '../lib/supabase'
+export async function getExtraDayEndReviews(date,team,end='00:00',tolerance=30) {
+  if (!date || !team || !end || tolerance === '') return []
+  const {data,error}=await getSupabaseClient().rpc('admin_get_extra_day_end_reviews',{
+    p_date:date,p_team:team,p_end:end,p_tolerance:Number(tolerance),
+  })
+  if(error) throw error
+  return data||[]
+}
 export async function getExtraDaySessionReviews(date,team,start,end,tolerance) {
   if (!date || !team || !start || !end || tolerance === '') return []
   const {data,error}=await getSupabaseClient().rpc('admin_get_extra_day_session_reviews',{
