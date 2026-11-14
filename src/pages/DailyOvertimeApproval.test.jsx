@@ -32,6 +32,22 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const open = () => render(<LanguageProvider><DailyOperationalReports type="overtime" /></LanguageProvider>)
+it('reload removes newly payable Double OT while retaining unrelated hourly candidates on both routes',async()=>{
+ open();await screen.findByRole('checkbox',{name:'Alpha'})
+ sources[0].extra_day_payable=true
+ sources[1].extra_day_payable=false
+ fireEvent.click(screen.getByRole('button',{name:'إعادة التحميل'}))
+ await waitFor(()=>expect(screen.queryByRole('checkbox',{name:'Alpha'})).toBeNull())
+ expect(screen.getByRole('checkbox',{name:'Beta'})).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'اختيار الكل'}))
+ fireEvent.click(screen.getByRole('button',{name:'موافقة على المحددين'}))
+ await waitFor(()=>expect(api.decide.mock.calls[0][1].map(r=>r.worker.id)).toEqual(['Beta']))
+ cleanup();render(<BiometricOvertimeReview />)
+ await waitFor(()=>expect(api.load.mock.calls.length).toBeGreaterThan(2))
+ fireEvent.change(screen.getByLabelText('الحالة'),{target:{value:''}})
+ expect(screen.queryByRole('checkbox',{name:'Alpha'})).toBeNull()
+ await screen.findByRole('checkbox',{name:'Beta'})
+})
 
 it.each(['approved','rejected'])('daily report single %s updates immediately and persists in the canonical review page', async decision => {
   open()

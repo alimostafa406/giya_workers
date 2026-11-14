@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest'
+import {readFileSync} from 'node:fs'
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: vi.fn() }))
 import { biometricReviewRows, approvedBiometricOvertime, assertBiometricReviewsResolved } from './biometricOvertimeReview'
 import { applyManualWeeklyOvertime } from './weeklyManualOvertime'
@@ -67,4 +68,30 @@ it('uses the backend canonical next-day checkout shared with Double OT, preservi
  expect(JSON.stringify(s)).toBe(before)
  s.attendance.canonical_final_checkout_at='2026-10-23T00:31:44+01:00'
  expect(biometricReviewRows([s])).toHaveLength(0)
+})
+it('payable Double OT excludes only its worker/date from review and approved biometric pay',()=>{
+ const owned={...source('approved'),extra_day_payable:true}
+ const otherDate=source();otherDate.attendance.attendance_date='2026-10-22'
+ const otherWorker=source();otherWorker.worker={...worker,id:'other'};otherWorker.attendance.worker_id='other'
+ expect(biometricReviewRows([owned,otherDate,otherWorker])).toHaveLength(2)
+ expect(approvedBiometricOvertime(worker,{date,row:owned.attendance},[owned])).toBeNull()
+})
+it.each(['pending','rejected','stale'])('non-payable Double OT %s does not suppress eligible hourly evidence',decision=>{
+ const s={...source(),extra_day_payable:false,double_ot_status:decision}
+ expect(biometricReviewRows([s])).toHaveLength(1)
+})
+it.skipIf(!process.env.DOUBLE_OT_DAILY_AUDIT)('real November 12 sources hide all 19 payable extra-day owners and preserve other candidates',()=>{
+ const sources=JSON.parse(readFileSync(process.env.DOUBLE_OT_DAILY_AUDIT,'utf8'))
+ const owned=sources.filter(s=>s.extra_day_payable)
+ expect(owned).toHaveLength(19)
+ const before=JSON.stringify(sources)
+ const withoutOwnership=biometricReviewRows(sources.map(s=>({...s,extra_day_payable:false})))
+ const candidates=biometricReviewRows(sources)
+ expect(withoutOwnership.length-candidates.length).toBe(19)
+ expect(candidates.length).toBeGreaterThan(0)
+ for(const entry of owned){
+   expect(candidates.some(r=>r.worker.id===entry.worker.id&&r.attendance.attendance_date===entry.attendance.attendance_date)).toBe(false)
+   expect(approvedBiometricOvertime(entry.worker,{date:entry.attendance.attendance_date,row:entry.attendance},sources)).toBeNull()
+ }
+ expect(JSON.stringify(sources)).toBe(before)
 })
