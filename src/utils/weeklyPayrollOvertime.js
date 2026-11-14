@@ -76,7 +76,7 @@ const checkoutEvidenceTimestamp = (detail) => {
   const metadata = typeof row.biometric_sync_metadata === 'string'
     ? (() => { try { return JSON.parse(row.biometric_sync_metadata) } catch { return null } })()
     : row.biometric_sync_metadata
-  return metadata?.check_out_event_timestamp || row.review_approved_check_out_at || null
+  return row.canonical_final_checkout_at || metadata?.check_out_event_timestamp || row.review_approved_check_out_at || null
 }
 
 const normalizedCheckoutMinutes = (detail) => {
