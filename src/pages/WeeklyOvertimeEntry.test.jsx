@@ -34,6 +34,21 @@ it.each(['0:00', '2:30', '10:00', '25:00', '37:30', '50:00', '144:00'])('accepts
 it('rejects invalid minutes and durations beyond six complete days', () => {
   for (const value of ['25:60', '-1:00', '144:01', '200:00']) expect(parseWeeklyDuration(value)).toBeNull()
 })
+it.each(['weekly','monthly'])('Administration %s worker can save weekly overtime through visible controls',async payment_type=>{
+  const d=fixture(); d.workers=[{...worker('IFASO','Adminstration'),payment_type}]
+  await open(d)
+  mocks.save.mockImplementation(async ({entries})=>{
+    d.weeklyOvertimeOverrides=entries.map(entry=>({...entry,week_start:week,version:entry.expected_version+1}))
+    return d.weeklyOvertimeOverrides
+  })
+  fireEvent.change(screen.getByLabelText('الفريق'),{target:{value:'Adminstration'}})
+  fireEvent.click(screen.getByRole('checkbox',{name:'IFASO'}))
+  fireEvent.change(screen.getByLabelText('القيمة الجديدة: IFASO'),{target:{value:'3:08'}})
+  fireEvent.click(screen.getByRole('button',{name:'معاينة الإجمالي الأسبوعي'}))
+  fireEvent.click(screen.getByRole('button',{name:'حفظ الإجمالي الأسبوعي'}))
+  await waitFor(()=>expect(mocks.save).toHaveBeenCalledWith({week,entries:[{worker_id:'IFASO',minutes:188,expected_version:0}]}))
+  await waitFor(()=>expect(screen.getAllByText('3:08')).toHaveLength(2))
+})
 it('visible weekly mode applies 25h to two workers, keeps individual 27h, saves week IDs not dates', async () => {
   const d = fixture(), before = JSON.stringify(d.attendance)
   await open(d)

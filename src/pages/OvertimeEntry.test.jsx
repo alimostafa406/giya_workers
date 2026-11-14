@@ -41,6 +41,16 @@ const previewSave = async () => {
   await waitFor(() => expect(mocks.save).toHaveBeenCalled())
 }
 
+it('Administration monthly worker appears and saves manual duration through the existing visible workflow', async () => {
+  const office={id:'907b67ff-a6f7-4633-9fa1-8856d86a4a3b',name:'Adminstration'}
+  source.workers=[worker('a','IFASO',office,{employee_code:'19',payment_type:'monthly'})]
+  source.attendance[0]={...source.attendance[0],status:'present',attendance_day_fraction:1,manual_override:true,attendance_source:'manual',check_out:'17:00:00'}
+  open(); await team(office.id)
+  expect(screen.getByRole('checkbox',{name:'IFASO'}).disabled).toBe(false)
+  apply(); await previewSave()
+  expect(mocks.save.mock.calls[0][0].entries).toMatchObject([{worker_id:'a',minutes:120}])
+})
+
 it.each([' beta ', '315', '025', 'et'])('daily search %s finds monthly worker using canonical biometric strings', async (query) => {
   source.workers[1] = { ...source.workers[1], employee_code: '315', payment_type: 'monthly' }
   source.mappings = [{ worker_id: 'b', device_employee_no: '025', is_active: true, mapping_review_state: 'confirmed' }]

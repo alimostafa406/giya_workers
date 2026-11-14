@@ -1,9 +1,9 @@
-import { isOperationalAttendanceWorkerOnDate } from './activeWorkers'
+import { isManualOvertimeEligibleWorker } from './overtimeWorkerScope'
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime'
 import { finalAttendanceStatus } from './finalAttendanceStatus'
 
 export const overtimeEntryWorkers = (workers, date) => workers.filter((worker) =>
-  worker.team_id && isOperationalAttendanceWorkerOnDate(worker, date))
+  isManualOvertimeEligibleWorker(worker, date))
 
 export const parseOvertimeDuration = (value) => {
   const normalized = String(value).trim().replace(/[٠-٩۰-۹]/g, (digit) =>
