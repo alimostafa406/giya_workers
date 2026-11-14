@@ -1,4 +1,10 @@
 import {getSupabaseClient} from '../lib/supabase'
+export async function getDailyExtraDayReviews(date,team) {
+  if (!date || !team) return []
+  const {data,error}=await getSupabaseClient().rpc('admin_get_daily_extra_day_reviews',{p_date:date,p_team:team})
+  if(error) throw error
+  return data||[]
+}
 export async function getExtraDayReviews(start,end=start) {
   if (!start || !end) return []
   const {data,error}=await getSupabaseClient().rpc('admin_get_extra_day_reviews',{p_start:start,p_end:end})
