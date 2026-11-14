@@ -109,13 +109,13 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(screen.queryByRole('combobox')).toBeNull()
   const teams = screen.getAllByRole('region', { name: /^تقرير الفريق:/ })
   expect(teams).toHaveLength(2)
-  const summaryColumns = ['العامل', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أجر أيام العمل', 'الإضافي العادي', 'مبلغ الإضافي', 'الإضافي الدوبل', 'بدل النقل', 'خصم التأخير', 'صافي القبض']
+  const summaryColumns = ['العامل', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'أجر العمل', 'الإضافي', 'مبلغ الإضافي', 'الإضافي الدوبل', 'النقل', 'صافي القبض']
   for (const team of teams) {
     expect(within(team).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(summaryColumns)
     const table = within(team).getByRole('table')
     const totalRow = within(table).getByRole('row', { name: /^إجمالي الفرقة/ })
     expect(totalRow.parentElement.tagName).toBe('TFOOT')
-    expect(totalRow.children).toHaveLength(14)
+    expect(totalRow.children).toHaveLength(13)
     expect(table.tFoot.rows).toHaveLength(1)
     expect(team.querySelector('.team-report-totals')).toBeNull()
     const expectedGroup = teamWeeklyReport(fixture, week).groups.find((g) => team.getAttribute('aria-label') === `تقرير الفريق: ${g.name}`)
@@ -149,8 +149,8 @@ it('all eligible teams render together; one print includes every worker and the 
   expect(teamReportPrintCss).toContain('font-size:10pt')
   expect(teamReportPrintCss).toContain('width:100%;max-width:none;min-width:0;height:auto;min-height:0')
   expect(teamReportPrintCss).not.toMatch(/scale\(|zoom:|\d+vh|height:\s*100%|font-size:\s*10px/)
-  const widths=[14,...Array(6).fill(4),11,6,10,10,8,7,10]
-  expect(widths).toHaveLength(14)
+  const widths=[14,...Array(6).fill(5),10,5,10,13,8,10]
+  expect(widths).toHaveLength(13)
   expect(widths.reduce((sum,width)=>sum+width,0)).toBe(100)
   expect(html).not.toContain('font-size:10px')
   expect(teamReportPrintCss).toContain('.team-report-team+.team-report-team,.team-report-summary{break-before:page;page-break-before:always}')
@@ -159,7 +159,7 @@ it('all eligible teams render together; one print includes every worker and the 
   const summary = screen.getByRole('region', { name: 'ملخص أجور جميع الفرق' })
   const summaryTable = within(summary).getByRole('table')
   expect([...summaryTable.tHead.querySelectorAll('th')].map((h) => h.textContent))
-    .toEqual(['الفريق', 'عدد العمال', 'أجر أيام العمل', 'الإضافي العادي', 'مبلغ الإضافي', 'الإضافي الدوبل', 'بدل النقل', 'خصم التأخير', 'صافي القبض'])
+    .toEqual(['الفريق', 'عدد العمال', 'أجر العمل', 'الإضافي', 'مبلغ الإضافي', 'الإضافي الدوبل', 'النقل', 'صافي القبض'])
   expect(within(summaryTable).getByRole('row', { name: /^الإجمالي العام/ }).parentElement.tagName).toBe('TFOOT')
 })
 it('print popup failure is reported and the admin route/navigation are wired', () => {
@@ -278,7 +278,7 @@ it('Monday-Saturday cells use canonical payroll statuses and reconcile work/abse
   expect(statuses.filter((s) => s === 'حاضر').length + statuses.filter((s) => s === '½').length / 2).toBe(2.5)
   expect(statuses.filter((s) => s === 'غائب')).toHaveLength(2)
   const total = within(team).getByRole('row', { name: /^إجمالي الفرقة/ })
-  expect(total.children).toHaveLength(14)
+  expect(total.children).toHaveLength(13)
 })
 
 it('non-eligible dates are neutral and frozen snapshot daily statuses never use current live attendance', () => {
@@ -365,7 +365,7 @@ it('FINAL outside-work overtime is rendered in worker, team, grand totals and th
   const workerRow = within(team).getByRole('row', { name: /^Worker a/ })
   expect(workerRow.children[8].textContent).toBe('2h30')
   expect(workerRow.children[9].textContent).toContain('50.00')
-  expect(workerRow.children[13].textContent).toContain('160.00')
+  expect(workerRow.children[12].textContent).toContain('160.00')
   expect(team.querySelector('tfoot').textContent).toContain('2h30')
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]
@@ -425,7 +425,7 @@ it('monthly 5h row appears on screen and print with six daily columns and no sal
   expect(workerRow.children[8].textContent).toBe('5h00')
   expect(workerRow.children[7].textContent).toContain('0.00')
   expect(workerRow.children[9].textContent).toContain('12.50')
-  expect(workerRow.children[13].textContent).toContain('12.50')
+  expect(workerRow.children[12].textContent).toContain('12.50')
   expect(within(team).getByText('شهري — بدل نقل وإضافي')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'طباعة كل الفرق', exact: true }))
   const html = popup.document.write.mock.calls[0][0]
