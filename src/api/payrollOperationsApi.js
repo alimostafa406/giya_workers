@@ -9,7 +9,7 @@ import { getPayrollOutsideWork } from './payrollOutsideWorkApi'
 import { assertWeeklyPayoutDraftReady, assertWeeklyPayoutSnapshotComplete, weeklyPayoutLines, weeklyPayoutSourceSnapshot } from '../utils/weeklyPayoutLines'
 import { getPayrollOvertimeContext } from './payrollOvertimeContextApi'
 import { assertBiometricReviewsResolved } from '../utils/biometricOvertimeReview'
-import { weeklyDates, sundayBefore } from '../utils/payrollCalculations'
+import { weeklyDates, sundayBefore, currentBusinessDate } from '../utils/payrollCalculations'
 import { getBiometricLatenessReviews } from './biometricLatenessApi'
 
 // Batch selected-period history at the database, including pagination. These
@@ -43,6 +43,7 @@ const isMissingSundayCancellationColumnError = (error) => (
 
 const readSundayPayments = async (client, period = {}) => {
   if (period.date_from && period.date_to) {
+    if (sundayBefore(period.date_from) > currentBusinessDate()) return { data: [], available: true }
     const { data, error } = await client.rpc('admin_get_sunday_payroll', { p_date: sundayBefore(period.date_from) })
     if (error) throw error
     return { data: data?.payments || [], available: true }
