@@ -1,4 +1,5 @@
 import { isActiveWorker } from './activeWorkers.js'
+import { sundayBefore } from './payrollCalculations.js'
 
 export const isNormalPayrollWorkerOnDate = (worker, periodEnd = '') => (
   (isActiveWorker(worker) || (worker?.payroll_period_evidence?.end === periodEnd
@@ -19,6 +20,7 @@ export function weeklyPayrollPeriodWorkers(data, start, end) {
       && row.attendance_period_start <= end && row.attendance_period_end >= start
       && (row.payment_type_snapshot === 'weekly' || row.attendance_summary_snapshot?.monthly_overtime_only))
     const activity = Boolean(history || saved
+      || (data.sundayPayments || []).some(row=>String(row.worker_id)===id && row.work_date===sundayBefore(start) && row.payment_status==='unpaid' && row.payroll_eligible!==false)
       || (data.attendance || []).some(row => String(row.worker_id) === id && inPeriod(row.attendance_date))
       || (data.weeklyOvertimeOverrides || []).some(row => String(row.worker_id) === id && row.week_start === start && Number(row.minutes) > 0)
       || (data.biometricOvertimeReviews || []).some(row => String(row.worker?.id) === id && inPeriod(row.attendance?.attendance_date))
@@ -44,7 +46,7 @@ export const payrollDraftEligibleLines = (paymentType, lines = [], periodEnd = '
     || (line?.monthlyOvertimeOnly === true && line.worker?.payment_type === 'monthly'
       && isNormalPayrollWorkerOnDate(line.worker, periodEnd)
       && line.baseAmount === 0 && line.transportAmount >= 0 && line.holidayAmount === 0
-      && line.finalAmount === Math.round((line.transportAmount + line.overtimeAmount + Number(line.extraDayAmount || 0) - Number(line.lateDeduction || 0)) * 100) / 100)) : (Array.isArray(lines) ? lines : [])
+      && line.finalAmount === Math.round((line.transportAmount + line.overtimeAmount + Number(line.extraDayAmount || 0) + Number(line.sundayCarryAmount || 0) - Number(line.lateDeduction || 0)) * 100) / 100)) : (Array.isArray(lines) ? lines : [])
 )
 
 export const weeklyPayrollTotalsByCurrency = (lines = []) => (

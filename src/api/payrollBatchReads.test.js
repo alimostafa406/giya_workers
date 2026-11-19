@@ -21,7 +21,7 @@ it('one week loads all teams in bounded batches, sharing one OT context rather t
   expect(calls[0].ops).toContainEqual(['gte',end,period.date_from])
   expect(calls[0].ops).toContainEqual(['range',0,499])
  }
- expect(state.calls.find(c=>c.table==='worker_sunday_payment').ops).toContainEqual(['gte','work_date','2026-11-08'])
+ expect(state.rpc).toHaveBeenCalledWith('admin_get_sunday_payroll',{p_date:'2026-11-08'})
  expect(state.rpc.mock.calls.filter(([name])=>name==='admin_get_payroll_overtime_context')).toEqual([['admin_get_payroll_overtime_context',{p_start:period.date_from,p_end:period.date_to}]])
  expect(state.rpc.mock.calls.some(([name])=>['admin_get_extra_day_reviews','admin_get_biometric_overtime_review'].includes(name))).toBe(false)
  expect(d.biometricOvertimeReviews).toEqual([{id:'bio'}]);expect(d.extraDayReviews).toEqual([{id:'double'}])

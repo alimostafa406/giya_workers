@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Modal from '../Modal/Modal'
 import { useTranslation } from '../../i18n/LanguageContext'
 import { localIsoDate } from '../../api/payrollSettingsApi'
-import { currentBusinessDate, monthlyDailyValue } from '../../utils/payrollCalculations'
+import { monthlyDailyValue } from '../../utils/payrollCalculations'
 import { formatPayrollMoney } from '../../utils/payrollCurrency'
 
 const adjustmentTypes = ['bonus', 'deduction', 'advance', 'other']
@@ -11,7 +11,7 @@ const latestTermForType = (line, paymentType) => (line?.worker?.payroll_compensa
   .filter((term) => term.payment_type === paymentType)
   .sort((left, right) => String(right.effective_from).localeCompare(String(left.effective_from)))[0] || null
 
-export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, saving, onClose, onSave, onMarkSundayPaid, onCorrectPaidSunday }) {
+export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, saving, onClose, onSave }) {
   const { t, language } = useTranslation()
   const initialStatuses = useMemo(() => Object.fromEntries((line?.details || []).map((detail) => [detail.date, detail.status])), [line])
   const [statuses, setStatuses] = useState(initialStatuses)
@@ -85,12 +85,7 @@ export default function WeeklyPayrollWorkerEditPanel({ line, dates, hasDraft, sa
         </div>
       </fieldset>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {(() => {
-          const payment = line.sundayPayment
-          const isFuture = line.sundayDate > currentBusinessDate()
-          const financiallyProcessed = payment?.payment_status === 'paid' || Boolean(payment?.settled_payroll_run_id)
-          return <label className="rounded-lg border border-(--border) p-3 text-sm font-bold"><span>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${line.sundayDate}T12:00:00`))} · {line.sundayDate}</span>{isFuture ? <span className="input-base mt-1 block text-(--muted)">—</span> : <select className="input-base mt-1" value={sundayWorked ? 'present' : 'absent'} disabled={financiallyProcessed} onChange={(event) => setSundayWorked(event.target.value === 'present')}><option value="present">{t('attendance.present')}</option><option value="absent">{t('attendance.absent')}</option></select>}{payment && payment.payment_status !== 'cancelled' ? <div className="mt-2 space-y-1 font-normal"><p>{t('payroll.sundayValue')}: {payment.amount} {payment.currency_code}</p><p>{t('payroll.sundayPaymentStatus')}: {payment.payment_status === 'paid' ? t('payroll.sundayPaid') : payment.settled_payroll_run_id ? t('payroll.sundayIncludedInPayroll') : t('payroll.sundayUnpaid')}</p>{payment.paid_at ? <p>{t('payroll.paidDate')}: {new Date(payment.paid_at).toLocaleString(locale)}</p> : null}{payment.payment_status === 'unpaid' && !payment.settled_payroll_run_id ? <button type="button" className="btn-secondary mt-2 px-3 py-1" disabled={saving} onClick={() => onMarkSundayPaid(payment)}>{t('payroll.sundayMarkPaid')}</button> : null}{payment.payment_status === 'paid' ? <button type="button" className="btn-secondary mt-2 px-3 py-1" disabled={saving} onClick={() => onCorrectPaidSunday(payment)}>{t('payroll.sundayCorrectRegistration')}</button> : null}{financiallyProcessed && payment.payment_status !== 'paid' ? <p className="text-amber-700">{t('payroll.sundayProcessedCannotReverse')}</p> : null}</div> : null}</label>
-        })()}
+        <a className="btn-secondary" href={`/payroll/sunday?date=${line.sundayDate}`}>عمل يوم الأحد</a>
         {dates.map((date) => {
           const isFuture = line.details.find((detail) => detail.date === date)?.isFuture
           return <label key={date} className="text-sm font-bold"><span>{new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(`${date}T12:00:00`))}</span>{isFuture ? <span className="input-base mt-1 block text-(--muted)">—</span> : <><select className="input-base mt-1" value={statuses[date] || 'absent'} onChange={(event) => setStatuses((current) => ({ ...current, [date]: event.target.value }))}>{statusOptions.map(([value, label, disabled]) => <option key={value} value={value} disabled={disabled}>{label}</option>)}</select>{statuses[date] === 'half_day' || statuses[date] === 'late' ? <input className="input-base mt-1" type="time" required value={checkIns[date] || ''} onChange={(event) => setCheckIns((current) => ({ ...current, [date]: event.target.value }))} /> : null}</>}</label>
