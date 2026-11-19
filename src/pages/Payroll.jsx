@@ -172,6 +172,7 @@ export default function Payroll() {
       <button className="btn-secondary" type="button" onClick={() => setHistoryOpen((open) => !open)}>{t('payroll.payrollHistory')}</button>
       <Link className="btn-secondary" to="/payroll/publication">{t('payroll.manageViewerPublication')}</Link>
       <Link className="btn-secondary" to="/payroll/compensation-review">{t('payroll.printCompensationReview')}</Link>
+      <Link className="btn-primary" to="/payroll/sunday">عمل يوم الأحد</Link>
     </div>
     <div className="mb-4 flex flex-wrap gap-2">
       <button type="button" className={section === 'weekly' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSection('weekly')}>{t('payroll.weeklyOperations')}</button>

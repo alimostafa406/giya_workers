@@ -43,7 +43,8 @@ export function teamWeeklyReport(data, monday) {
     const extraDayAmount=Number(s.calculation_snapshot?.extra_day_amount || 0), extraDays=Number(s.calculation_snapshot?.extra_days || 0)
     const lateDeduction = Number(s.calculation_snapshot?.late_deduction || 0)
     const transportAmount = Number(s.transport_amount || 0)
-    const basePay = monthlyOvertimeOnly ? 0 : round(Number(s.final_amount) - Number(s.overtime_amount || 0) - transportAmount + lateDeduction - extraDayAmount)
+    const sundayCarryAmount=Number(s.calculation_snapshot?.sunday_carry_amount || 0)
+    const basePay = monthlyOvertimeOnly ? 0 : round(Number(s.final_amount) - Number(s.overtime_amount || 0) - transportAmount + lateDeduction - extraDayAmount - sundayCarryAmount)
     const overtimeAmount = overtime.missingRateBlocker ? null : s.attendance_summary_snapshot?.payable_overtime_source_version === 2 ? Number(s.overtime_amount || 0) : overtime.overtimePay ?? 0
     return {
       worker: { ...(data.workers || []).find((w) => String(w.id) === String(s.worker_id)), ...s.attendance_summary_snapshot?.worker_identity_snapshot, id: s.worker_id, full_name: s.worker_name_snapshot, payment_type: s.payment_type_snapshot },
@@ -54,7 +55,7 @@ export function teamWeeklyReport(data, monday) {
       payableOvertimeDays: s.attendance_summary_snapshot?.payable_overtime_days
         || (s.attendance_summary_snapshot?.manual_overtime_source_version === 1
           ? (s.attendance_summary_snapshot.days || []).map(day => ({ date: day.date, source: 'daily_manual', minutes: manualReportMinutes(day) })) : []),
-      finalAmount: overtimeAmount == null ? null : round(basePay + transportAmount + overtimeAmount + extraDayAmount - lateDeduction), unresolved: overtime.missingRateBlocker,
+      finalAmount: overtimeAmount == null ? null : round(basePay + transportAmount + overtimeAmount + extraDayAmount + sundayCarryAmount - lateDeduction), unresolved: overtime.missingRateBlocker,
     }
   }) : periodWorkers.filter((worker) => isWeeklyPayrollEligibleWorker(worker, end)).map((worker) => {
     const line = calculateWeeklyPayoutLine(data, monday, worker)
@@ -65,15 +66,15 @@ export function teamWeeklyReport(data, monday) {
     const minutes = line.eveningOvertimeMinutes
     const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: line.term?.overtime_rate_per_hour })
     const configured = line.term?.daily_rate != null && line.term.daily_rate !== '' && line.term?.daily_transport_allowance != null && line.currency
-    const extraDayAmount=line.extraDayAmount||0, extraDays=line.extraDays||0
+    const extraDayAmount=line.extraDayAmount||0, extraDays=line.extraDays||0, sundayCarryAmount=line.sundayCarryAmount||0
     const lateDeduction = line.lateDeduction || 0
     const transportAmount = adjusted.transportAmount
-    const basePay = configured ? round(adjusted.finalAmount - adjusted.overtimeAmount - transportAmount + lateDeduction - extraDayAmount) : null
+    const basePay = configured ? round(adjusted.finalAmount - adjusted.overtimeAmount - transportAmount + lateDeduction - extraDayAmount - sundayCarryAmount) : null
     const overtimeAmount = overtime.missingRateBlocker ? null : overtime.overtimePay ?? 0
     return { worker, currency: line.currency, workDays: line.presentDays + line.halfDays * Number(data.rules?.half_day_multiplier ?? .5),
       absentDays: line.absentDays, minutes, basePay, overtimeAmount, transportAmount, lateDeduction, extraDayAmount, extraDays, details: line.details,
       weeklyManualOverrideMinutes: line.weeklyManualOverrideMinutes, payableOvertimeDays: line.payableOvertimeDays,
-      finalAmount: basePay == null || overtimeAmount == null ? null : round(basePay + transportAmount + overtimeAmount + extraDayAmount - lateDeduction),
+      finalAmount: basePay == null || overtimeAmount == null ? null : round(basePay + transportAmount + overtimeAmount + extraDayAmount + sundayCarryAmount - lateDeduction),
       unresolved: line.extraDayConflict || !configured || overtime.missingRateBlocker || line.unresolvedDays > 0 }
   })
   // Monthly salary/cycle/deductions are deliberately never evaluated here.
@@ -85,7 +86,7 @@ export function teamWeeklyReport(data, monday) {
     const term = effective.term, attendanceLine = effective
     // Legacy locked weeks retain their old OT-only supplement behavior. New
     // transport is never added retrospectively to a frozen payroll population.
-    const extraDayAmount=locked?0:effective.extraDayAmount||0, extraDays=locked?0:effective.extraDays||0
+    const extraDayAmount=locked?0:effective.extraDayAmount||0, extraDays=locked?0:effective.extraDays||0, sundayCarryAmount=locked?0:effective.sundayCarryAmount||0
     const lateDeduction = locked ? 0 : effective.lateDeduction || 0
     const transportAmount = locked ? 0 : effective.transportAmount
     const overtimeAmount = effective.eveningOvertimeMinutes === 0 ? 0
@@ -95,7 +96,7 @@ export function teamWeeklyReport(data, monday) {
       absentDays: attendanceLine.absentDays, minutes: effective.eveningOvertimeMinutes, details: attendanceLine.details,
       weeklyManualOverrideMinutes: effective.weeklyManualOverrideMinutes, payableOvertimeDays: effective.payableOvertimeDays,
       basePay: 0, overtimeAmount, transportAmount, lateDeduction, extraDayAmount, extraDays,
-      finalAmount: overtimeAmount == null || (transportAmount > 0 && !term.currency_code) ? null : round(transportAmount + overtimeAmount + extraDayAmount - lateDeduction),
+      finalAmount: overtimeAmount == null || (transportAmount > 0 && !term.currency_code) ? null : round(transportAmount + overtimeAmount + extraDayAmount + sundayCarryAmount - lateDeduction),
       unresolved: effective.extraDayConflict || effective.missingRateBlocker || (!term.currency_code && (transportAmount > 0 || effective.eveningOvertimeMinutes > 0)) }
   // Do not add new zero-value population to old locked payroll snapshots.
   }).filter((line) => !locked || line.minutes > 0 || line.transportAmount > 0)
