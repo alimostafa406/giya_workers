@@ -13,7 +13,7 @@ it('renders Sunday evidence, filters visible print rows and approves through the
  window.history.replaceState({},'','/payroll/sunday?date=2026-10-18')
  localStorage.setItem('workers_app_language','en')
  const workers=['MUNIANGA','Other'].map((name,i)=>({id:String(i),full_name:name,employee_code:String(346+i),team_id:String(i),team_name:`Team ${i}`,payment_type:'weekly',payroll_compensation_terms:[{payment_type:'weekly',effective_from:'2026-01-01',daily_rate:20000,currency_code:'CDF'}]}))
- api.load.mockResolvedValue({date:'2026-10-18',workers,attendance:workers.map(w=>({worker_id:w.id,attendance_date:'2026-10-18',status:'present',attendance_day_fraction:1,attendance_source:'outside_work',updated_at:'version'})),rules:{}})
+ api.load.mockResolvedValue({date:'2026-10-18',workers,attendance:workers.map(w=>({worker_id:w.id,attendance_date:'2026-10-18',status:'present',attendance_day_fraction:1,attendance_source:'outside_work',updated_at:'version'})),rules:{},sunday_evidence:workers.map(w=>({worker_id:w.id,eligible:true,reason:'eligible',morning:'07:05:00',checkout:'14:03:00'}))})
  api.confirm.mockResolvedValue({})
  render(<LanguageProvider><SundayPayroll/></LanguageProvider>)
  await screen.findByText('MUNIANGA');expect(screen.getAllByRole('columnheader')).toHaveLength(10)

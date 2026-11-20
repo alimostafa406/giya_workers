@@ -14,16 +14,17 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const payment=(data.payments || []).find(p=>p.worker_id===worker.id && p.work_date===date)
     const decision=attendance?.biometric_sync_metadata?.supervisor_morning_review?.choice
     const conflict=['A','M'].includes(decision) || (attendance?.manual_override && attendance.status==='absent')
-    const present=attendance?.status==='present' && Number(attendance.attendance_day_fraction)>0 && !conflict
+    const evidence=(data.sunday_evidence || []).find(e=>e.worker_id===worker.id)
+    const present=evidence?.eligible===true && !conflict
     const confirmed=payment && payment.payment_status!=='cancelled'
-    if (!present && !confirmed) return []
+    if (!attendance && !confirmed && !evidence) return []
     const terms=(worker.payroll_compensation_terms || []).filter(t=>t.payment_type===worker.payment_type)
     const term=terms.find(t=>t.effective_from<=date && (!t.effective_to || t.effective_to>=date))
       || terms.find(t=>t.effective_from<=today && (!t.effective_to || t.effective_to>=today))
     const daily=confirmed?Number(payment.daily_value):worker.payment_type==='monthly'
       ? monthlyDailyValue(term?.monthly_salary,data.rules?.monthly_working_day_divisor):term?.daily_rate??null
     const currency=confirmed?payment.currency_code:term?.currency_code
-    return [{worker,attendance,payment,present,conflict,currency,daily,amount:confirmed?Number(payment.amount):daily==null?null:Math.round(Number(daily)*2*100)/100,
+    return [{worker,attendance,payment,present,evidence,conflict,currency,daily,amount:!present?0:confirmed?Number(payment.amount):daily==null?null:Math.round(Number(daily)*2*100)/100,
       multiplier:confirmed?Number(payment.multiplier):2,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]
   })
 }
