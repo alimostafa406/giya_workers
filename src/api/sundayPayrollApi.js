@@ -6,7 +6,7 @@ export async function getSundayPayroll(date) {
 }
 export async function confirmSundayPayroll(row, date) {
   const { data, error } = await getSupabaseClient().rpc('admin_confirm_sunday_payroll', {
-    p_worker: row.worker.id, p_date: date, p_expected_updated_at: row.attendance.updated_at,
+    p_worker: row.worker.id, p_date: date, p_expected_updated_at: row.attendance?.updated_at || null,
   })
   if (error) throw error
   return data
