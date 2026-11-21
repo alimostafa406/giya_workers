@@ -1,5 +1,5 @@
 import {getSupabaseClient} from '../lib/supabase'
-export async function getExtraDayEndReviews(date,team,end='00:00',tolerance=30) {
+export async function getExtraDayEndReviews(date,team,end='00:00',tolerance=0) {
   if (!date || !team || !end || tolerance === '') return []
   const {data,error}=await getSupabaseClient().rpc('admin_get_extra_day_end_reviews',{
     p_date:date,p_team:team,p_end:end,p_tolerance:Number(tolerance),
