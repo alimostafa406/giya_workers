@@ -40,7 +40,7 @@ export function formatBiometricOvertimeDuration(minutes) {
 }
 export function approvedBiometricOvertime(worker, detail, sources = []) {
   const entry = sources.find((s) => String(s.worker.id) === String(worker.id) && s.attendance.attendance_date === detail.date)
-  if (!entry || entry.extra_day_payable || !detail.row || String(entry.attendance.id) !== String(detail.row.id)
+  if (!entry || entry.extra_day_payable || entry.midnight_double_ot || !detail.row || String(entry.attendance.id) !== String(detail.row.id)
     || ['check_in','check_out','status','attendance_source'].some((key) => String(entry.attendance[key] || '') !== String(detail.row[key] || ''))
     || entry.attendance.biometric_sync_metadata?.check_out_event_timestamp !== detail.row.biometric_sync_metadata?.check_out_event_timestamp) return null
   const reviewed = derivedBiometricRows([entry])[0]

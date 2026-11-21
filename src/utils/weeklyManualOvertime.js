@@ -30,6 +30,7 @@ export function applyManualWeeklyOvertime(line, override, movements = [], biomet
   })
   const weeklyManualOverrideMinutes = override?.minutes ?? null
   const extraDates=new Set(approvedExtraDays(line.worker,(line.details||[]).map(d=>d.date),extraDayReviews).map(p=>p.date))
+  for(const entry of biometricReviews) if(entry.midnight_double_ot && String(entry.worker.id)===String(line.worker.id)) extraDates.add(entry.attendance.attendance_date)
   for(const day of payableOvertimeDays) if(extraDates.has(day.date)) {
     day.superseded_hourly_overtime={source:day.source,minutes:day.minutes}; day.minutes=0; day.source='extra_day_supersedes_hourly'
   }

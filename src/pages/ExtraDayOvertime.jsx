@@ -17,7 +17,8 @@ const actionable=r=>!r.locked&&['pending','stale'].includes(r.status)
 export default function ExtraDayOvertime() {
   const today=kinshasaClock().date
   const [date,setDate]=useState(today),[team,setTeam]=useState(''),[teams,setTeams]=useState([]),[rows,setRows]=useState([]),[selected,setSelected]=useState([])
-  const [end,setEnd]=useState('00:00:00'),[tolerance,setTolerance]=useState('30'),[request,setRequest]=useState(null)
+  const end='00:00:00',tolerance='0'
+  const [request,setRequest]=useState(null)
   const [status,setStatus]=useState('pending')
   const [loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('')
   useEffect(()=>{let active=true;getExtraDayTeams().then(value=>{if(active)setTeams(value)}).catch(e=>{if(active)setError(getErrorMessage(e))});return()=>{active=false}},[])
@@ -53,8 +54,9 @@ export default function ExtraDayOvertime() {
     <fieldset disabled={saving} className="surface-card flex flex-wrap items-end gap-3 p-3">
       <label>التاريخ<input className="input-base" type="date" max={today} value={date} onChange={e=>change(setDate,e.target.value)} /></label>
       <label>الفريق<select className="input-base" value={team} onChange={e=>change(setTeam,e.target.value)}><option value="">اختر الفريق</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-      <label>نهاية العمل الخاص<input className="input-base" type="text" dir="ltr" inputMode="numeric" placeholder="HH:mm:ss" pattern="([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]" maxLength={8} value={end} onChange={e=>change(setEnd,e.target.value)} /></label>
-      <label>سماح النهاية بالدقائق<input className="input-base" type="number" min="0" max="1440" step="1" value={tolerance} onChange={e=>change(setTolerance,e.target.value)} /></label>
+      <p className="text-sm">التأهل من منتصف ليل اليوم التالي ضمن نافذة يوم العمل. الدفع بعد الموافقة: أجر يوم كامل، وليس ساعات إضافية.</p>
+      <label>نهاية العمل الخاص<input className="input-base" type="text" dir="ltr" inputMode="numeric" placeholder="HH:mm:ss" pattern="([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]" maxLength={8} value={end} readOnly /></label>
+      <label>سماح النهاية بالدقائق<input className="input-base" type="number" min="0" max="1440" step="1" value={tolerance} readOnly /></label>
       <label>الحالة<select className="input-base" value={status} onChange={e=>{setStatus(e.target.value);setSelected([])}}>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}<option value="all">الكل</option></select></label>
       <button type="button" className="btn-primary" disabled={!date||!team||!clockPattern.test(end)||tolerance===''||!Number.isInteger(Number(tolerance))||Number(tolerance)<0||Number(tolerance)>1440||loading} onClick={show}>عرض العمال المستحقين</button>
       <button type="button" className="btn-secondary" disabled={loading||!visible.some(actionable)} onClick={()=>setSelected(visible.filter(actionable).map(key))}>اختيار الكل الظاهر</button>
