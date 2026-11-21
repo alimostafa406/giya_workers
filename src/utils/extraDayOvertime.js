@@ -11,9 +11,10 @@ export function approvedExtraDays(worker, dates, rows = []) {
 }
 export function applyExtraDayPremium(line, rows = []) {
   const extraDayPremiums=approvedExtraDays(line.worker,(line.details||[]).map(d=>d.date),rows)
-  if (extraDayPremiums.some(p=>p.currency!==line.currency)) return {...line,extraDayPremiums,extraDays:extraDayPremiums.length,extraDayAmount:0,extraDayConflict:true}
+  const extraDays=extraDayPremiums.reduce((sum,p)=>sum+Number(p.extra_days ?? 1),0)
+  if (extraDayPremiums.some(p=>p.currency!==line.currency)) return {...line,extraDayPremiums,extraDays,extraDayAmount:0,extraDayConflict:true}
   const extraDayAmount=Math.round(extraDayPremiums.reduce((sum,p)=>sum+Number(p.amount),0)*100)/100
-  return {...line,extraDayPremiums,extraDays:extraDayPremiums.length,extraDayAmount,
+  return {...line,extraDayPremiums,extraDays,extraDayAmount,
     bonusAmount:Number(line.bonusAmount||0)-Number(line.extraDayAmount||0)+extraDayAmount,
     finalAmount:Math.round((Number(line.finalAmount)-Number(line.extraDayAmount||0)+extraDayAmount)*100)/100}
 }

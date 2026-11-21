@@ -15,6 +15,7 @@ import OvertimeEntry from '../pages/OvertimeEntry'
 import BiometricOvertimeReview from '../pages/BiometricOvertimeReview'
 import BiometricLatenessReview from '../pages/BiometricLatenessReview'
 import ExtraDayOvertime from '../pages/ExtraDayOvertime'
+import ManualOvertimeExceptions from '../pages/ManualOvertimeExceptions'
 import TeamWeeklyReport from '../pages/TeamWeeklyReport'
 import AbsenceReport from '../pages/AbsenceReport'
 import SupervisorSheet from '../pages/SupervisorSheet'
@@ -154,6 +155,7 @@ function AppRouter() {
             <Route path="/attendance/overtime-review" element={<BiometricOvertimeReview />} />
             <Route path="/attendance/late-review" element={<BiometricLatenessReview />} />
             <Route path="/attendance/double-overtime-review" element={<ExtraDayOvertime />} />
+            <Route path="/attendance/manual-overtime-exceptions" element={<ManualOvertimeExceptions />} />
             <Route path="/payroll/team-weekly-report" element={<TeamWeeklyReport />} />
             <Route path="/attendance/absence-report" element={<AbsenceReport />} />
             <Route path="/attendance/supervisor-sheet" element={<SupervisorSheet />} />

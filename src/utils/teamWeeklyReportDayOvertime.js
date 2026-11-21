@@ -4,10 +4,10 @@ import { isChauffeurNormalOvertimeExcluded } from './weeklyPayrollOvertime.js'
 // Presentation only: consume the canonical date ledger, never calculate OT
 // from clocks or allocate an undated weekly override to individual days.
 export function teamReportDayOvertime(line, date) {
-  if (line.weeklyManualOverrideMinutes != null) return 0
   const day = line.payableOvertimeDays?.find(day => day.date === date)
-  if (isChauffeurNormalOvertimeExcluded(line) && day?.source !== 'daily_manual') return 0
-  return ['daily_manual', 'approved_biometric', 'outside_work'].includes(day?.source)
+  if (line.weeklyManualOverrideMinutes != null && !day?.manual_exception) return 0
+  if (isChauffeurNormalOvertimeExcluded(line) && !['daily_manual','manual_exception'].includes(day?.source)) return 0
+  return ['daily_manual', 'approved_biometric', 'outside_work','manual_exception'].includes(day?.source)
     && Number.isInteger(day.minutes) && day.minutes > 0 ? day.minutes : 0
 }
 

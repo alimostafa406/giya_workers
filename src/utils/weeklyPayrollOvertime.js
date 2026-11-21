@@ -144,13 +144,21 @@ export const formatOvertimeMinutes = (minutes) => {
 
 export const formatEveningOvertimeMinutes = formatOvertimeMinutes
 
-export const calculateWeeklyOvertimePay = ({ morningOvertimeMinutes = 0, eveningOvertimeMinutes = 0, overtimeHourlyRate = null } = {}) => {
+export const calculateWeeklyOvertimePay = ({ morningOvertimeMinutes = 0, eveningOvertimeMinutes = 0, overtimeHourlyRate = null, manualExceptionDays = [] } = {}) => {
   // Keep the field available, but do not calculate or pay morning overtime
   // until worker-specific schedules are approved.
   const morningMinutes = 0
   const eveningMinutes = Math.max(Number(eveningOvertimeMinutes) || 0, 0)
   const overtimeMinutes = morningMinutes + eveningMinutes
   const hasRate = overtimeHourlyRate !== '' && overtimeHourlyRate != null && Number.isFinite(Number(overtimeHourlyRate)) && Number(overtimeHourlyRate) >= 0
+  const exceptionMinutes=manualExceptionDays.reduce((s,e)=>s+Number(e.minutes),0)
+  const exceptionAmount=manualExceptionDays.reduce((s,e)=>s+Number(e.hourly_amount),0)
+  if(manualExceptionDays.length){
+    const ordinaryMinutes=overtimeMinutes-exceptionMinutes
+    const missingRateBlocker=ordinaryMinutes<0 || (ordinaryMinutes>0 && !hasRate)
+    return {morningOvertimeMinutes:0,eveningOvertimeMinutes:eveningMinutes,overtimeMinutes,overtimeHours:overtimeMinutes/60,
+      overtimePay:missingRateBlocker?null:Math.round((ordinaryMinutes/60*Number(overtimeHourlyRate||0)+exceptionAmount)*100)/100,missingRateBlocker}
+  }
   return { morningOvertimeMinutes: morningMinutes, eveningOvertimeMinutes: eveningMinutes, overtimeMinutes, overtimeHours: overtimeMinutes / 60, overtimePay: hasRate ? Math.round(((overtimeMinutes / 60) * Number(overtimeHourlyRate)) * 100) / 100 : null, missingRateBlocker: overtimeMinutes > 0 && !hasRate }
 }
 
