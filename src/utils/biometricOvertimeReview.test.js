@@ -76,9 +76,13 @@ it('payable Double OT excludes only its worker/date from review and approved bio
  expect(biometricReviewRows([owned,otherDate,otherWorker])).toHaveLength(2)
  expect(approvedBiometricOvertime(worker,{date,row:owned.attendance},[owned])).toBeNull()
 })
-it.each(['pending','rejected','stale'])('non-payable Double OT %s does not suppress eligible hourly evidence',decision=>{
- const s={...source(),extra_day_payable:false,double_ot_status:decision}
- expect(biometricReviewRows([s])).toHaveLength(1)
+it.each(['pending','approved','stale','rejected'])('Double OT %s has the canonical action priority without silently changing existing hourly approvals',decision=>{
+ const blocked=decision!=='rejected'
+ const s={...source('approved'),extra_day_payable:false,extra_day_review_blocked:blocked}
+ expect(biometricReviewRows([s])).toHaveLength(blocked?0:1)
+ expect(approvedBiometricOvertime(worker,{date,row:s.attendance},[s])?.minutes).toBe(150)
+ const other={...source(),worker:{...worker,id:'other'},attendance:{...attendance,worker_id:'other'}}
+ expect(biometricReviewRows([s,other])).toHaveLength(blocked?1:2)
 })
 it.skipIf(!process.env.DOUBLE_OT_DAILY_AUDIT)('real November 12 sources hide all 19 payable extra-day owners and preserve other candidates',()=>{
  const sources=JSON.parse(readFileSync(process.env.DOUBLE_OT_DAILY_AUDIT,'utf8'))

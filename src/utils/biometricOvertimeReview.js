@@ -32,7 +32,7 @@ export function biometricReviewRows(sources = []) {
   // before whole-minute precision. Do not apply a second threshold afterwards.
   // Backend ownership uses the same payable source as payroll, including frozen
   // payroll history. Pending/rejected/non-payable stale extra days do not hide OT.
-  return derivedBiometricRows(sources).filter(row => !row.extra_day_payable)
+  return derivedBiometricRows(sources).filter(row => !row.extra_day_payable && !row.extra_day_review_blocked)
 }
 export function formatBiometricOvertimeDuration(minutes) {
   const wholeMinutes = Math.max(0, Math.floor(Number(minutes) || 0))
