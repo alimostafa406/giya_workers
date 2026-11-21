@@ -9,6 +9,15 @@ vi.mock('../api/biometricOvertimeReviewApi',()=>({getBiometricOvertimeReviews:mo
 vi.mock('../utils/attendanceOperationalGate',()=>({kinshasaClock:()=>({date:'2026-10-23'})}))
 const fixture=()=>['Weekly','Monthly'].map((name,i)=>({worker:{id:name,full_name:name,employee_code:String(i+1),team_id:'t',team_name:'Team',payment_type:i?'monthly':'weekly',is_active:true,staff_classification:'normal'},attendance:{id:name,worker_id:name,attendance_date:'2026-10-23',status:'present',attendance_source:'biometric',check_in:'08:00:00',check_out:'19:30:00',updated_at:'v'},source_fingerprint:'fp',review:null,locked:false}))
 afterEach(()=>{cleanup();vi.clearAllMocks()})
+it.each([false,true])('both review/report routes hide pending Double OT from row and bulk actions (report=%s)',async(reportMode)=>{
+ const rows=fixture();rows[0].extra_day_review_blocked=true;mock.load.mockResolvedValue(rows)
+ render(<BiometricOvertimeReview {...(reportMode?{report:{date:'2026-10-23',rows:[],title:'Daily OT'}}:{})}/> )
+ await screen.findByRole('checkbox',{name:'Monthly'})
+ expect(screen.queryByRole('checkbox',{name:'Weekly'})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'اختيار الكل'}));fireEvent.click(screen.getByRole('button',{name:'موافقة على المحددين'}))
+ await waitFor(()=>expect(mock.decide).toHaveBeenCalledOnce())
+ expect(mock.decide.mock.calls[0][1].map(r=>r.worker.id)).toEqual(['Monthly'])
+})
 it.each(['approved','rejected'])('visible bulk %s reviews both weekly and monthly workers; real time values stay unchanged',async(decision)=>{
  const rows=fixture(),before=JSON.stringify(rows);mock.load.mockResolvedValue(rows);mock.decide.mockResolvedValue([])
  render(<BiometricOvertimeReview />)
