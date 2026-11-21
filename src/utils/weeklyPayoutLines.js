@@ -78,7 +78,9 @@ export function assertWeeklyPayoutSnapshotComplete(stored) {
   if (!stored.length || stored.some((line) => {
     const summary = line.attendance_summary_snapshot || {}, rate = line.compensation_snapshot?.overtime_rate_per_hour
     const minutes = Number(line.calculation_snapshot?.evening_overtime_minutes)
-    const expected = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: rate })
+    const exceptions=(summary.payable_overtime_days || []).filter(d=>d.manual_exception).map(d=>d.manual_exception)
+    const ordinaryMinutes=minutes-exceptions.reduce((s,e)=>s+Number(e.minutes),0)
+    const expected = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: rate,manualExceptionDays:exceptions })
     return summary.weekly_payout_source_version !== 3 || summary.manual_overtime_only !== true
       || !Number.isFinite(minutes) || minutes < 0
       || Number(line.overtime_hours) !== Number(expected.overtimeHours)
@@ -86,7 +88,7 @@ export function assertWeeklyPayoutSnapshotComplete(stored) {
       || (summary.monthly_overtime_only && Number(line.transport_amount) > 0 && (line.compensation_snapshot?.daily_transport_allowance == null
         || !Number.isFinite(Number(line.compensation_snapshot.daily_transport_allowance))
         || Number(line.transport_amount) !== Math.round(Number(line.calculation_snapshot?.transport_days) * Number(line.compensation_snapshot.daily_transport_allowance) * 100) / 100))
-      || (minutes > 0 && (rate == null || rate === '' || !Number.isFinite(Number(rate)) || Number(rate) < 0))
+      || (ordinaryMinutes > 0 && (rate == null || rate === '' || !Number.isFinite(Number(rate)) || Number(rate) < 0))
       || (summary.monthly_overtime_only && (Number(line.base_amount) !== 0 || Number(line.transport_amount) < 0 || !Number.isFinite(Number(line.transport_amount)) || Number(line.holiday_amount) !== 0 || Number(line.final_amount) !== Math.round((Number(line.transport_amount) + Number(line.overtime_amount) + Number(line.calculation_snapshot?.extra_day_amount || 0) + Number(line.calculation_snapshot?.sunday_carry_amount || 0) - Number(line.calculation_snapshot?.late_deduction || 0)) * 100) / 100))
   })) throw new Error('Weekly payout snapshot is incomplete. Reopen Reviewed payroll as Draft and refresh before finalizing.')
 }

@@ -1,4 +1,5 @@
 import { applyPayrollAdjustments, weeklyDates } from './payrollCalculations.js'
+import { manualExceptionDays } from './manualOvertimeException.js'
 import { isNormalPayrollWorkerOnDate, isWeeklyPayrollEligibleWorker, weeklyPayrollPeriodWorkers } from './weeklyPayrollEligibility.js'
 import { calculateWeeklyOvertimePay } from './weeklyPayrollOvertime.js'
 import { manualReportMinutes } from './weeklyManualOvertime.js'
@@ -38,7 +39,7 @@ export function teamWeeklyReport(data, monday) {
     const minutes = s.attendance_summary_snapshot?.payable_overtime_source_version === 2
       ? Number(s.calculation_snapshot?.evening_overtime_minutes ?? Number(s.overtime_hours) * 60)
       : s.attendance_summary_snapshot?.weekly_manual_overtime_override_minutes ?? (s.attendance_summary_snapshot?.days || []).filter((d) => dates.includes(d.date)).reduce((sum, day) => sum + manualReportMinutes(day), 0)
-    const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: s.compensation_snapshot?.overtime_rate_per_hour })
+    const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: s.compensation_snapshot?.overtime_rate_per_hour,manualExceptionDays:manualExceptionDays(s.attendance_summary_snapshot?.payable_overtime_days) })
     const monthlyOvertimeOnly = s.payment_type_snapshot === 'monthly'
     const extraDayAmount=Number(s.calculation_snapshot?.extra_day_amount || 0), extraDays=Number(s.calculation_snapshot?.extra_days || 0)
     const lateDeduction = Number(s.calculation_snapshot?.late_deduction || 0)
@@ -64,7 +65,7 @@ export function teamWeeklyReport(data, monday) {
     // corrections outside the manual-entry path are not payable in this report.
     const adjusted = applyPayrollAdjustments(line, (data.payrollAdjustments || []).filter((a) => a.payroll_line_id === saved?.id && a.adjustment_type !== 'overtime_correction'))
     const minutes = line.eveningOvertimeMinutes
-    const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: line.term?.overtime_rate_per_hour })
+    const overtime = calculateWeeklyOvertimePay({ eveningOvertimeMinutes: minutes, overtimeHourlyRate: line.term?.overtime_rate_per_hour,manualExceptionDays:manualExceptionDays(line.payableOvertimeDays) })
     const configured = line.term?.daily_rate != null && line.term.daily_rate !== '' && line.term?.daily_transport_allowance != null && line.currency
     const extraDayAmount=line.extraDayAmount||0, extraDays=line.extraDays||0, sundayCarryAmount=line.sundayCarryAmount||0
     const lateDeduction = line.lateDeduction || 0

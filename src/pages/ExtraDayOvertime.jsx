@@ -49,6 +49,7 @@ export default function ExtraDayOvertime() {
   const money=r=>r.source.configuration_error?'—':formatPayrollMoney(r.source.daily_wage,{currency:r.source.currency})
   return <section dir="rtl" className="space-y-4">
     <h1 className="text-2xl font-bold">إضافي يوم كامل</h1>
+    <a className="btn-secondary inline-block" href="/attendance/manual-overtime-exceptions">استثناء يدوي — يوم إضافي + ساعات</a>
     <p className="text-sm">اختر التاريخ والفريق، ثم راجع الأدلة وحدد المستحقين. الموافقة تضيف أجر يوم كامل دون يوم حضور إضافي، وتحل محل الإضافي بالساعة لنفس التاريخ.</p>
     {error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
     <fieldset disabled={saving} className="surface-card flex flex-wrap items-end gap-3 p-3">
