@@ -18,7 +18,7 @@ const labels={
 }
 const columns=['worker','code','punches','checkIn','checkOut','attendance','daily','sundayPay','net']
 const widths=[18,7,9,10,10,14,10,11,11]
-const money=(amount,currency)=>amount==null||!currency||currency==='UNCONFIGURED'?'—':formatPayrollMoney(amount,{currency,paymentType:'weekly'})
+const money=(amount,currency)=>amount==null?'—':!currency||currency==='UNCONFIGURED'?(Number(amount)===0?'0':'—'):formatPayrollMoney(amount,{currency,paymentType:'weekly'})
 const clock=value=>value?String(value).slice(0,5):'—'
 function Amounts({totals}){return Object.entries(totals.currencies).map(([currency,amount])=><bdi dir="ltr" className="block" key={currency}>{money(amount,currency)}</bdi>)}
 export default function SundayPayroll(){
