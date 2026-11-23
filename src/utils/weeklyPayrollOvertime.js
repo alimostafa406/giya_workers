@@ -113,9 +113,10 @@ export const weeklyPayrollOvertimeForDetail = (detail) => {
     return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: Number(row.emergency_overtime_minutes) }
   }
   if (isChauffeurNormalOvertimeExcluded(detail)) return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
-  if (!isWeekday(detail.date)) return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
+  const sunday = new Date(`${detail.date}T12:00:00Z`).getUTCDay() === 0
+  if (!isWeekday(detail.date) && !sunday) return { morningOvertimeMinutes: 0, eveningOvertimeMinutes: 0 }
   const checkOut = normalizedCheckoutMinutes(detail)
-  const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(checkOut - 1020, 0)
+  const workedAfterEndMinutes = checkOut == null ? 0 : Math.max(checkOut - (sunday ? 840 : 1020), 0)
   return {
     morningOvertimeMinutes: 0,
     // Check eligibility before rounding: exactly 30 minutes is not eligible.
