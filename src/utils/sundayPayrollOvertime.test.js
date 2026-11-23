@@ -8,7 +8,8 @@ it.skipIf(!process.env.SUNDAY_REPORT_AUDIT)('real November 22 report keeps NIOKA
  const rows=sundayReportRows(source,date)
  expect(rows).toHaveLength(53)
  expect(rows.find(r=>r.worker.employee_code==='179')).toMatchObject({present:true,daily:25000,amount:50000,overtimeMinutes:0,netAmount:50000})
- for(const code of ['71','300'])expect(rows.find(r=>r.worker.employee_code===code)).toMatchObject({present:true,daily:null,amount:null,overtimeMinutes:0,canConfirm:false})
+ expect(rows.find(r=>r.worker.employee_code==='71')).toMatchObject({present:false,daily:null,amount:0,overtimeMinutes:0,canConfirm:false})
+ expect(rows.find(r=>r.worker.employee_code==='300')).toMatchObject({present:true,daily:null,amount:null,overtimeMinutes:0,canConfirm:false})
  expect(JSON.stringify(source)).toBe(before)
 })
 function data(decision='approved'){
