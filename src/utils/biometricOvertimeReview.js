@@ -18,7 +18,7 @@ export function biometricOvertimeMinutes(worker, row, date) {
 }
 function derivedBiometricRows(sources = []) {
   return sources.map((source) => {
-    const minutes = biometricOvertimeMinutes(source.worker, source.attendance, source.attendance.attendance_date)
+    const minutes = source.sunday_evidence ? Number(source.raw_minutes) : biometricOvertimeMinutes(source.worker, source.attendance, source.attendance.attendance_date)
     const review = source.review
     const audit = review?.history?.at(-1)
     const originalMinutes = audit?.source_fingerprint === review?.source_fingerprint && Number(audit?.minutes) === Number(review?.minutes)
@@ -40,6 +40,10 @@ export function formatBiometricOvertimeDuration(minutes) {
 }
 export function approvedBiometricOvertime(worker, detail, sources = []) {
   const entry = sources.find((s) => String(s.worker.id) === String(worker.id) && s.attendance.attendance_date === detail.date)
+  if(entry?.sunday_evidence){
+    const reviewed=derivedBiometricRows([entry])[0]
+    return reviewed?.status==='approved'&&!reviewed.stale?{minutes:reviewed.approvedMinutes,original_biometric_minutes:reviewed.minutes,version:reviewed.review.version,actor:reviewed.review.actor,actor_viewer_id:reviewed.review.actor_viewer_id,decided_at:reviewed.review.decided_at,source_fingerprint:entry.source_fingerprint}:null
+  }
   if (!entry || entry.extra_day_payable || entry.midnight_double_ot || !detail.row || String(entry.attendance.id) !== String(detail.row.id)
     || ['check_in','check_out','status','attendance_source'].some((key) => String(entry.attendance[key] || '') !== String(detail.row[key] || ''))
     || entry.attendance.biometric_sync_metadata?.check_out_event_timestamp !== detail.row.biometric_sync_metadata?.check_out_event_timestamp) return null

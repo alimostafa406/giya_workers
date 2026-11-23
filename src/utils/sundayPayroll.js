@@ -33,9 +33,10 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     // override onto Sunday or create another payable decision while reporting.
     const overtime=applyManualWeeklyOvertime({worker,term,currency,details:[{date,row:attendance}],finalAmount:0,overtimeAmount:0},null,
       data.outsideWorkMovements||[],data.biometricOvertimeReviews||[],data.extraDayReviews||[])
-    const overtimeMinutes=present?overtime.eveningOvertimeMinutes:0
+    const overtimeMinutes=overtime.eveningOvertimeMinutes
     const overtimeAmount=!overtimeMinutes?0:overtime.missingRateBlocker?null:overtime.overtimeAmount
-    const candidateMinutes=present?weeklyPayrollOvertimeForDetail({date,worker,row:{check_out:evidence?.checkout}}).eveningOvertimeMinutes:0
+    const sundaySource=(data.biometricOvertimeReviews||[]).find(s=>s.sunday_evidence&&String(s.worker.id)===String(worker.id))
+    const candidateMinutes=sundaySource?.raw_minutes??(present?weeklyPayrollOvertimeForDetail({date,worker,row:{check_out:evidence?.checkout}}).eveningOvertimeMinutes:0)
     const netAmount=payment?.payment_status==='cancelled'?0:amount==null||overtimeAmount==null?null:Math.round((amount+overtimeAmount)*100)/100
     return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,
       multiplier:confirmed?Number(payment.multiplier):2,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]

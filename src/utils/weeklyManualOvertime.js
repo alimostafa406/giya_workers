@@ -25,7 +25,8 @@ export function applyManualWeeklyOvertime(line, override, movements = [], biomet
     if(exception)return {date:detail.date,source:'manual_exception',minutes:exception.minutes,manual_exception:exception}
     const outside = outsideDays.find((day) => day.date === detail.date)
     const manual = hasDailyManualOvertime(detail.row)
-    const approved = manualOnly ? null : approvedBiometricOvertime(line.worker || {}, detail, biometricReviews)
+    const sundaySource=biometricReviews.some(s=>s.sunday_evidence&&String(s.worker.id)===String(line.worker.id)&&s.work_date===detail.date)
+    const approved = manualOnly&&!sundaySource ? null : approvedBiometricOvertime(line.worker || {}, detail, biometricReviews)
     return { date: detail.date, source: manual ? 'daily_manual' : approved ? 'approved_biometric' : outside?.minutes ? 'outside_work' : 'none',
       minutes: manual ? manualReportMinutes(detail.row) : approved ? approved.minutes : outside?.minutes || 0,
       ...(approved && !manual ? { biometric_approval: approved } : {}),

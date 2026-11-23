@@ -4,6 +4,7 @@
 .sunday-team tfoot th:first-child span{display:inline-block;margin-inline-end:1rem}.sunday-approve{font-size:.7rem;padding:.2rem .4rem;margin-top:.25rem}
 .sunday-grand{padding:.8rem;border:1px solid #94a3b8;border-radius:.75rem}.sunday-grand td{font-weight:700}
 .sunday-payroll{width:100%;max-width:none}.sunday-team table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:.76rem}
+.sunday-hourly-review{margin-top:1rem}.sunday-hourly-review h2{font-size:1.1rem;font-weight:800}.sunday-hourly-review table{width:100%;border-collapse:collapse;font-size:.76rem}.sunday-hourly-review th,.sunday-hourly-review td{padding:.4rem;border:1px solid #cbd5e1;text-align:start}.sunday-hourly-review bdi{white-space:nowrap}
 .sunday-team th,.sunday-team td{padding:.35rem .3rem;vertical-align:middle;overflow-wrap:anywhere}.sunday-team header{margin-bottom:.4rem}.sunday-report-heading{margin-bottom:.5rem}
 @media screen and (max-width:900px){.sunday-team table{min-width:760px}}
 @media print{
