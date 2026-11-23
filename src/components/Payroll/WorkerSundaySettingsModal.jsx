@@ -4,8 +4,9 @@ import {getWorkerSundaySettings,saveWorkerSundaySettings} from '../../api/sunday
 import {getErrorMessage} from '../../api/axios'
 const timeFields=[['checkin_cutoff','آخر وقت دخول مقبول'],['shift_end','نهاية دوام الأحد'],['checkout_threshold','أقل وقت خروج مكتمل'],['overtime_start','بداية إضافي الأحد']]
 export default function WorkerSundaySettingsModal({worker,onClose,onSaved}){
+ const workerId=worker?.id
  const [values,setValues]=useState(null),[error,setError]=useState(''),[saving,setSaving]=useState(false)
- useEffect(()=>{let active=true;setValues(null);setError('');if(worker)getWorkerSundaySettings(worker.id).then(data=>{if(active)setValues(data)}).catch(e=>{if(active)setError(getErrorMessage(e))});return()=>{active=false}},[worker?.id])
+ useEffect(()=>{let active=true;setValues(null);setError('');if(workerId)getWorkerSundaySettings(workerId).then(data=>{if(active)setValues(data)}).catch(e=>{if(active)setError(getErrorMessage(e))});return()=>{active=false}},[workerId])
  const set=(key,value)=>setValues(old=>({...old,[key]:value}))
  const save=async e=>{e.preventDefault();if(!values||saving)return;setSaving(true);setError('')
   try{await saveWorkerSundaySettings(worker.id,values,values.version||0);await onSaved();onClose()}catch(e){setError(getErrorMessage(e))}finally{setSaving(false)}
