@@ -10,6 +10,7 @@ import {payrollRenderedPrintCss} from '../utils/printRenderedPayroll'
 import PayrollSheetFrame,{PayrollWorkerIdentity,payrollSheetClasses as sheet} from '../components/Payroll/PayrollSheetFrame'
 import {formatBiometricOvertimeDuration} from '../utils/biometricOvertimeReview'
 import SundayOvertimeSection from '../components/Payroll/SundayOvertimeSection'
+import WorkerSundaySettingsModal from '../components/Payroll/WorkerSundaySettingsModal'
 import './SundayPayroll.css'
 
 const labels={
@@ -41,6 +42,7 @@ export default function SundayPayroll(){
  const [date,setDate]=useState(isSundayDate(initial)&&initial<=today?initial:latestSunday(today))
  const [team,setTeam]=useState(''),[search,setSearch]=useState(''),[data,setData]=useState(null)
  const [loading,setLoading]=useState(true),[error,setError]=useState('')
+ const [settingsWorker,setSettingsWorker]=useState(null)
  const report=useRef(null)
  useEffect(()=>{let active=true;setLoading(true);setError('');setData(null)
   getSundayPayroll(date).then(value=>{if(active)setData(value)}).catch(e=>{if(active)setError(getErrorMessage(e))}).finally(()=>{if(active)setLoading(false)})
@@ -51,7 +53,7 @@ export default function SundayPayroll(){
  const visible=rows.filter(row=>(!team||(row.worker.team_id||'unassigned')===team)&&`${row.worker.full_name} ${row.worker.employee_code}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
  const groups=sundayTeamGroups(visible),totals=sundayReportTotals(visible)
  const print=()=>{const popup=window.open('','_blank');if(!popup)return
-  const content=report.current.cloneNode(true);content.querySelectorAll('button').forEach(n=>n.remove())
+  const content=report.current.cloneNode(true);content.querySelectorAll('button').forEach(n=>n.replaceWith(...n.childNodes))
   content.querySelectorAll('table').forEach(table=>{table.removeAttribute('class');table.querySelectorAll('[class]').forEach(node=>node.removeAttribute('class'))})
   popup.document.write(`<!doctype html><html lang="${language}" dir="${direction}"><head><meta charset="utf-8"><title>${l.title}</title><style>${payrollRenderedPrintCss}\n.sunday-report{display:block}.sunday-team,.sunday-grand{margin:0;padding:0}.sunday-team header{margin-bottom:2mm}.sunday-team .overflow-x-auto{overflow:visible}.surface-card{border:0;box-shadow:none}</style></head><body>${content.outerHTML}</body></html>`)
   popup.document.close();finishPayrollPrint(popup)
@@ -72,7 +74,7 @@ export default function SundayPayroll(){
     <PayrollSheetFrame variant="sunday"><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup>
      <thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={key==='worker'?'px-3 py-2.5 text-start text-xs font-extrabold text-(--muted)':sheet.header} key={key}>{l[key]}</th>)}</tr></thead>
      <tbody>{group.rows.map(row=><tr className={sheet.row} key={row.worker.id} data-worker={row.worker.id}>
-      <td className="px-3 py-2.5"><PayrollWorkerIdentity worker={row.worker}/>
+      <td className="px-3 py-2.5"><button type="button" className="text-start hover:underline" onClick={()=>setSettingsWorker(row.worker)}><PayrollWorkerIdentity worker={row.worker}/></button>{row.worker.sunday_settings_custom&&<small className="block text-xs text-(--muted)">إعدادات خاصة</small>}
        {!row.present&&<small className="block">{l.incomplete}</small>}
        {row.present&&row.daily==null&&<small className="block">{l.missing}</small>}
        {row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}
@@ -90,5 +92,6 @@ export default function SundayPayroll(){
    {groups.length>0&&<section className="team space-y-3 sunday-grand"><h2 className="font-extrabold">{l.grand}</h2><PayrollSheetFrame variant="summary"><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup><thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={sheet.header} key={key}>{l[key]}</th>)}</tr></thead><tbody className={sheet.total}><SundayTotalRow totals={totals} label={({ar:'الإجمالي العام',en:'Grand total',fr:'Total général'})[language]||'Grand total'}/></tbody></PayrollSheetFrame></section>}
   </div>
   {!loading&&data&&<SundayOvertimeSection date={date} sources={data.biometricOvertimeReviews||[]} team={team} search={search} onSaved={async()=>setData(await getSundayPayroll(date))}/>}
+  <WorkerSundaySettingsModal worker={settingsWorker} onClose={()=>setSettingsWorker(null)} onSaved={async()=>setData(await getSundayPayroll(date))}/>
  </section>
 }

@@ -19,3 +19,13 @@ export async function confirmSundayPayroll(row, date) {
   if (error) throw error
   return data
 }
+export async function getWorkerSundaySettings(workerId){
+ const {data,error}=await getSupabaseClient().rpc('admin_get_worker_sunday_settings',{p_worker:workerId})
+ if(error)throw error
+ return data
+}
+export async function saveWorkerSundaySettings(workerId,settings,version){
+ const {data,error}=await getSupabaseClient().rpc('admin_save_worker_sunday_settings',{p_worker:workerId,p_settings:settings,p_expected_version:version})
+ if(error)throw error
+ return data
+}

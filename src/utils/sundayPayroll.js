@@ -29,7 +29,8 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const daily=confirmed?Number(payment.daily_value):worker.payment_type==='monthly'
       ? Number(term?.monthly_salary)>0 ? monthlyDailyValue(term.monthly_salary,data.rules?.monthly_working_day_divisor) : null :term?.daily_rate??null
     const currency=confirmed?payment.currency_code:term?.currency_code
-    const amount=!present?0:confirmed?Number(payment.amount):daily==null?null:Math.round(Number(daily)*2*100)/100
+    const multiplier=confirmed?Number(payment.multiplier):Number(evidence?.sunday_settings?.pay_multiplier??2)
+    const amount=!present?0:confirmed?Number(payment.amount):daily==null?null:Math.round(Number(daily)*multiplier*100)/100
     // Reuse date-specific precedence/approval/ownership; never spread a weekly
     // override onto Sunday or create another payable decision while reporting.
     const overtime=applyManualWeeklyOvertime({worker,term,currency,details:[{date,row:attendance}],finalAmount:0,overtimeAmount:0},null,
@@ -41,7 +42,7 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const candidateMinutes=sundaySource?.raw_minutes??(present?weeklyPayrollOvertimeForDetail({date,worker,row:{check_out:evidence?.checkout}}).eveningOvertimeMinutes:0)
     const netAmount=payment?.payment_status==='cancelled'?0:amount==null||overtimeAmount==null?null:Math.round((amount+overtimeAmount)*100)/100
     return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,overtimeReviewStatus,
-      multiplier:confirmed?Number(payment.multiplier):2,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]
+      multiplier,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]
   })
 }
 

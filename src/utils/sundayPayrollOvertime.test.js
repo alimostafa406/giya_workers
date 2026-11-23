@@ -35,6 +35,10 @@ it('stale evidence does not pay and adjusted approved minutes are respected',()=
  adjusted.biometricOvertimeReviews[0].review.history=[{source_fingerprint:'f',minutes:60,original_biometric_minutes:301}]
  expect(sundayReportRows(adjusted,date)[0]).toMatchObject({overtimeMinutes:60,overtimeAmount:3000,netAmount:43000})
 })
+it('a recurring preference cannot bypass the canonical pending OT decision',()=>{
+ const d=data('pending');d.biometricOvertimeReviews[0].sunday_evidence=true;d.biometricOvertimeReviews[0].raw_minutes=301;d.biometricOvertimeReviews[0].sunday_settings={overtime_requires_approval:false}
+ expect(sundayReportRows(d,date)[0]).toMatchObject({overtimeMinutes:0,overtimeAmount:0,netAmount:40000})
+})
 it('manual duration wins without duplicating approved biometric OT; Chauffeur stays manual-only',()=>{
  const d=data();Object.assign(d.attendance[0],{manual_override:true,emergency_overtime_mode:'manual_overtime_duration',emergency_overtime_minutes:120})
  expect(sundayReportRows(d,date)[0]).toMatchObject({overtimeMinutes:120,overtimeAmount:6000,netAmount:46000})
