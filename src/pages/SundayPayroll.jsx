@@ -70,7 +70,7 @@ export default function SundayPayroll(){
        {!row.present&&<small className="block">{l.incomplete}</small>}
        {row.present&&row.daily==null&&<small className="block">{l.missing}</small>}
        {row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}
-       {row.candidateMinutes>0&&!row.overtimeMinutes&&<small className="block">{l.otPending}: <bdi dir="ltr">{duration(row.candidateMinutes)}</bdi></small>}
+       {row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block">{l.otPending}: <bdi dir="ltr">{duration(row.candidateMinutes)}</bdi></small>}
       </td>
       <td><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td><bdi dir="ltr">{clock(row.evidence?.display_check_out)}</bdi></td>
       <td><bdi dir="ltr">{money(row.daily,row.currency)}</bdi></td><td><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
