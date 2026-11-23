@@ -1,0 +1,39 @@
+// @vitest-environment jsdom
+import React,{useState} from 'react'
+import {afterEach,expect,it,vi} from 'vitest'
+import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
+import SundayOvertimeSection from './SundayOvertimeSection'
+import {sundayReportRows} from '../../utils/sundayPayroll'
+import {readFileSync} from 'node:fs'
+globalThis.React=React
+const api=vi.hoisted(()=>({decide:vi.fn()}))
+vi.mock('../../api/biometricOvertimeReviewApi',()=>({decideBiometricOvertime:api.decide}))
+afterEach(()=>{cleanup();vi.clearAllMocks()})
+const date='2026-11-22'
+it.skipIf(!process.env.SUNDAY_OT_AUDIT)('renders only real qualifying November 22 workers from canonical production sources',()=>{
+ const rows=JSON.parse(readFileSync(process.env.SUNDAY_OT_AUDIT,'utf8'))
+ const view=render(<SundayOvertimeSection date={date} sources={rows} onSaved={vi.fn()}/>)
+ expect(screen.getByText('juresse')).not.toBeNull();expect(screen.getByText('khonde nzita')).not.toBeNull();expect(screen.queryByText('NIOKA')).toBeNull()
+ expect(view.container.querySelectorAll('[data-sunday-ot-worker]')).toHaveLength(2)
+ expect(screen.getByText('5h01')).not.toBeNull();expect(screen.getByText('7h57')).not.toBeNull();expect(api.decide).not.toHaveBeenCalled()
+})
+function sources(){return [['j','juresse','71',301,3500],['k','khonde','300',477,2500]].map(([id,name,code,minutes,rate])=>({sunday_evidence:true,work_date:date,
+ worker:{id,full_name:name,employee_code:code,team_id:'t',team_name:'Chauffeur',payment_type:'monthly',is_active:true,payroll_compensation_terms:[{payment_type:'monthly',effective_from:'2026-01-01',monthly_salary:520000,currency_code:'CDF',overtime_rate_per_hour:rate}]},
+ attendance:{worker_id:id,attendance_date:date,id:null},evidence:{last_at:'2026-11-22T18:01:16Z'},raw_minutes:minutes,hourly_rate:rate,currency:'CDF',source_fingerprint:id,review:null}))}
+it('visible controls bulk approve/reject canonical decisions and Sunday net adds approved OT once',async()=>{
+ let stored=sources()
+ api.decide.mockImplementation(async(day,entries,decision)=>{expect(day).toBe(date);stored=stored.map(s=>entries.some(e=>e.worker.id===s.worker.id)?{...s,review:{decision,minutes:s.raw_minutes,version:1,source_fingerprint:s.source_fingerprint}}:s);return[]})
+ function Harness(){const [rows,setRows]=useState(stored);const data={date,workers:rows.map(r=>r.worker),rules:{monthly_working_day_divisor:26},sunday_evidence:rows.map(r=>({worker_id:r.worker.id,eligible:true,punch_count:6})),biometricOvertimeReviews:rows}
+  return <><output data-testid="net">{sundayReportRows(data,date).reduce((sum,r)=>sum+r.netAmount,0).toFixed(2)}</output><SundayOvertimeSection date={date} sources={rows} onSaved={async()=>setRows(stored)}/></>}
+ render(<Harness/>);expect(screen.getByText('إضافي الأحد')).not.toBeNull();expect(screen.getByTestId('net').textContent).toBe('80000.00')
+ fireEvent.click(screen.getByRole('button',{name:'اختيار الكل الظاهر'}));expect(screen.getAllByRole('checkbox').every(c=>c.checked)).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:'موافقة على المختارين'}));await waitFor(()=>expect(screen.getByTestId('net').textContent).toBe('117433.33'))
+ expect(api.decide.mock.calls[0][1]).toHaveLength(2);expect(api.decide.mock.calls[0][2]).toBe('approved')
+ fireEvent.click(screen.getByRole('button',{name:'اختيار الكل الظاهر'}));fireEvent.click(screen.getByRole('button',{name:'رفض المختارين'}));await waitFor(()=>expect(screen.getByTestId('net').textContent).toBe('80000.00'))
+ expect(screen.getAllByText('مرفوض')).toHaveLength(2)
+})
+it('filters selection to visible sources and disables locked writes',()=>{
+ const rows=sources();rows[1].locked=true
+ render(<SundayOvertimeSection date={date} sources={rows} search="juresse" onSaved={vi.fn()}/>)
+ expect(screen.queryByText('khonde')).toBeNull();fireEvent.click(screen.getByRole('button',{name:'اختيار الكل الظاهر'}));expect(screen.getAllByRole('checkbox')).toHaveLength(1);expect(screen.getByRole('checkbox').checked).toBe(true)
+})

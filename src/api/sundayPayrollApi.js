@@ -1,14 +1,16 @@
 import { getSupabaseClient } from '../lib/supabase'
 import { getPayrollOvertimeContext } from './payrollOvertimeContextApi'
+import { getBiometricOvertimeReviews } from './biometricOvertimeReviewApi'
 export async function getSundayPayroll(date) {
-  const [{ data, error }, context, movements] = await Promise.all([
+  const [{ data, error }, context, movements, biometricOvertimeReviews] = await Promise.all([
     getSupabaseClient().rpc('admin_get_sunday_payroll', { p_date: date }),
     getPayrollOvertimeContext(date,date),
     getSupabaseClient().from('outside_work_movements').select('*,outside_work_movement_workers(*)').eq('work_date',date).eq('status','final'),
+    getBiometricOvertimeReviews(date),
   ])
   if (error) throw error
   if (movements.error) throw movements.error
-  return {...data,...context,outsideWorkMovements:movements.data||[]}
+  return {...data,...context,biometricOvertimeReviews,outsideWorkMovements:movements.data||[]}
 }
 export async function confirmSundayPayroll(row, date) {
   const { data, error } = await getSupabaseClient().rpc('admin_confirm_sunday_payroll', {

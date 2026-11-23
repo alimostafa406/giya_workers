@@ -8,6 +8,7 @@ import {isSundayDate,latestSunday,sundayReportRows,sundayReportTotals,sundayTeam
 import {finishPayrollPrint} from '../utils/teamReportPrintLayout'
 import {teamReportPrintCss} from '../utils/teamWeeklyReport'
 import {formatBiometricOvertimeDuration} from '../utils/biometricOvertimeReview'
+import SundayOvertimeSection from '../components/Payroll/SundayOvertimeSection'
 import sundayStyles from './SundayPayroll.css?inline'
 import './TeamWeeklyReport.css'
 import './SundayPayroll.css'
@@ -82,5 +83,6 @@ export default function SundayPayroll(){
    {!loading&&!groups.length&&<p>{l.empty}</p>}
    {groups.length>0&&<section className="team-report-content sunday-grand"><h2>{l.grand}</h2><table><thead><tr>{['teamCount','presentCount','baseTotal','overtime','overtimeTotal','total'].map(key=><th key={key}>{l[key]}</th>)}</tr></thead><tbody><tr><td>{groups.length}</td><td>{totals.present}</td><td><Amounts totals={totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(totals.overtimeMinutes)}</bdi></td><td><Amounts totals={totals} family="overtimeCurrencies"/></td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></table></section>}
   </div>
+  {!loading&&data&&<SundayOvertimeSection date={date} sources={data.biometricOvertimeReviews||[]} team={team} search={search} onSaved={async()=>setData(await getSundayPayroll(date))}/>}
  </section>
 }
