@@ -7,6 +7,7 @@ import {formatPayrollMoney} from '../utils/payrollCurrency'
 import {isSundayDate,latestSunday,sundayReportRows,sundayReportTotals,sundayTeamGroups} from '../utils/sundayPayroll'
 import {finishPayrollPrint} from '../utils/teamReportPrintLayout'
 import {teamReportPrintCss} from '../utils/teamWeeklyReport'
+import {formatBiometricOvertimeDuration} from '../utils/biometricOvertimeReview'
 import sundayStyles from './SundayPayroll.css?inline'
 import './TeamWeeklyReport.css'
 import './SundayPayroll.css'
@@ -16,11 +17,15 @@ const labels={
  en:{title:'Sunday work',date:'Sunday date',team:'Team',all:'All teams',search:'Search name or code...',print:'Print Sunday report',worker:'Worker',code:'Employee code',punches:'Punch count',checkIn:'Check-in',checkOut:'Checkout',attendance:'Attendance',daily:'Daily wage',sundayPay:'Sunday pay',net:'Sunday net',present:'Present',incomplete:'Incomplete',manual:'Authorized manual decision',outside:'FINAL outside work',pending:'Awaiting approval',approved:'Approved',paid:'Paid',cancelled:'Cancelled',confirm:'Approve Sunday work',missing:'Wage configuration required',workers:'Sunday workers',presentCount:'Present workers',oneCount:'One-punch workers',twoCount:'Workers with two or more punches',teamTotal:'Team Sunday total',grand:'Sunday grand total',teamCount:'Total teams',total:'Total Sunday payroll',empty:'No matching Sunday attendance',invalid:'Choose a non-future Sunday',note:'Sunday pays twice the daily wage, without another Double OT premium. This is a preview; only approved Sunday pay enters weekly payroll once.',loading:'Loading...',unknown:'Unassigned',weekly:'Weekly',monthly:'Monthly',protected:'Protected attendance decision',single:'1 punch',double:'2 punches',many:'punches'},
  fr:{title:'Travail du dimanche',date:'Date du dimanche',team:'Équipe',all:'Toutes les équipes',search:'Rechercher nom ou code...',print:'Imprimer le dimanche',worker:'Travailleur',code:'Code employé',punches:'Pointages',checkIn:'Entrée',checkOut:'Sortie',attendance:'Présence',daily:'Salaire journalier',sundayPay:'Paie du dimanche',net:'Net dimanche',present:'Présent',incomplete:'Incomplet',manual:'Décision manuelle autorisée',outside:'Travail extérieur FINAL',pending:'À approuver',approved:'Approuvé',paid:'Payé',cancelled:'Annulé',confirm:'Approuver le dimanche',missing:'Salaire à configurer',workers:'Travailleurs du dimanche',presentCount:'Travailleurs présents',oneCount:'Un seul pointage',twoCount:'Deux pointages ou plus',teamTotal:'Total dimanche équipe',grand:'Total général du dimanche',teamCount:'Total équipes',total:'Paie totale du dimanche',empty:'Aucune présence du dimanche correspondante',invalid:'Choisissez un dimanche non futur',note:'Le dimanche paie deux fois le salaire journalier, sans autre prime double. Aperçu : seuls les montants approuvés entrent une seule fois dans la paie hebdomadaire.',loading:'Chargement...',unknown:'Sans équipe',weekly:'Hebdomadaire',monthly:'Mensuel',protected:'Décision de présence protégée',single:'1 pointage',double:'2 pointages',many:'pointages'},
 }
-const columns=['worker','code','punches','checkIn','checkOut','attendance','daily','sundayPay','net']
-const widths=[18,7,9,10,10,14,10,11,11]
+Object.assign(labels.ar,{title:'تقرير أجور الأحد',attendance:'الحضور',checkIn:'الدخول',checkOut:'الخروج',overtime:'الإضافي',overtimePay:'مبلغ الإضافي',status:'الحالة',baseTotal:'إجمالي أجر الأحد',overtimeTotal:'إجمالي مبلغ الإضافي',netTotal:'صافي الفريق',otPending:'إضافي بانتظار المراجعة',note:'دوام الأحد 08:00–14:00؛ اكتمال الخروج من 13:30. أجر الأحد ضعف أجر اليوم، والإضافي المعتمد منفصل ولا يُعتمد تلقائياً.'})
+Object.assign(labels.en,{title:'Sunday payroll report',overtime:'Overtime',overtimePay:'OT amount',status:'Status',baseTotal:'Sunday base total',overtimeTotal:'Overtime total',netTotal:'Team net',otPending:'Overtime awaiting review',note:'Sunday shift 08:00–14:00; completion checkout from 13:30. Sunday base is twice the daily wage. Approved hourly overtime is separate; never approved automatically.'})
+Object.assign(labels.fr,{title:'Rapport de paie du dimanche',overtime:'Supplément',overtimePay:'Montant suppl.',status:'État',baseTotal:'Total dimanche',overtimeTotal:'Total supplément',netTotal:'Net équipe',otPending:'Supplément à examiner',note:'Dimanche 08:00–14:00 ; sortie complète dès 13:30. Base double et supplément approuvé séparés, sans approbation automatique.'})
+const columns=['worker','code','attendance','checkIn','checkOut','daily','sundayPay','overtime','overtimePay','net','status']
+const widths=[15,5,9,6,6,11,11,7,10,11,9]
+const duration=value=>value>0?formatBiometricOvertimeDuration(value):'—'
 const money=(amount,currency)=>amount==null?'—':!currency||currency==='UNCONFIGURED'?(Number(amount)===0?'0':'—'):formatPayrollMoney(amount,{currency,paymentType:'weekly'})
 const clock=value=>value?String(value).slice(0,5):'—'
-function Amounts({totals}){return Object.entries(totals.currencies).map(([currency,amount])=><bdi dir="ltr" className="block" key={currency}>{money(amount,currency)}</bdi>)}
+function Amounts({totals,family='currencies'}){return Object.entries(totals[family]).map(([currency,amount])=><bdi dir="ltr" className="block" key={currency}>{money(amount,currency)}</bdi>)}
 export default function SundayPayroll(){
  const {language,direction}=useTranslation(),l=labels[language]||labels.en
  const today=currentBusinessDate(),initial=new URLSearchParams(window.location.search).get('date')
@@ -60,20 +65,22 @@ export default function SundayPayroll(){
      <thead><tr>{columns.map(key=><th key={key}>{l[key]}</th>)}</tr></thead>
      <tbody>{group.rows.map(row=><tr key={row.worker.id} data-worker={row.worker.id}>
       <td>{row.worker.full_name}<small className="block">{row.worker.payment_type==='monthly'?l.monthly:l.weekly}</small></td>
-      <td>{row.worker.employee_code}</td><td>{punchLabel(row.punchCount)}</td>
+      <td>{row.worker.employee_code}</td>
+      <td>{row.present?l.present:l.incomplete}<small className="block">{punchLabel(row.punchCount)}</small>{row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}{row.outsideEvidence&&<small className="block">{l.outside}</small>}</td>
       <td><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td><bdi dir="ltr">{clock(row.evidence?.display_check_out)}</bdi></td>
-      <td>{row.present?l.present:l.incomplete}{row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}{row.outsideEvidence&&<small className="block">{l.outside}</small>}</td>
       <td><bdi dir="ltr">{money(row.daily,row.currency)}</bdi></td><td><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
-      <td><strong><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></strong>
-       {row.present&&<small className="block">{row.payment?.payment_status==='paid'?l.paid:row.payment?.payment_status==='cancelled'?l.cancelled:row.payment?l.approved:row.daily==null?l.missing:l.pending}</small>}
+      <td><bdi dir="ltr">{duration(row.overtimeMinutes)}</bdi></td><td><bdi dir="ltr">{money(row.overtimeAmount,row.currency)}</bdi></td>
+      <td><strong><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></strong></td>
+      <td><small className="block">{!row.present?l.incomplete:row.payment?.payment_status==='paid'?l.paid:row.payment?.payment_status==='cancelled'?l.cancelled:row.payment?l.approved:row.daily==null?l.missing:l.pending}</small>
+       {row.candidateMinutes>0&&!row.overtimeMinutes&&<small className="block">{l.otPending}: <bdi dir="ltr">{duration(row.candidateMinutes)}</bdi></small>}
        {row.canConfirm&&<button className="btn-secondary sunday-approve" type="button" disabled={saving} onClick={()=>approve(row)}>{l.confirm}</button>}
       </td>
      </tr>)}</tbody>
-     <tfoot><tr className="team-report-total-row"><th colSpan="6"><span>{l.presentCount}: {group.totals.present}</span><span>{l.oneCount}: {group.totals.onePunch}</span><span>{l.twoCount}: {group.totals.twoPunch}</span></th><th colSpan="2">{l.teamTotal}</th><td><Amounts totals={group.totals}/></td></tr></tfoot>
+     <tfoot><tr className="team-report-total-row"><th colSpan="6">{l.presentCount}: {group.totals.present}</th><td><Amounts totals={group.totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(group.totals.overtimeMinutes)}</bdi></td><td><Amounts totals={group.totals} family="overtimeCurrencies"/></td><td><Amounts totals={group.totals}/></td><td>{l.netTotal}</td></tr></tfoot>
     </table></div>
    </article>)}
    {!loading&&!groups.length&&<p>{l.empty}</p>}
-   {groups.length>0&&<section className="team-report-content sunday-grand"><h2>{l.grand}</h2><table><thead><tr>{['teamCount','workers','oneCount','twoCount','total'].map(key=><th key={key}>{l[key]}</th>)}</tr></thead><tbody><tr><td>{groups.length}</td><td>{totals.workers}</td><td>{totals.onePunch}</td><td>{totals.twoPunch}</td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></table></section>}
+   {groups.length>0&&<section className="team-report-content sunday-grand"><h2>{l.grand}</h2><table><thead><tr>{['teamCount','presentCount','baseTotal','overtime','overtimeTotal','total'].map(key=><th key={key}>{l[key]}</th>)}</tr></thead><tbody><tr><td>{groups.length}</td><td>{totals.present}</td><td><Amounts totals={totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(totals.overtimeMinutes)}</bdi></td><td><Amounts totals={totals} family="overtimeCurrencies"/></td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></table></section>}
   </div>
  </section>
 }
