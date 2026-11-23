@@ -5,6 +5,14 @@ import {readFileSync} from 'node:fs'
 const date='2026-10-18'
 const fixture=payment_type=>({date,sunday_evidence:[{worker_id:'w',eligible:true,reason:'eligible',punch_count:2,morning:'07:05:00',checkout:'14:03:00'}],rules:{monthly_working_day_divisor:26},workers:[{id:'w',payment_type,is_active:false,payroll_compensation_terms:[{payment_type,effective_from:'2026-01-01',daily_rate:20000,monthly_salary:520000,currency_code:'CDF'}]}],attendance:[{worker_id:'w',attendance_date:date,status:'present',attendance_day_fraction:1,attendance_source:'outside_work',check_in:null,check_out:null}]})
 describe('Sunday canonical report',()=>{
+ it('uses monthly salary / canonical divisor for Sunday even with six punches, independent of weekly zero base',()=>{
+  const data=fixture('monthly');data.sunday_evidence[0]={worker_id:'w',eligible:true,punch_count:6,morning:'09:05:04',checkout:'19:01:16'}
+  expect(sundayReportRows(data,date)[0]).toMatchObject({present:true,punchCount:6,daily:20000,amount:40000,canConfirm:true})
+ })
+ it.each([0,null])('flags missing monthly salary %s instead of offering a zero-wage Sunday approval',salary=>{
+  const data=fixture('monthly');data.workers[0].payroll_compensation_terms[0].monthly_salary=salary
+  expect(sundayReportRows(data,date)[0]).toMatchObject({present:true,daily:null,amount:null,canConfirm:false})
+ })
  it('hides roster-only absences and empty teams, but keeps authorized manual Sunday presence without fake punches',()=>{
   const data=fixture('weekly');data.sunday_evidence=[{worker_id:'w',punch_count:0,eligible:false}];data.attendance[0]={worker_id:'w',attendance_date:date,status:'absent'}
   expect(sundayReportRows(data,date)).toEqual([]);expect(sundayTeamGroups(sundayReportRows(data,date))).toEqual([])

@@ -24,7 +24,7 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const term=terms.find(t=>t.effective_from<=date && (!t.effective_to || t.effective_to>=date))
       || terms.find(t=>t.effective_from<=today && (!t.effective_to || t.effective_to>=today))
     const daily=confirmed?Number(payment.daily_value):worker.payment_type==='monthly'
-      ? monthlyDailyValue(term?.monthly_salary,data.rules?.monthly_working_day_divisor):term?.daily_rate??null
+      ? Number(term?.monthly_salary)>0 ? monthlyDailyValue(term.monthly_salary,data.rules?.monthly_working_day_divisor) : null :term?.daily_rate??null
     const currency=confirmed?payment.currency_code:term?.currency_code
     const amount=!present?0:confirmed?Number(payment.amount):daily==null?null:Math.round(Number(daily)*2*100)/100
     return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,netAmount:payment?.payment_status==='cancelled'?0:amount,
