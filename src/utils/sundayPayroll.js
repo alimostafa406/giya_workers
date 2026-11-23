@@ -39,7 +39,8 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const overtimeAmount=!overtimeMinutes?0:overtime.missingRateBlocker?null:overtime.overtimeAmount
     const sundaySource=(data.biometricOvertimeReviews||[]).find(s=>s.sunday_evidence&&String(s.worker.id)===String(worker.id))
     const overtimeReviewStatus=sundaySource?biometricReviewRows([sundaySource])[0]?.status:null
-    const candidateMinutes=sundaySource?.raw_minutes??(present?weeklyPayrollOvertimeForDetail({date,worker,row:{check_out:evidence?.checkout}}).eveningOvertimeMinutes:0)
+    const canonicalCandidate=biometricReviewRows(data.biometricOvertimeReviews||[]).find(s=>String(s.worker.id)===String(worker.id)&&s.attendance.attendance_date===date)
+    const candidateMinutes=canonicalCandidate?.minutes??(!Array.isArray(data.biometricOvertimeReviews)&&present?weeklyPayrollOvertimeForDetail({date,worker,row:{check_out:evidence?.checkout}}).eveningOvertimeMinutes:0)
     const netAmount=payment?.payment_status==='cancelled'?0:amount==null||overtimeAmount==null?null:Math.round((amount+overtimeAmount)*100)/100
     return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,overtimeReviewStatus,
       multiplier,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]
