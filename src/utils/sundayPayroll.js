@@ -29,11 +29,18 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const daily=confirmed?Number(payment.daily_value):worker.payment_type==='monthly'
       ? Number(term?.monthly_salary)>0 ? monthlyDailyValue(term.monthly_salary,data.rules?.monthly_working_day_divisor) : null :term?.daily_rate??null
     const currency=confirmed?payment.currency_code:term?.currency_code
-    const multiplier=confirmed?Number(payment.multiplier):Number(evidence?.sunday_settings?.pay_multiplier??2)
-    const amount=!present?0:confirmed?Number(payment.amount):daily==null?null:Math.round(Number(daily)*multiplier*100)/100
+    const settings=evidence?.sunday_settings||{},specific=settings.pay_model==='sunday_specific'
+    const fixedMonthly=specific&&worker.payment_type==='monthly'
+    const multiplier=confirmed?Number(payment.multiplier):specific?(fixedMonthly?1:2):Number(settings.pay_multiplier??2)
+    const fixed= settings.sunday_fixed_pay==null||settings.sunday_fixed_pay===''?null:Number(settings.sunday_fixed_pay)
+    const amount=!present?0:confirmed?Number(payment.base_amount??payment.amount):fixedMonthly?fixed:daily==null?null:Math.round(Number(daily)*multiplier*100)/100
+    const transportAmount=!present?0:confirmed?Number(payment.transport_amount||0):specific?Number(settings.sunday_transport||0):0
+    const missingSundayPay=fixedMonthly&&!confirmed&&(fixed==null||!currency)
+    const overtimeMultiplier=specific?Number(settings.overtime_multiplier??1):1
+    const sundayTerm={...term,overtime_rate_per_hour:term?.overtime_rate_per_hour==null?null:Number(term.overtime_rate_per_hour)*overtimeMultiplier}
     // Reuse date-specific precedence/approval/ownership; never spread a weekly
     // override onto Sunday or create another payable decision while reporting.
-    const overtime=applyManualWeeklyOvertime({worker,term,currency,details:[{date,row:attendance}],finalAmount:0,overtimeAmount:0},null,
+    const overtime=applyManualWeeklyOvertime({worker,term:sundayTerm,currency,details:[{date,row:attendance}],finalAmount:0,overtimeAmount:0},null,
       data.outsideWorkMovements||[],data.biometricOvertimeReviews||[],data.extraDayReviews||[])
     const overtimeMinutes=overtime.eveningOvertimeMinutes
     const overtimeAmount=!overtimeMinutes?0:overtime.missingRateBlocker?null:overtime.overtimeAmount
@@ -41,14 +48,14 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const overtimeReviewStatus=sundaySource?biometricReviewRows([sundaySource])[0]?.status:null
     const canonicalCandidate=biometricReviewRows(data.biometricOvertimeReviews||[]).find(s=>String(s.worker.id)===String(worker.id)&&s.attendance.attendance_date===date)
     const candidateMinutes=canonicalCandidate?.minutes??(!Array.isArray(data.biometricOvertimeReviews)&&present?weeklyPayrollOvertimeForDetail({date,worker,row:{check_out:evidence?.checkout}}).eveningOvertimeMinutes:0)
-    const netAmount=payment?.payment_status==='cancelled'?0:amount==null||overtimeAmount==null?null:Math.round((amount+overtimeAmount)*100)/100
-    return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,overtimeReviewStatus,
+    const netAmount=payment?.payment_status==='cancelled'?0:amount==null||overtimeAmount==null?null:Math.round((amount+transportAmount+overtimeAmount)*100)/100
+    return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,transportAmount,missingSundayPay,fixedMonthly,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,overtimeReviewStatus,
       multiplier,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]
   })
 }
 
 export function sundayReportTotals(rows){
- const totals={workers:rows.length,present:0,onePunch:0,twoPunch:0,currencies:{},baseCurrencies:{},overtimeCurrencies:{},overtimeMinutes:0}
+ const totals={workers:rows.length,present:0,onePunch:0,twoPunch:0,currencies:{},baseCurrencies:{},transportCurrencies:{},overtimeCurrencies:{},overtimeMinutes:0}
  for(const row of rows){
   if(row.present)totals.present++
   if(row.punchCount===1)totals.onePunch++
@@ -56,7 +63,7 @@ export function sundayReportTotals(rows){
   totals.overtimeMinutes+=row.overtimeMinutes||0
   const currency=row.currency||'UNCONFIGURED',previous=totals.currencies[currency]??0
   totals.currencies[currency]=totals.currencies[currency]===null||row.netAmount==null?null:Math.round((previous+row.netAmount)*100)/100
-  for(const [key,value] of [['baseCurrencies',row.amount],['overtimeCurrencies',row.overtimeAmount===undefined?0:row.overtimeAmount]])totals[key][currency]=totals[key][currency]===null||value==null?null:Math.round(((totals[key][currency]||0)+value)*100)/100
+  for(const [key,value] of [['baseCurrencies',row.amount],['transportCurrencies',row.transportAmount||0],['overtimeCurrencies',row.overtimeAmount===undefined?0:row.overtimeAmount]])totals[key][currency]=totals[key][currency]===null||value==null?null:Math.round(((totals[key][currency]||0)+value)*100)/100
  }
  return totals
 }
