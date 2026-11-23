@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { applyWeeklySundayPay, isSundayDate, latestSunday, sundayReportRows } from './sundayPayroll'
+import { applyWeeklySundayPay, isSundayDate, latestSunday, sundayReportRows, sundayTeamGroups, sundayReportTotals } from './sundayPayroll'
+import {readFileSync} from 'node:fs'
 
 const date='2026-10-18'
-const fixture=payment_type=>({date,sunday_evidence:[{worker_id:'w',eligible:true,reason:'eligible',morning:'07:05:00',checkout:'14:03:00'}],rules:{monthly_working_day_divisor:26},workers:[{id:'w',payment_type,is_active:false,payroll_compensation_terms:[{payment_type,effective_from:'2026-01-01',daily_rate:20000,monthly_salary:520000,currency_code:'CDF'}]}],attendance:[{worker_id:'w',attendance_date:date,status:'present',attendance_day_fraction:1,attendance_source:'outside_work',check_in:null,check_out:null}]})
+const fixture=payment_type=>({date,sunday_evidence:[{worker_id:'w',eligible:true,reason:'eligible',punch_count:2,morning:'07:05:00',checkout:'14:03:00'}],rules:{monthly_working_day_divisor:26},workers:[{id:'w',payment_type,is_active:false,payroll_compensation_terms:[{payment_type,effective_from:'2026-01-01',daily_rate:20000,monthly_salary:520000,currency_code:'CDF'}]}],attendance:[{worker_id:'w',attendance_date:date,status:'present',attendance_day_fraction:1,attendance_source:'outside_work',check_in:null,check_out:null}]})
 describe('Sunday canonical report',()=>{
- for(const type of ['weekly','monthly']) for(const reason of ['missing_in','missing_out','ineligible']) it(`${type}: ${reason} is visible but never present or payable`,()=>{const data=fixture(type);data.sunday_evidence=[{worker_id:'w',eligible:false,reason,morning:reason==='missing_out'?'07:05:00':null,checkout:reason==='missing_in'?'14:05:00':null}];data.payments=[{worker_id:'w',work_date:date,payment_status:'unpaid',daily_value:20000,multiplier:2,amount:40000,currency_code:'CDF'}];expect(sundayReportRows(data,date)[0]).toMatchObject({present:false,amount:0,canConfirm:false});expect(data.payments[0].amount).toBe(40000)})
+ it('hides roster-only absences and empty teams, but keeps authorized manual Sunday presence without fake punches',()=>{
+  const data=fixture('weekly');data.sunday_evidence=[{worker_id:'w',punch_count:0,eligible:false}];data.attendance[0]={worker_id:'w',attendance_date:date,status:'absent'}
+  expect(sundayReportRows(data,date)).toEqual([]);expect(sundayTeamGroups(sundayReportRows(data,date))).toEqual([])
+  Object.assign(data.attendance[0],{status:'present',attendance_day_fraction:1,manual_override:true,attendance_source:'manual'});data.sunday_evidence[0]={worker_id:'w',punch_count:0,eligible:true,manual:true,reason:'manual',display_check_in:null,display_check_out:null}
+  expect(sundayReportRows(data,date)[0]).toMatchObject({present:true,punchCount:0,amount:40000})
+ })
+ it.skipIf(!process.env.SUNDAY_TEAM_AUDIT)('real August 23 Sunday groups only 52 safe attendees; incomplete punches never earn automatic Sunday pay',()=>{
+  const data=JSON.parse(readFileSync(process.env.SUNDAY_TEAM_AUDIT,'utf8')),before=JSON.stringify(data),rows=sundayReportRows(data,data.date),totals=sundayReportTotals(rows),groups=sundayTeamGroups(rows)
+  expect(totals).toMatchObject({workers:52,onePunch:32,twoPunch:20,present:6});expect(groups.every(g=>g.rows.length>0)).toBe(true);expect(groups.reduce((s,g)=>s+g.totals.workers,0)).toBe(52)
+  for(const row of rows){expect(row.punchCount).toBeGreaterThan(0);if(!row.present)expect(row.amount).toBe(0);else if(row.daily!=null)expect(row.amount).toBe(Math.round(row.daily*2*100)/100)}
+  expect(rows.find(r=>r.worker.employee_code==='122')).toMatchObject({punchCount:1,present:false,amount:0})
+  expect(rows.find(r=>r.worker.employee_code==='161')).toMatchObject({punchCount:2,present:true})
+  expect(JSON.stringify(data)).toBe(before)
+ })
+ for(const type of ['weekly','monthly']) for(const reason of ['missing_in','missing_out','ineligible']) it(`${type}: ${reason} is visible but never present or payable`,()=>{const data=fixture(type);data.sunday_evidence=[{worker_id:'w',eligible:false,reason,punch_count:1,morning:reason==='missing_out'?'07:05:00':null,checkout:reason==='missing_in'?'14:05:00':null}];data.payments=[{worker_id:'w',work_date:date,payment_status:'unpaid',daily_value:20000,multiplier:2,amount:40000,currency_code:'CDF'}];expect(sundayReportRows(data,date)[0]).toMatchObject({present:false,amount:0,canConfirm:false});expect(data.payments[0].amount).toBe(40000)})
  it('fails closed without the canonical backend eligibility result',()=>{const data=fixture('weekly');delete data.sunday_evidence;expect(sundayReportRows(data,date)[0]).toMatchObject({present:false,amount:0,canConfirm:false})})
  it('uses calendar Sundays only',()=>{expect(isSundayDate(date)).toBe(true);expect(isSundayDate('2026-10-19')).toBe(false);expect(latestSunday('2026-10-22')).toBe(date);expect(sundayReportRows(fixture('weekly'),'2026-10-19')).toEqual([])})
  for(const type of ['weekly','monthly'])it(`${type}: resolves canonical daily wage and doubles it without inventing punches`,()=>{const [r]=sundayReportRows(fixture(type),date);expect(r.daily).toBe(20000);expect(r.amount).toBe(40000);expect(r.canConfirm).toBe(true);expect(r.attendance.check_in).toBeNull();expect(r.attendance.check_out).toBeNull()})
