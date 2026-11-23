@@ -48,7 +48,7 @@ begin
   assert (answer->>'eligible')::boolean and (answer->>'punch_count')::integer=punches,'First/final evidence must support multiple punches';
   assert answer->>'morning'='08:05:04' and answer->>'checkout'='19:01:16','Intermediate punches must not replace first/final';
  end loop;
- foreach clock in array array['07:59:59','08:00:00','08:20:00','08:20:01','08:30:00','09:05:04'] loop
+ foreach clock in array array['06:29:59','06:30:00','07:45:00','07:59:59','08:00:00','08:20:00','08:20:01','08:21:00','08:30:00','09:05:04'] loop
   delete from pg_temp.sunday_test_events;
   sample.event_timestamp:=(date '2026-11-22'+clock::time) at time zone 'Africa/Kinshasa';
   insert into pg_temp.sunday_test_events select sample.*;
@@ -56,7 +56,7 @@ begin
   update pg_temp.sunday_test_events set event_timestamp=timestamp '2026-11-22 19:01:16' at time zone 'Africa/Kinshasa'
    where ctid=(select ctid from pg_temp.sunday_test_events order by ctid desc limit 1);
   answer:=pg_temp.sunday_threshold_test(sample.worker_id,'2026-11-22');
-  assert (answer->>'eligible')::boolean=(clock::time between time '08:00' and time '08:20'),'First check-in boundary failed: '||clock;
+  assert (answer->>'eligible')::boolean=(clock::time between time '06:30' and time '08:20'),'First check-in boundary failed: '||clock;
  end loop;
  answer:=pg_temp.sunday_threshold_test(sample.worker_id,'2026-11-23');
  assert not (answer->>'eligible')::boolean,'Monday must not use Sunday rule';
