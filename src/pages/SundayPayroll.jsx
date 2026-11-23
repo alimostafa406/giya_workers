@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react'
-import {getSundayPayroll,confirmSundayPayroll} from '../api/sundayPayrollApi'
+import {getSundayPayroll} from '../api/sundayPayrollApi'
 import {getErrorMessage} from '../api/axios'
 import {useTranslation} from '../i18n/LanguageContext'
 import {currentBusinessDate} from '../utils/payrollCalculations'
@@ -20,8 +20,11 @@ const labels={
 Object.assign(labels.ar,{title:'تقرير أجور الأحد',attendance:'الحضور',checkIn:'الدخول',checkOut:'الخروج',overtime:'الإضافي',overtimePay:'مبلغ الإضافي',status:'الحالة',baseTotal:'إجمالي أجر الأحد',overtimeTotal:'إجمالي مبلغ الإضافي',netTotal:'صافي الفريق',otPending:'إضافي بانتظار المراجعة',note:'دوام الأحد 08:00–14:00؛ اكتمال الخروج من 13:30. أجر الأحد ضعف أجر اليوم، والإضافي المعتمد منفصل ولا يُعتمد تلقائياً.'})
 Object.assign(labels.en,{title:'Sunday payroll report',overtime:'Overtime',overtimePay:'OT amount',status:'Status',baseTotal:'Sunday base total',overtimeTotal:'Overtime total',netTotal:'Team net',otPending:'Overtime awaiting review',note:'Sunday shift 08:00–14:00; completion checkout from 13:30. Sunday base is twice the daily wage. Approved hourly overtime is separate; never approved automatically.'})
 Object.assign(labels.fr,{title:'Rapport de paie du dimanche',overtime:'Supplément',overtimePay:'Montant suppl.',status:'État',baseTotal:'Total dimanche',overtimeTotal:'Total supplément',netTotal:'Net équipe',otPending:'Supplément à examiner',note:'Dimanche 08:00–14:00 ; sortie complète dès 13:30. Base double et supplément approuvé séparés, sans approbation automatique.'})
-const columns=['worker','code','attendance','checkIn','checkOut','daily','sundayPay','overtime','overtimePay','net','status']
-const widths=[15,5,9,6,6,11,11,7,10,11,9]
+Object.assign(labels.ar,{note:'دوام الأحد 08:00–14:00. أول دخول 08:00–08:20 وخروج من 13:30: أجر الأحد مستحق تلقائياً بضعف أجر اليوم. الإضافي بعد 14:00 يتطلب الاعتماد المعتاد.'})
+Object.assign(labels.en,{note:'Sunday 08:00–14:00. First arrival 08:00–08:20 and final checkout from 13:30: double daily wage is automatically payable. Hourly overtime after 14:00 requires normal approval.'})
+Object.assign(labels.fr,{note:'Dimanche 08:00–14:00. Première entrée 08:00–08:20 et sortie dès 13:30 : salaire double dû automatiquement. Le supplément après 14:00 nécessite son approbation habituelle.'})
+const columns=['worker','checkIn','checkOut','daily','sundayPay','overtime','overtimePay','net']
+const widths=[23,8,8,13,13,9,13,13]
 const duration=value=>value>0?formatBiometricOvertimeDuration(value):'—'
 const money=(amount,currency)=>amount==null?'—':!currency||currency==='UNCONFIGURED'?(Number(amount)===0?'0':'—'):formatPayrollMoney(amount,{currency,paymentType:'weekly'})
 const clock=value=>value?String(value).slice(0,5):'—'
@@ -31,18 +34,16 @@ export default function SundayPayroll(){
  const today=currentBusinessDate(),initial=new URLSearchParams(window.location.search).get('date')
  const [date,setDate]=useState(isSundayDate(initial)&&initial<=today?initial:latestSunday(today))
  const [team,setTeam]=useState(''),[search,setSearch]=useState(''),[data,setData]=useState(null)
- const [loading,setLoading]=useState(true),[error,setError]=useState(''),[saving,setSaving]=useState(false),[reload,setReload]=useState(0)
+ const [loading,setLoading]=useState(true),[error,setError]=useState('')
  const report=useRef(null)
  useEffect(()=>{let active=true;setLoading(true);setError('');setData(null)
   getSundayPayroll(date).then(value=>{if(active)setData(value)}).catch(e=>{if(active)setError(getErrorMessage(e))}).finally(()=>{if(active)setLoading(false)})
   return()=>{active=false}
- },[date,reload])
+ },[date])
  const rows=useMemo(()=>sundayReportRows(data,date),[data,date])
  const teams=sundayTeamGroups(rows)
  const visible=rows.filter(row=>(!team||(row.worker.team_id||'unassigned')===team)&&`${row.worker.full_name} ${row.worker.employee_code}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
  const groups=sundayTeamGroups(visible),totals=sundayReportTotals(visible)
- const punchLabel=count=>count===1?l.single:count===2?l.double:count>2?`${count} ${l.many}`:'—'
- const approve=async row=>{setSaving(true);setError('');try{await confirmSundayPayroll(row,date);setReload(n=>n+1)}catch(e){setError(getErrorMessage(e))}finally{setSaving(false)}}
  const print=()=>{const popup=window.open('','_blank');if(!popup)return
   const content=report.current.cloneNode(true);content.querySelectorAll('button').forEach(n=>n.remove())
   popup.document.write(`<!doctype html><html lang="${language}" dir="${direction}"><head><meta charset="utf-8"><title>${l.title}</title><style>${teamReportPrintCss}\n${sundayStyles}</style></head><body>${content.outerHTML}</body></html>`)
@@ -64,19 +65,18 @@ export default function SundayPayroll(){
     <div className="overflow-x-auto"><table><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup>
      <thead><tr>{columns.map(key=><th key={key}>{l[key]}</th>)}</tr></thead>
      <tbody>{group.rows.map(row=><tr key={row.worker.id} data-worker={row.worker.id}>
-      <td>{row.worker.full_name}<small className="block">{row.worker.payment_type==='monthly'?l.monthly:l.weekly}</small></td>
-      <td>{row.worker.employee_code}</td>
-      <td>{row.present?l.present:l.incomplete}<small className="block">{punchLabel(row.punchCount)}</small>{row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}{row.outsideEvidence&&<small className="block">{l.outside}</small>}</td>
+      <td>{row.worker.full_name}<small className="block">#{row.worker.employee_code} · {row.worker.payment_type==='monthly'?l.monthly:l.weekly}</small>
+       {!row.present&&<small className="block">{l.incomplete}</small>}
+       {row.present&&row.daily==null&&<small className="block">{l.missing}</small>}
+       {row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}
+       {row.candidateMinutes>0&&!row.overtimeMinutes&&<small className="block">{l.otPending}: <bdi dir="ltr">{duration(row.candidateMinutes)}</bdi></small>}
+      </td>
       <td><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td><bdi dir="ltr">{clock(row.evidence?.display_check_out)}</bdi></td>
       <td><bdi dir="ltr">{money(row.daily,row.currency)}</bdi></td><td><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
       <td><bdi dir="ltr">{duration(row.overtimeMinutes)}</bdi></td><td><bdi dir="ltr">{money(row.overtimeAmount,row.currency)}</bdi></td>
       <td><strong><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></strong></td>
-      <td><small className="block">{!row.present?l.incomplete:row.payment?.payment_status==='paid'?l.paid:row.payment?.payment_status==='cancelled'?l.cancelled:row.payment?l.approved:row.daily==null?l.missing:l.pending}</small>
-       {row.candidateMinutes>0&&!row.overtimeMinutes&&<small className="block">{l.otPending}: <bdi dir="ltr">{duration(row.candidateMinutes)}</bdi></small>}
-       {row.canConfirm&&<button className="btn-secondary sunday-approve" type="button" disabled={saving} onClick={()=>approve(row)}>{l.confirm}</button>}
-      </td>
      </tr>)}</tbody>
-     <tfoot><tr className="team-report-total-row"><th colSpan="6">{l.presentCount}: {group.totals.present}</th><td><Amounts totals={group.totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(group.totals.overtimeMinutes)}</bdi></td><td><Amounts totals={group.totals} family="overtimeCurrencies"/></td><td><Amounts totals={group.totals}/></td><td>{l.netTotal}</td></tr></tfoot>
+     <tfoot><tr className="team-report-total-row"><th colSpan="4">{l.presentCount}: {group.totals.present}</th><td><Amounts totals={group.totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(group.totals.overtimeMinutes)}</bdi></td><td><Amounts totals={group.totals} family="overtimeCurrencies"/></td><td><Amounts totals={group.totals}/></td></tr></tfoot>
     </table></div>
    </article>)}
    {!loading&&!groups.length&&<p>{l.empty}</p>}
