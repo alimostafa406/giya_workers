@@ -39,6 +39,10 @@ it('a recurring preference cannot bypass the canonical pending OT decision',()=>
  const d=data('pending');d.biometricOvertimeReviews[0].sunday_evidence=true;d.biometricOvertimeReviews[0].raw_minutes=301;d.biometricOvertimeReviews[0].sunday_settings={overtime_requires_approval:false}
  expect(sundayReportRows(d,date)[0]).toMatchObject({overtimeMinutes:0,overtimeAmount:0,netAmount:40000})
 })
+it('does not invent a 14:00 candidate when a custom later OT start excludes it canonically',()=>{
+ const d=data();d.biometricOvertimeReviews=[];d.sunday_evidence[0].checkout='14:45:00';d.sunday_evidence[0].sunday_settings={custom:true,overtime_start:'15:00:00'}
+ expect(sundayReportRows(d,date)[0]).toMatchObject({candidateMinutes:0,overtimeMinutes:0,overtimeAmount:0})
+})
 it('manual duration wins without duplicating approved biometric OT; Chauffeur stays manual-only',()=>{
  const d=data();Object.assign(d.attendance[0],{manual_override:true,emergency_overtime_mode:'manual_overtime_duration',emergency_overtime_minutes:120})
  expect(sundayReportRows(d,date)[0]).toMatchObject({overtimeMinutes:120,overtimeAmount:6000,netAmount:46000})
