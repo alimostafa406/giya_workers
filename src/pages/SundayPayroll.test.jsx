@@ -14,6 +14,14 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
+it('renders persisted Sunday evidence before attendance finalization or payroll approval exists',async()=>{
+ const data=fixture();data.attendance=[];data.payments=[];api.load.mockResolvedValue(data)
+ const view=mount();await screen.findByText('One punch')
+ expect(screen.getByText('Valid two')).not.toBeNull()
+ expect(view.container.querySelectorAll('.sunday-team [data-worker]')).toHaveLength(3)
+ expect(view.container.querySelector('[data-worker=one]').querySelectorAll('td')[8].textContent).toContain('0.00')
+ expect(api.confirm).not.toHaveBeenCalled()
+})
 it('groups attendees into nine-column team tables, keeps incomplete punches unpaid, and hides absent/empty teams',async()=>{
  api.load.mockResolvedValue(fixture());const view=mount('ar');await screen.findByText('One punch')
  const groups=view.container.querySelectorAll('.sunday-team');expect(groups).toHaveLength(2);expect(screen.queryByText('Absent worker')).toBeNull();expect(screen.queryByText('Team Empty')).toBeNull()

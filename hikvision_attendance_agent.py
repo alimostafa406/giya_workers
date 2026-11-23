@@ -380,25 +380,10 @@ class AttendanceAgent:
             resolution = load_resolution_data(self.client, target_date, for_apply=True)
             schedule = workday_schedule(target_date)
             observed_events = events
-            if schedule is None:
-                # Sunday remains outside normal automatic attendance.  Retain
-                # only its 00:00-02:00 observations needed to close Saturday.
-                observed_events = []
-                for event in events:
-                    try:
-                        event_time = parse_monitoring_event_time(str(event.get('time') or ''))
-                    except ValueError:
-                        continue
-                    if (
-                        event_time.date() == target_date
-                        and event_time.timetz().replace(tzinfo=None) <= NIGHT_END
-                    ):
-                        observed_events.append(event)
-                    else:
-                        mapping = biometric_mapping_for_event(resolution, event)
-                        worker = resolution.get('workers', {}).get(str(mapping.get('worker_id') or '')) if mapping else None
-                        if is_night_worker(worker):
-                            observed_events.append(event)
+            # Observations are evidence, not attendance/payment decisions. Keep
+            # Sunday daytime punches for the Sunday report too. The planner's
+            # Sunday/night filter below still prevents normal automatic Sunday
+            # attendance, and tail reconciliation retains its own work-date gate.
             self.persist_observed_biometric_events(observed_events, resolution, target_date)
             tail_results = self.reconcile_impacted_previous_workdays(observed_events, resolution, target_date)
             if tail_results:

@@ -187,6 +187,33 @@ class AttendanceAgentHeartbeatTests(unittest.TestCase):
         self.assertEqual(recovery_plan['check_out'], '00:31:00')
         self.assertTrue(recovery_plan['check_out_next_day'])
 
+    def test_sunday_keeps_daytime_observations_without_applying_day_attendance(self):
+        agent = self.make_agent(dry_run=False)
+        processing_time = datetime(2026, 11, 22, 15, tzinfo=timezone.utc)
+        events = [
+            {'employeeNoString': '025', 'time': '2026-11-22T07:05:00+01:00'},
+            {'employeeNoString': '025', 'time': '2026-11-22T14:03:00+01:00'},
+            {'employeeNoString': '081', 'time': '2026-11-22T08:00:00+01:00'},
+        ]
+        resolution = {'existing_attendance': {}}
+        day_plan = {'worker_id': 'day', 'proposed_status': 'present'}
+        night_plan = {'worker_id': 'night', 'night_shift': True, 'proposed_status': 'present'}
+        with patch('hikvision_attendance_agent.local_now', return_value=processing_time), patch(
+            'hikvision_attendance_agent.hikvision_events_with_devices', return_value=(events, {}),
+        ), patch('hikvision_attendance_agent.load_resolution_data', return_value=resolution), patch.object(
+            agent, 'persist_observed_biometric_events', return_value=[]
+        ) as persist, patch.object(agent, 'reconcile_impacted_previous_workdays', return_value={}), patch(
+            'hikvision_attendance_agent.plan_attendance', return_value=([day_plan, night_plan], Counter()),
+        ) as plan, patch('hikvision_attendance_agent.write_summary', return_value=Counter()), patch(
+            'hikvision_attendance_agent.attendance_apply_blocked_reason', return_value=None,
+        ), patch('hikvision_attendance_agent.apply_biometric_attendance', return_value=Counter()) as apply:
+            ok, error = agent.process_today_attendance()
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        persist.assert_called_once_with(events, resolution, processing_time.date())
+        plan.assert_called_once_with(events, resolution, processing_time.date())
+        apply.assert_called_once_with(agent.client, [night_plan], {})
+
     def test_partial_cycle_processes_positive_evidence_without_advancing_complete_sync_timestamp(self):
         agent = self.make_agent(dry_run=False)
         agent.last_attendance_sync_at = '2026-08-11T09:00:00+00:00'
