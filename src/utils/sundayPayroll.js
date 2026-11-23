@@ -1,6 +1,7 @@
 import { currentBusinessDate, monthlyDailyValue, sundayBefore } from './payrollCalculations'
 import { applyManualWeeklyOvertime } from './weeklyManualOvertime'
 import { weeklyPayrollOvertimeForDetail } from './weeklyPayrollOvertime'
+import { biometricReviewRows } from './biometricOvertimeReview'
 
 export const isSundayDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || '')
   && new Date(`${value}T12:00:00`).getDay() === 0
@@ -36,9 +37,10 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const overtimeMinutes=overtime.eveningOvertimeMinutes
     const overtimeAmount=!overtimeMinutes?0:overtime.missingRateBlocker?null:overtime.overtimeAmount
     const sundaySource=(data.biometricOvertimeReviews||[]).find(s=>s.sunday_evidence&&String(s.worker.id)===String(worker.id))
+    const overtimeReviewStatus=sundaySource?biometricReviewRows([sundaySource])[0]?.status:null
     const candidateMinutes=sundaySource?.raw_minutes??(present?weeklyPayrollOvertimeForDetail({date,worker,row:{check_out:evidence?.checkout}}).eveningOvertimeMinutes:0)
     const netAmount=payment?.payment_status==='cancelled'?0:amount==null||overtimeAmount==null?null:Math.round((amount+overtimeAmount)*100)/100
-    return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,
+    return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,overtimeReviewStatus,
       multiplier:confirmed?Number(payment.multiplier):2,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]
   })
 }
