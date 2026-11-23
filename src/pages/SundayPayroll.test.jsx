@@ -8,8 +8,8 @@ import WeeklyPayrollSheet from '../components/Payroll/WeeklyPayrollSheet'
 import {payrollRenderedPrintCss} from '../utils/printRenderedPayroll'
 import {readFileSync} from 'node:fs'
 globalThis.React=React
-const api=vi.hoisted(()=>({load:vi.fn(),confirm:vi.fn()}))
-vi.mock('../api/sundayPayrollApi',()=>({getSundayPayroll:api.load,confirmSundayPayroll:api.confirm}))
+const api=vi.hoisted(()=>({load:vi.fn(),confirm:vi.fn(),settings:vi.fn(),saveSettings:vi.fn()}))
+vi.mock('../api/sundayPayrollApi',()=>({getSundayPayroll:api.load,confirmSundayPayroll:api.confirm,getWorkerSundaySettings:api.settings,saveWorkerSundaySettings:api.saveSettings}))
 vi.mock('../utils/teamReportPrintLayout',()=>({payrollLandscapePrintCss:'@page{size:A4 landscape}',finishPayrollPrint:p=>p.print()}))
 afterEach(()=>{cleanup();vi.clearAllMocks();vi.restoreAllMocks();localStorage.clear()})
 const date='2026-08-23'
@@ -17,6 +17,28 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
+it('worker name opens recurring Sunday settings, saves through canonical API and keeps custom indicator across Sundays',async()=>{
+ let custom=false
+ api.load.mockImplementation(async day=>{const data=fixture();data.date=day;data.workers[1].sunday_settings_custom=custom;return data})
+ const defaults={enabled:true,checkin_cutoff:'08:20:00',shift_end:'14:00:00',checkout_threshold:'13:30:00',pay_multiplier:2,overtime_start:'14:00:00',overtime_requires_approval:true,version:0}
+ let stored=defaults
+ api.settings.mockImplementation(async()=>stored);api.saveSettings.mockImplementation(async(_id,values)=>{custom=true;stored={...values,version:1};return stored})
+ const view=mount('ar');await screen.findByText('Valid two')
+ fireEvent.click(within(view.container.querySelector('[data-worker=two]')).getByRole('button'))
+ const modal=await screen.findByRole('dialog',{name:'إعدادات الأحد — Valid two'})
+ await within(modal).findByRole('button',{name:'حفظ إعدادات الأحد'})
+ fireEvent.change(within(modal).getByLabelText('آخر وقت دخول مقبول'),{target:{value:'08:45'}})
+ fireEvent.change(within(modal).getByLabelText('معامل أجر الأحد'),{target:{value:'2.5'}})
+ fireEvent.click(within(modal).getByRole('button',{name:'حفظ إعدادات الأحد'}))
+ await screen.findByText('إعدادات خاصة')
+ expect(api.saveSettings).toHaveBeenCalledWith('two',expect.objectContaining({checkin_cutoff:'08:45',pay_multiplier:'2.5',overtime_requires_approval:true}),0)
+ fireEvent.change(view.container.querySelector('input[type=date]'),{target:{value:'2026-08-16'}})
+ await screen.findByText('إعدادات خاصة');expect(api.load).toHaveBeenLastCalledWith('2026-08-16')
+ fireEvent.click(within(view.container.querySelector('[data-worker=two]')).getByRole('button'))
+ const reopened=await screen.findByRole('dialog',{name:'إعدادات الأحد — Valid two'})
+ const cutoff=await within(reopened).findByLabelText('آخر وقت دخول مقبول')
+ expect(cutoff.value).toBe('08:45');expect(within(reopened).getByLabelText('معامل أجر الأحد').value).toBe('2.5');expect(api.settings).toHaveBeenCalledTimes(2)
+})
 it('screen and print align six Sunday columns and total rows without colspan or nested labels',async()=>{
  api.load.mockResolvedValue(fixture());const view=mount('ar');await screen.findByText('Valid two')
  const expected=['العامل','البصمة الصباحية','آخر بصمة','قبض الأحد','إضافي الأحد','الصافي']
@@ -60,7 +82,7 @@ it('shares the main payroll table frame, row, worker identity and footer classes
  expect(sunday.querySelector('tbody tr').className).toBe(weekly.querySelector('tbody tr').className)
  expect(sunday.querySelector('tbody td span').className).toBe(weekly.querySelector('tbody td span').className)
  expect(sunday.querySelector('tfoot').className).toBe(weekly.querySelector('tfoot').className)
- expect(view.container.querySelector('.sunday-report button')).toBeNull()
+ expect(screen.queryByRole('button',{name:'اعتماد عمل الأحد'})).toBeNull()
 })
 it.each(['approved','pending','rejected'])('shows only canonical %s Sunday OT results in the same payroll row',async decision=>{
  const data=fixture();data.workers[1].payroll_compensation_terms[0].overtime_rate_per_hour=3000
@@ -70,7 +92,7 @@ it.each(['approved','pending','rejected'])('shows only canonical %s Sunday OT re
  expect(cells).toHaveLength(6)
  expect(cells[4].textContent).toBe(decision==='approved'?'CDF 3,000.00':'—')
  expect(cells[5].textContent).toContain(decision==='approved'?'43,000':'40,000')
- expect(view.container.querySelector('.sunday-report button')).toBeNull()
+ expect(screen.queryByRole('button',{name:'اعتماد عمل الأحد'})).toBeNull()
 })
 it('shows Sunday base, canonical payable manual OT, net and status in separate screen and print columns',async()=>{
  const data=fixture();data.workers[1].payroll_compensation_terms[0].overtime_rate_per_hour=3000
@@ -96,11 +118,11 @@ it('groups attendees into six-column Sunday-only team tables, keeps incomplete p
  api.load.mockResolvedValue(fixture());const view=mount('ar');await screen.findByText('One punch')
  const groups=view.container.querySelectorAll('.sunday-team');expect(groups).toHaveLength(2);expect(screen.queryByText('Absent worker')).toBeNull();expect(screen.queryByText('Team Empty')).toBeNull()
  for(const group of groups){expect(group.querySelectorAll('thead th')).toHaveLength(6);expect(group.querySelector('tfoot')).not.toBeNull()}
- const one=view.container.querySelector('[data-worker=one]');expect(one.textContent).toContain('07:05');expect(one.textContent).toContain('غير مكتمل');expect(one.querySelectorAll('td')[2].textContent).toBe('—');expect(one.querySelectorAll('td')[5].textContent).toContain('0.00');expect(within(one).queryByRole('button')).toBeNull()
+ const one=view.container.querySelector('[data-worker=one]');expect(one.textContent).toContain('07:05');expect(one.textContent).toContain('غير مكتمل');expect(one.querySelectorAll('td')[2].textContent).toBe('—');expect(one.querySelectorAll('td')[5].textContent).toContain('0.00');expect(within(one).queryByRole('button',{name:'اعتماد عمل الأحد'})).toBeNull()
  const two=view.container.querySelector('[data-worker=two]');expect(two.textContent).toContain('14:03');expect(two.querySelectorAll('td')[5].textContent).toContain('40,000')
  const morning=view.container.querySelector('[data-worker=morning]');expect(morning.textContent).toContain('غير مكتمل');expect(morning.querySelectorAll('td')[5].textContent).toContain('0.00')
  expect(view.container.querySelector('.sunday-grand tbody').textContent).toContain('40,000')
- expect(within(two).queryByRole('button')).toBeNull();expect(screen.queryByText('بانتظار الاعتماد')).toBeNull()
+ expect(within(two).queryByRole('button',{name:'اعتماد عمل الأحد'})).toBeNull();expect(screen.queryByText('بانتظار الاعتماد')).toBeNull()
 })
 it.each(['ar','en','fr'])('prints only filtered team rows with all counts, totals and landscape RTL/LTR structure (%s)',async language=>{
  api.load.mockResolvedValue(fixture());const view=mount(language);await screen.findByText('Valid two')

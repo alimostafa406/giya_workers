@@ -5,6 +5,12 @@ import {readFileSync} from 'node:fs'
 const date='2026-10-18'
 const fixture=payment_type=>({date,sunday_evidence:[{worker_id:'w',eligible:true,reason:'eligible',punch_count:2,morning:'07:05:00',checkout:'14:03:00'}],rules:{monthly_working_day_divisor:26},workers:[{id:'w',payment_type,is_active:false,payroll_compensation_terms:[{payment_type,effective_from:'2026-01-01',daily_rate:20000,monthly_salary:520000,currency_code:'CDF'}]}],attendance:[{worker_id:'w',attendance_date:date,status:'present',attendance_day_fraction:1,attendance_source:'outside_work',check_in:null,check_out:null}]})
 describe('Sunday canonical report',()=>{
+ it('uses the effective recurring multiplier but keeps an existing Sunday ledger frozen',()=>{
+  const data=fixture('weekly');data.sunday_evidence[0].sunday_settings={pay_multiplier:3}
+  expect(sundayReportRows(data,date)[0]).toMatchObject({daily:20000,multiplier:3,amount:60000})
+  data.payments=[{worker_id:'w',work_date:date,payment_status:'unpaid',daily_value:20000,multiplier:2,amount:40000,currency_code:'CDF'}]
+  expect(sundayReportRows(data,date)[0]).toMatchObject({multiplier:2,amount:40000})
+ })
  it('uses monthly salary / canonical divisor for Sunday even with six punches, independent of weekly zero base',()=>{
   const data=fixture('monthly');data.sunday_evidence[0]={worker_id:'w',eligible:true,punch_count:6,morning:'09:05:04',checkout:'19:01:16'}
   expect(sundayReportRows(data,date)[0]).toMatchObject({present:true,punchCount:6,daily:20000,amount:40000,canConfirm:true})
