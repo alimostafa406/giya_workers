@@ -23,8 +23,11 @@ Object.assign(labels.fr,{title:'Rapport de paie du dimanche',overtime:'Suppléme
 Object.assign(labels.ar,{note:'دوام الأحد 08:00–14:00. أول دخول من 06:30 وحتى 08:20 وخروج من 13:30: أجر الأحد مستحق تلقائياً بضعف أجر اليوم. الإضافي بعد 14:00 يتطلب الاعتماد المعتاد.'})
 Object.assign(labels.en,{note:'Sunday 08:00–14:00. First arrival 06:30–08:20 and final checkout from 13:30: double daily wage is automatically payable. Hourly overtime after 14:00 requires normal approval.'})
 Object.assign(labels.fr,{note:'Dimanche 08:00–14:00. Première entrée 06:30–08:20 et sortie dès 13:30 : salaire double dû automatiquement. Le supplément après 14:00 nécessite son approbation habituelle.'})
-const columns=['worker','checkIn','checkOut','daily','sundayPay','overtime','overtimePay','net']
-const widths=[23,8,8,13,13,9,13,13]
+Object.assign(labels.ar,{checkIn:'البصمة الصباحية',checkOut:'آخر بصمة',sundayPay:'قبض الأحد',overtimePay:'إضافي الأحد',net:'الصافي',baseTotal:'إجمالي قبض الأحد',overtimeTotal:'إجمالي إضافي الأحد',netTotal:'صافي الفريق',total:'الإجمالي الصافي'})
+Object.assign(labels.en,{checkIn:'Morning punch',checkOut:'Final punch',sundayPay:'Sunday pay',overtimePay:'Sunday overtime',net:'Net',baseTotal:'Total Sunday pay',overtimeTotal:'Total Sunday overtime',total:'Grand net'})
+Object.assign(labels.fr,{checkIn:'Pointage du matin',checkOut:'Dernier pointage',sundayPay:'Paie du dimanche',overtimePay:'Supplément dimanche',net:'Net',baseTotal:'Total paie dimanche',overtimeTotal:'Total supplément dimanche',total:'Net général'})
+const columns=['worker','checkIn','checkOut','sundayPay','overtimePay','net']
+const widths=[25,12,12,17,17,17]
 const duration=value=>value>0?formatBiometricOvertimeDuration(value):'—'
 const money=(amount,currency)=>amount==null?'—':!currency||currency==='UNCONFIGURED'?(Number(amount)===0?'0':'—'):formatPayrollMoney(amount,{currency,paymentType:'weekly'})
 const clock=value=>value?String(value).slice(0,5):'—'
@@ -62,26 +65,26 @@ export default function SundayPayroll(){
   <div ref={report} className="team-report-all sunday-report">
    <header className="team-report-header sunday-report-heading"><h2>{l.title}</h2><p>{l.date}: <bdi dir="ltr">{date}</bdi></p><p>{l.note}</p></header>
    {groups.map(group=><article className="team space-y-3 sunday-team" key={group.id} data-team={group.id}>
-    <header className="mb-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><h2 className="font-extrabold">{group.name||l.unknown}</h2><p>{l.workers}: {group.totals.workers}</p><p className="font-extrabold">{l.netTotal}: <Amounts totals={group.totals}/></p></header>
+    <header className="mb-3 rounded-xl bg-slate-50 p-4 text-sm"><h2 className="font-extrabold">{group.name||l.unknown}</h2></header>
     <PayrollSheetFrame variant="sunday"><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup>
-     <thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={key==='worker'?'px-3 py-2.5 text-start text-xs font-extrabold text-(--muted)':sheet.header} key={key}>{key==='net'?({ar:'صافي القبض',en:'Net payable',fr:'Net à payer'})[language]||l[key]:l[key]}</th>)}</tr></thead>
+     <thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={key==='worker'?'px-3 py-2.5 text-start text-xs font-extrabold text-(--muted)':sheet.header} key={key}>{l[key]}</th>)}</tr></thead>
      <tbody>{group.rows.map(row=><tr className={sheet.row} key={row.worker.id} data-worker={row.worker.id}>
-      <td className="px-3 py-2.5"><PayrollWorkerIdentity worker={row.worker} secondary={row.worker.payment_type==='monthly'?l.monthly:l.weekly}/>
+      <td className="px-3 py-2.5"><PayrollWorkerIdentity worker={row.worker}/>
        {!row.present&&<small className="block">{l.incomplete}</small>}
        {row.present&&row.daily==null&&<small className="block">{l.missing}</small>}
        {row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}
        {row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block">{l.otPending}: <bdi dir="ltr">{duration(row.candidateMinutes)}</bdi></small>}
       </td>
-      <td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_out)}</bdi></td>
-      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{money(row.daily,row.currency)}</bdi></td><td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
-      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{duration(row.overtimeMinutes)}</bdi></td><td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{row.overtimeMinutes>0?money(row.overtimeAmount,row.currency):'—'}</bdi></td>
+      <td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.last_punch||row.evidence?.display_check_out)}</bdi></td>
+      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
+      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{row.overtimeMinutes>0?money(row.overtimeAmount,row.currency):'—'}</bdi></td>
       <td className={`${sheet.cell} font-extrabold`}><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></td>
      </tr>)}</tbody>
-     <tfoot className={sheet.total}><tr className={sheet.totalRow}><th className="px-3 py-3 text-start" colSpan="4">{l.presentCount}: {group.totals.present}</th><td className={sheet.cell}><Amounts totals={group.totals} family="baseCurrencies"/></td><td className={sheet.cell}><bdi dir="ltr">{duration(group.totals.overtimeMinutes)}</bdi></td><td className={sheet.cell}><Amounts totals={group.totals} family="overtimeCurrencies"/></td><td className={sheet.cell}><Amounts totals={group.totals}/></td></tr></tfoot>
+     <tfoot className={sheet.total}><tr className={sheet.totalRow}><th className="px-3 py-3 text-start" colSpan="3">{l.netTotal}</th><td className={sheet.cell}><small>{l.baseTotal}</small><Amounts totals={group.totals} family="baseCurrencies"/></td><td className={sheet.cell}><small>{l.overtimeTotal}</small><Amounts totals={group.totals} family="overtimeCurrencies"/></td><td className={sheet.cell}><small>{l.netTotal}</small><Amounts totals={group.totals}/></td></tr></tfoot>
     </PayrollSheetFrame>
    </article>)}
    {!loading&&!groups.length&&<p>{l.empty}</p>}
-   {groups.length>0&&<section className="team space-y-3 sunday-grand"><h2 className="font-extrabold">{l.grand}</h2><PayrollSheetFrame variant="summary"><thead className="bg-slate-50/90"><tr>{['teamCount','presentCount','baseTotal','overtime','overtimeTotal','total'].map(key=><th className={sheet.header} key={key}>{l[key]}</th>)}</tr></thead><tbody><tr className={sheet.row}><td>{groups.length}</td><td>{totals.present}</td><td><Amounts totals={totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(totals.overtimeMinutes)}</bdi></td><td><Amounts totals={totals} family="overtimeCurrencies"/></td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></PayrollSheetFrame></section>}
+   {groups.length>0&&<section className="team space-y-3 sunday-grand"><h2 className="font-extrabold">{l.grand}</h2><PayrollSheetFrame variant="summary"><thead className="bg-slate-50/90"><tr>{['baseTotal','overtimeTotal','total'].map(key=><th className={sheet.header} key={key}>{l[key]}</th>)}</tr></thead><tbody><tr className={sheet.row}><td><Amounts totals={totals} family="baseCurrencies"/></td><td><Amounts totals={totals} family="overtimeCurrencies"/></td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></PayrollSheetFrame></section>}
   </div>
   {!loading&&data&&<SundayOvertimeSection date={date} sources={data.biometricOvertimeReviews||[]} team={team} search={search} onSaved={async()=>setData(await getSundayPayroll(date))}/>}
  </section>
