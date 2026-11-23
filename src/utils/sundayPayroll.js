@@ -16,17 +16,37 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const conflict=['A','M'].includes(decision) || (attendance?.manual_override && attendance.status==='absent')
     const evidence=(data.sunday_evidence || []).find(e=>e.worker_id===worker.id)
     const present=evidence?.eligible===true && !conflict
+    const punchCount=Math.max(0,Number(evidence?.punch_count)||0)
     const confirmed=payment && payment.payment_status!=='cancelled'
-    if (!attendance && !confirmed && !evidence) return []
+    const outsideEvidence=attendance?.attendance_source==='outside_work' && attendance.status==='present' && Number(attendance.attendance_day_fraction)>0
+    if (!punchCount && !(evidence?.manual && present) && !outsideEvidence) return []
     const terms=(worker.payroll_compensation_terms || []).filter(t=>t.payment_type===worker.payment_type)
     const term=terms.find(t=>t.effective_from<=date && (!t.effective_to || t.effective_to>=date))
       || terms.find(t=>t.effective_from<=today && (!t.effective_to || t.effective_to>=today))
     const daily=confirmed?Number(payment.daily_value):worker.payment_type==='monthly'
       ? monthlyDailyValue(term?.monthly_salary,data.rules?.monthly_working_day_divisor):term?.daily_rate??null
     const currency=confirmed?payment.currency_code:term?.currency_code
-    return [{worker,attendance,payment,present,evidence,conflict,currency,daily,amount:!present?0:confirmed?Number(payment.amount):daily==null?null:Math.round(Number(daily)*2*100)/100,
+    const amount=!present?0:confirmed?Number(payment.amount):daily==null?null:Math.round(Number(daily)*2*100)/100
+    return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,netAmount:payment?.payment_status==='cancelled'?0:amount,
       multiplier:confirmed?Number(payment.multiplier):2,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]
   })
+}
+
+export function sundayReportTotals(rows){
+ const totals={workers:rows.length,present:0,onePunch:0,twoPunch:0,currencies:{}}
+ for(const row of rows){
+  if(row.present)totals.present++
+  if(row.punchCount===1)totals.onePunch++
+  if(row.punchCount>=2)totals.twoPunch++
+  const currency=row.currency||'UNCONFIGURED',previous=totals.currencies[currency]??0
+  totals.currencies[currency]=totals.currencies[currency]===null||row.netAmount==null?null:Math.round((previous+row.netAmount)*100)/100
+ }
+ return totals
+}
+export function sundayTeamGroups(rows){
+ const groups=new Map()
+ for(const row of rows){const id=row.worker.team_id||'unassigned';if(!groups.has(id))groups.set(id,{id,name:row.worker.team_name||'',rows:[]});groups.get(id).rows.push(row)}
+ return [...groups.values()].map(group=>({...group,totals:sundayReportTotals(group.rows)})).sort((a,b)=>a.name.localeCompare(b.name))
 }
 
 // Sunday belongs to the following six-day payroll. The ledger reservation is

@@ -1,1 +1,12 @@
-.sunday-controls{display:flex;flex-wrap:wrap;align-items:end;gap:12px;padding:16px;margin-bottom:16px}.sunday-controls label{display:grid;gap:5px}.sunday-payroll table{width:100%;border-collapse:collapse;font-size:.82rem}.sunday-payroll th,.sunday-payroll td{padding:9px 7px;border:1px solid var(--border);text-align:start}.sunday-payroll thead{background:#f1f5f9}.sunday-summary{display:flex;flex-wrap:wrap;gap:20px;padding:16px 0}.sunday-print-heading h1{display:none}
+.sunday-report{gap:1.25rem}.sunday-team{padding:.8rem;border:1px solid #cbd5e1;border-radius:.75rem;background:#fff}
+.sunday-team h2,.sunday-grand h2{font-size:1.05rem;font-weight:800}.sunday-team td:first-child{font-weight:600}
+.sunday-team td small{font-size:.7rem;color:#64748b;font-weight:400}.sunday-team bdi{white-space:nowrap}
+.sunday-team tfoot th:first-child span{display:inline-block;margin-inline-end:1rem}.sunday-approve{font-size:.7rem;padding:.2rem .4rem;margin-top:.25rem}
+.sunday-grand{padding:.8rem;border:1px solid #94a3b8;border-radius:.75rem}.sunday-grand td{font-weight:700}
+@media screen and (max-width:900px){.sunday-team table{min-width:760px}}
+@media print{
+ .sunday-report{display:block;width:100%;max-width:none}.sunday-team,.sunday-grand{padding:0;border:0;border-radius:0;margin:0 0 6mm;break-before:auto;page-break-before:auto;break-after:auto;page-break-after:auto}
+ .sunday-team .overflow-x-auto{overflow:visible}.sunday-team table,.sunday-grand table{width:100%;max-width:none;min-width:0}
+ .sunday-team header{break-after:avoid}.sunday-team thead{display:table-header-group}.sunday-team tfoot{display:table-row-group;break-inside:avoid}
+ .sunday-team tr,.sunday-grand tr{break-inside:avoid}.sunday-approve{display:none!important}
+}

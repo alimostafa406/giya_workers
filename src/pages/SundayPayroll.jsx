@@ -1,28 +1,79 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { getSundayPayroll, confirmSundayPayroll } from '../api/sundayPayrollApi'
-import { getErrorMessage } from '../api/axios'
-import { useTranslation } from '../i18n/LanguageContext'
-import { currentBusinessDate } from '../utils/payrollCalculations'
-import { formatPayrollMoney } from '../utils/payrollCurrency'
-import { isSundayDate, latestSunday, sundayReportRows } from '../utils/sundayPayroll'
-import { finishPayrollPrint, payrollLandscapePrintCss } from '../utils/teamReportPrintLayout'
+import {useEffect,useMemo,useRef,useState} from 'react'
+import {getSundayPayroll,confirmSundayPayroll} from '../api/sundayPayrollApi'
+import {getErrorMessage} from '../api/axios'
+import {useTranslation} from '../i18n/LanguageContext'
+import {currentBusinessDate} from '../utils/payrollCalculations'
+import {formatPayrollMoney} from '../utils/payrollCurrency'
+import {isSundayDate,latestSunday,sundayReportRows,sundayReportTotals,sundayTeamGroups} from '../utils/sundayPayroll'
+import {finishPayrollPrint} from '../utils/teamReportPrintLayout'
+import {teamReportPrintCss} from '../utils/teamWeeklyReport'
+import sundayStyles from './SundayPayroll.css?inline'
+import './TeamWeeklyReport.css'
 import './SundayPayroll.css'
 
-const eligibilityLabels={ar:{eligible:'مؤهل',manual:'مؤهل — قرار يدوي محمي',missing_in:'ناقص بصمة دخول',missing_out:'ناقص بصمة خروج',ineligible:'غير مؤهل',protected:'غير مؤهل — قرار محمي',morning:'بصمة الدخول الصباحية',checkout:'الخروج النهائي'},en:{eligible:'Eligible',manual:'Eligible — protected manual decision',missing_in:'Missing morning check-in',missing_out:'Missing final checkout',ineligible:'Ineligible',protected:'Ineligible — protected decision',morning:'Morning check-in',checkout:'Final checkout'},fr:{eligible:'Éligible',manual:'Éligible — décision manuelle protégée',missing_in:'Entrée matinale manquante',missing_out:'Sortie finale manquante',ineligible:'Non éligible',protected:'Non éligible — décision protégée',morning:'Entrée matinale',checkout:'Sortie finale'}}
-const labels={ar:{title:'عمل يوم الأحد',date:'تاريخ الأحد',team:'الفريق',all:'كل الفرق',search:'بحث بالاسم أو الكود...',print:'طباعة تقرير الأحد',worker:'العامل',code:'كود الموظف',attendance:'حالة الحضور',evidence:'دليل الحضور / البصمة',daily:'أجر اليوم العادي',multiplier:'معامل الأحد',amount:'مبلغ الأحد',status:'الحالة',present:'حاضر',manual:'قرار يدوي معتمد',outside:'عمل خارجي FINAL',pending:'بانتظار الاعتماد',approved:'معتمد — ضمن القبض الأسبوعي',paid:'مقبوض',reserved:'مرتبط بمسير راتب',conflict:'تعارض حضور محمي',confirm:'اعتماد عمل الأحد',missing:'إعداد الأجر مطلوب',count:'عدد العمال',basis:'إجمالي أجر اليوم العادي',total:'إجمالي مبلغ الأحد',empty:'لا يوجد عمل أحد مطابق',invalid:'اختر تاريخ أحد غير مستقبلي',note:'الأحد منفصل عن أيام الاثنين–السبت. المستحق المعتمد غير المقبوض يدخل صافي الأسبوع التالي مرة واحدة.',loading:'جاري التحميل...'},
- en:{title:'Sunday work',date:'Sunday date',team:'Team',all:'All teams',search:'Search name or code...',print:'Print Sunday report',worker:'Worker',code:'Employee code',attendance:'Attendance',evidence:'Attendance / biometric evidence',daily:'Normal daily wage',multiplier:'Sunday multiplier',amount:'Sunday amount',status:'Status',present:'Present',manual:'Authorized manual decision',outside:'FINAL outside work',pending:'Awaiting approval',approved:'Approved — weekly payout',paid:'Paid',reserved:'Reserved in payroll',conflict:'Protected attendance conflict',confirm:'Approve Sunday work',missing:'Wage configuration required',count:'Workers',basis:'Total daily wage basis',total:'Total Sunday payable',empty:'No matching Sunday work',invalid:'Choose a non-future Sunday',note:'Sunday is separate from Monday–Saturday. Approved unpaid Sunday pay enters the following week once.',loading:'Loading...'},
- fr:{title:'Travail du dimanche',date:'Date du dimanche',team:'Équipe',all:'Toutes les équipes',search:'Rechercher nom ou code...',print:'Imprimer le dimanche',worker:'Travailleur',code:'Code employé',attendance:'Présence',evidence:'Preuve de présence / biométrique',daily:'Salaire journalier normal',multiplier:'Coefficient dimanche',amount:'Montant dimanche',status:'État',present:'Présent',manual:'Décision manuelle autorisée',outside:'Travail extérieur FINAL',pending:'À approuver',approved:'Approuvé — paie hebdomadaire',paid:'Payé',reserved:'Réservé dans la paie',conflict:'Conflit de présence protégée',confirm:'Approuver le dimanche',missing:'Salaire à configurer',count:'Travailleurs',basis:'Total des salaires journaliers',total:'Total payable dimanche',empty:'Aucun dimanche correspondant',invalid:'Choisissez un dimanche non futur',note:'Le dimanche reste distinct du lundi au samedi. Le dimanche approuvé impayé entre une seule fois dans la semaine suivante.',loading:'Chargement...'}}
+const labels={
+ ar:{title:'عمل يوم الأحد',date:'تاريخ الأحد',team:'الفريق',all:'كل الفرق',search:'بحث بالاسم أو الكود...',print:'طباعة تقرير الأحد',worker:'العامل',code:'كود الموظف',punches:'عدد البصمات',checkIn:'بصمة الدخول',checkOut:'بصمة الخروج',attendance:'حالة الحضور',daily:'أجر اليوم',sundayPay:'أجر الأحد',net:'صافي الأحد',present:'حاضر',incomplete:'غير مكتمل',manual:'قرار يدوي معتمد',outside:'عمل خارجي FINAL',pending:'بانتظار الاعتماد',approved:'معتمد',paid:'مقبوض',cancelled:'ملغى',confirm:'اعتماد عمل الأحد',missing:'إعداد الأجر مطلوب',workers:'عدد عمال الأحد',presentCount:'عدد العمال الحاضرين',oneCount:'عدد العمال ببصمة واحدة',twoCount:'عدد العمال ببصمتين أو أكثر',teamTotal:'إجمالي أجر الأحد للفريق',grand:'الإجمالي العام للأحد',teamCount:'إجمالي الفرق',total:'إجمالي أجور الأحد',empty:'لا يوجد حضور يوم أحد مطابق',invalid:'اختر تاريخ أحد غير مستقبلي',note:'الأحد = ضعف أجر اليوم، دون إضافة دوبل آخر. الحساب الحالي لا يصرف تلقائياً؛ المعتمد فقط يدخل القبض الأسبوعي مرة واحدة.',loading:'جاري التحميل...',unknown:'بدون فريق',weekly:'أسبوعي',monthly:'شهري',protected:'قرار حضور محمي',single:'1 بصمة',double:'2 بصمتين',many:'بصمات'},
+ en:{title:'Sunday work',date:'Sunday date',team:'Team',all:'All teams',search:'Search name or code...',print:'Print Sunday report',worker:'Worker',code:'Employee code',punches:'Punch count',checkIn:'Check-in',checkOut:'Checkout',attendance:'Attendance',daily:'Daily wage',sundayPay:'Sunday pay',net:'Sunday net',present:'Present',incomplete:'Incomplete',manual:'Authorized manual decision',outside:'FINAL outside work',pending:'Awaiting approval',approved:'Approved',paid:'Paid',cancelled:'Cancelled',confirm:'Approve Sunday work',missing:'Wage configuration required',workers:'Sunday workers',presentCount:'Present workers',oneCount:'One-punch workers',twoCount:'Workers with two or more punches',teamTotal:'Team Sunday total',grand:'Sunday grand total',teamCount:'Total teams',total:'Total Sunday payroll',empty:'No matching Sunday attendance',invalid:'Choose a non-future Sunday',note:'Sunday pays twice the daily wage, without another Double OT premium. This is a preview; only approved Sunday pay enters weekly payroll once.',loading:'Loading...',unknown:'Unassigned',weekly:'Weekly',monthly:'Monthly',protected:'Protected attendance decision',single:'1 punch',double:'2 punches',many:'punches'},
+ fr:{title:'Travail du dimanche',date:'Date du dimanche',team:'Équipe',all:'Toutes les équipes',search:'Rechercher nom ou code...',print:'Imprimer le dimanche',worker:'Travailleur',code:'Code employé',punches:'Pointages',checkIn:'Entrée',checkOut:'Sortie',attendance:'Présence',daily:'Salaire journalier',sundayPay:'Paie du dimanche',net:'Net dimanche',present:'Présent',incomplete:'Incomplet',manual:'Décision manuelle autorisée',outside:'Travail extérieur FINAL',pending:'À approuver',approved:'Approuvé',paid:'Payé',cancelled:'Annulé',confirm:'Approuver le dimanche',missing:'Salaire à configurer',workers:'Travailleurs du dimanche',presentCount:'Travailleurs présents',oneCount:'Un seul pointage',twoCount:'Deux pointages ou plus',teamTotal:'Total dimanche équipe',grand:'Total général du dimanche',teamCount:'Total équipes',total:'Paie totale du dimanche',empty:'Aucune présence du dimanche correspondante',invalid:'Choisissez un dimanche non futur',note:'Le dimanche paie deux fois le salaire journalier, sans autre prime double. Aperçu : seuls les montants approuvés entrent une seule fois dans la paie hebdomadaire.',loading:'Chargement...',unknown:'Sans équipe',weekly:'Hebdomadaire',monthly:'Mensuel',protected:'Décision de présence protégée',single:'1 pointage',double:'2 pointages',many:'pointages'},
+}
+const columns=['worker','code','punches','checkIn','checkOut','attendance','daily','sundayPay','net']
+const widths=[18,7,9,10,10,14,10,11,11]
+const money=(amount,currency)=>amount==null||!currency||currency==='UNCONFIGURED'?'—':formatPayrollMoney(amount,{currency,paymentType:'weekly'})
+const clock=value=>value?String(value).slice(0,5):'—'
+function Amounts({totals}){return Object.entries(totals.currencies).map(([currency,amount])=><bdi dir="ltr" className="block" key={currency}>{money(amount,currency)}</bdi>)}
 export default function SundayPayroll(){
- const {language,direction}=useTranslation(),l=labels[language] || labels.en,e=eligibilityLabels[language] || eligibilityLabels.en
- const initial=new URLSearchParams(window.location.search).get('date'),today=currentBusinessDate()
- const [date,setDate]=useState(isSundayDate(initial)&&initial<=today?initial:latestSunday(today)),[team,setTeam]=useState(''),[search,setSearch]=useState(''),[data,setData]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[saving,setSaving]=useState(false),[reload,setReload]=useState(0)
+ const {language,direction}=useTranslation(),l=labels[language]||labels.en
+ const today=currentBusinessDate(),initial=new URLSearchParams(window.location.search).get('date')
+ const [date,setDate]=useState(isSundayDate(initial)&&initial<=today?initial:latestSunday(today))
+ const [team,setTeam]=useState(''),[search,setSearch]=useState(''),[data,setData]=useState(null)
+ const [loading,setLoading]=useState(true),[error,setError]=useState(''),[saving,setSaving]=useState(false),[reload,setReload]=useState(0)
  const report=useRef(null)
- useEffect(()=>{let active=true;setLoading(true);setError('');setData(null);getSundayPayroll(date).then(d=>{if(active)setData(d)}).catch(e=>{if(active)setError(getErrorMessage(e))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[date,reload])
- const rows=useMemo(()=>sundayReportRows(data,date),[data,date]),teams=[...new Map(rows.map(r=>[r.worker.team_id,r.worker.team_name])).entries()]
- const visible=rows.filter(r=>(!team||r.worker.team_id===team)&&`${r.worker.full_name} ${r.worker.employee_code}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
- const totals=new Map();for(const r of visible){if(!r.present || r.conflict || r.payment?.payment_status==='cancelled' || r.daily==null || !r.currency)continue;const sum=totals.get(r.currency)||{daily:0,amount:0};sum.daily+=Number(r.daily);sum.amount+=Number(r.amount);totals.set(r.currency,sum)}
- const money=(n,c)=>n==null||!c?'—':formatPayrollMoney(n,{currency:c,paymentType:'weekly'})
+ useEffect(()=>{let active=true;setLoading(true);setError('');setData(null)
+  getSundayPayroll(date).then(value=>{if(active)setData(value)}).catch(e=>{if(active)setError(getErrorMessage(e))}).finally(()=>{if(active)setLoading(false)})
+  return()=>{active=false}
+ },[date,reload])
+ const rows=useMemo(()=>sundayReportRows(data,date),[data,date])
+ const teams=sundayTeamGroups(rows)
+ const visible=rows.filter(row=>(!team||(row.worker.team_id||'unassigned')===team)&&`${row.worker.full_name} ${row.worker.employee_code}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
+ const groups=sundayTeamGroups(visible),totals=sundayReportTotals(visible)
+ const punchLabel=count=>count===1?l.single:count===2?l.double:count>2?`${count} ${l.many}`:'—'
  const approve=async row=>{setSaving(true);setError('');try{await confirmSundayPayroll(row,date);setReload(n=>n+1)}catch(e){setError(getErrorMessage(e))}finally{setSaving(false)}}
- const print=()=>{const popup=window.open('','_blank');if(!popup)return;const html=report.current.cloneNode(true);html.querySelectorAll('button').forEach(n=>n.remove());popup.document.write(`<!doctype html><html lang="${language}" dir="${direction}"><head><meta charset="utf-8"><title>${l.title}</title><style>${payrollLandscapePrintCss}table{width:100%;border-collapse:collapse;font:10pt Arial}th,td{border:1px solid #94a3b8;padding:5px;text-align:start}thead{display:table-header-group}tr{break-inside:avoid}h1{font:18pt Arial}bdi{white-space:nowrap}.sunday-summary{display:flex;gap:20px;margin-top:12px}</style></head><body>${html.outerHTML}</body></html>`);popup.document.close();finishPayrollPrint(popup)}
- return <section dir={direction} className="sunday-payroll"><h1 className="text-2xl font-extrabold">{l.title}</h1><p className="my-3 text-sm text-(--muted)">{l.note}</p><div className="surface-card sunday-controls"><label>{l.date}<input className="input-base" type="date" value={date} step="7" min="1970-01-04" max={today} onChange={e=>{if(!isSundayDate(e.target.value)||e.target.value>today){setError(l.invalid);return}setTeam('');setDate(e.target.value)}} /></label><label>{l.team}<select className="input-base" value={team} onChange={e=>setTeam(e.target.value)}><option value="">{l.all}</option>{teams.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><input className="input-base" type="search" aria-label={l.search} placeholder={l.search} value={search} onChange={e=>setSearch(e.target.value)} /><button className="btn-secondary" type="button" disabled={loading||!visible.length} onClick={print}>{l.print}</button></div>{loading&&<p role="status">{l.loading}</p>}{error&&<p role="alert">{error}</p>}<div ref={report}><header className="sunday-print-heading"><h1>{l.title}</h1><p><bdi dir="ltr">{date}</bdi>{team&&` · ${teams.find(([id])=>id===team)?.[1]||''}`}</p></header><div className="overflow-x-auto"><table><thead><tr>{['worker','code','team','date','attendance','evidence','daily','multiplier','amount','status'].map(k=><th key={k}>{l[k]}</th>)}</tr></thead><tbody>{visible.map(row=><tr key={row.worker.id}><td>{row.worker.full_name}<small className="block">{row.worker.payment_type==='monthly'?'شهري':'أسبوعي'}</small></td><td>{row.worker.employee_code}</td><td>{row.worker.team_name}</td><td><bdi dir="ltr">{date}</bdi></td><td>{row.present?l.present:e.ineligible}</td><td><span className="block">{e.morning}: <bdi dir="ltr">{row.evidence?.morning || '—'}</bdi></span><span className="block">{e.checkout}: <bdi dir="ltr">{row.evidence?.checkout || '—'}</bdi></span><strong>{e[row.evidence?.reason] || e.ineligible}</strong></td><td><bdi dir="ltr">{money(row.daily,row.currency)}</bdi></td><td><bdi dir="ltr">×{row.multiplier}</bdi></td><td><bdi dir="ltr">{row.conflict?'—':money(row.amount,row.currency)}</bdi></td><td>{!row.present?(e[row.evidence?.reason] || e.ineligible):row.conflict?l.conflict:row.payment?.payment_status==='paid'?l.paid:row.payment?.settled_payroll_run_id?l.reserved:row.payment&&row.payment.payment_status!=='cancelled'?l.approved:row.daily==null?l.missing:l.pending}{row.canConfirm&&<button className="btn-primary mt-1 block" type="button" disabled={saving} onClick={()=>approve(row)}>{l.confirm}</button>}</td></tr>)}{!loading&&!visible.length&&<tr><td colSpan="10">{l.empty}</td></tr>}</tbody></table></div><div className="sunday-summary"><strong>{l.count}: {visible.length}</strong>{[...totals].map(([currency,sum])=><div key={currency}><p>{l.basis}: <bdi dir="ltr">{money(sum.daily,currency)}</bdi></p><p>{l.total}: <bdi dir="ltr">{money(sum.amount,currency)}</bdi></p></div>)}</div></div></section>
+ const print=()=>{const popup=window.open('','_blank');if(!popup)return
+  const content=report.current.cloneNode(true);content.querySelectorAll('button').forEach(n=>n.remove())
+  popup.document.write(`<!doctype html><html lang="${language}" dir="${direction}"><head><meta charset="utf-8"><title>${l.title}</title><style>${teamReportPrintCss}\n${sundayStyles}</style></head><body>${content.outerHTML}</body></html>`)
+  popup.document.close();finishPayrollPrint(popup)
+ }
+ return <section lang={language} dir={direction} className="team-weekly-report sunday-payroll">
+  <h1 className="text-2xl font-bold">{l.title}</h1>
+  <div className="team-report-controls surface-card">
+   <label>{l.date}<input className="input-base" type="date" step="7" min="1970-01-04" max={today} value={date} onChange={e=>{if(!isSundayDate(e.target.value)||e.target.value>today){setError(l.invalid);return}setTeam('');setDate(e.target.value)}}/></label>
+   <label>{l.team}<select className="input-base" value={team} onChange={e=>setTeam(e.target.value)}><option value="">{l.all}</option>{teams.map(group=><option key={group.id} value={group.id}>{group.name||l.unknown}</option>)}</select></label>
+   <input className="input-base" type="search" aria-label={l.search} placeholder={l.search} value={search} onChange={e=>setSearch(e.target.value)}/>
+   <button type="button" className="btn-primary" disabled={loading||!visible.length} onClick={print}>{l.print}</button>
+  </div>
+  {loading&&<p role="status">{l.loading}</p>}{error&&<p role="alert">{error}</p>}
+  <div ref={report} className="team-report-all sunday-report">
+   <header className="team-report-header sunday-report-heading"><h2>{l.title}</h2><p>{l.date}: <bdi dir="ltr">{date}</bdi></p><p>{l.note}</p></header>
+   {groups.map(group=><article className="team-report-content sunday-team" key={group.id} data-team={group.id}>
+    <header className="team-report-header"><h2>{group.name||l.unknown}</h2><p>{l.workers}: {group.totals.workers}</p></header>
+    <div className="overflow-x-auto"><table><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup>
+     <thead><tr>{columns.map(key=><th key={key}>{l[key]}</th>)}</tr></thead>
+     <tbody>{group.rows.map(row=><tr key={row.worker.id} data-worker={row.worker.id}>
+      <td>{row.worker.full_name}<small className="block">{row.worker.payment_type==='monthly'?l.monthly:l.weekly}</small></td>
+      <td>{row.worker.employee_code}</td><td>{punchLabel(row.punchCount)}</td>
+      <td><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td><bdi dir="ltr">{clock(row.evidence?.display_check_out)}</bdi></td>
+      <td>{row.present?l.present:l.incomplete}{row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}{row.outsideEvidence&&<small className="block">{l.outside}</small>}</td>
+      <td><bdi dir="ltr">{money(row.daily,row.currency)}</bdi></td><td><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
+      <td><strong><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></strong>
+       {row.present&&<small className="block">{row.payment?.payment_status==='paid'?l.paid:row.payment?.payment_status==='cancelled'?l.cancelled:row.payment?l.approved:row.daily==null?l.missing:l.pending}</small>}
+       {row.canConfirm&&<button className="btn-secondary sunday-approve" type="button" disabled={saving} onClick={()=>approve(row)}>{l.confirm}</button>}
+      </td>
+     </tr>)}</tbody>
+     <tfoot><tr className="team-report-total-row"><th colSpan="6"><span>{l.presentCount}: {group.totals.present}</span><span>{l.oneCount}: {group.totals.onePunch}</span><span>{l.twoCount}: {group.totals.twoPunch}</span></th><th colSpan="2">{l.teamTotal}</th><td><Amounts totals={group.totals}/></td></tr></tfoot>
+    </table></div>
+   </article>)}
+   {!loading&&!groups.length&&<p>{l.empty}</p>}
+   {groups.length>0&&<section className="team-report-content sunday-grand"><h2>{l.grand}</h2><table><thead><tr>{['teamCount','workers','oneCount','twoCount','total'].map(key=><th key={key}>{l[key]}</th>)}</tr></thead><tbody><tr><td>{groups.length}</td><td>{totals.workers}</td><td>{totals.onePunch}</td><td>{totals.twoPunch}</td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></table></section>}
+  </div>
+ </section>
 }
