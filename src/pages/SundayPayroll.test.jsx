@@ -17,19 +17,32 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
-it('screen and print contain exactly six Sunday-only columns and three grand totals',async()=>{
+it('screen and print align six Sunday columns and total rows without colspan or nested labels',async()=>{
  api.load.mockResolvedValue(fixture());const view=mount('ar');await screen.findByText('Valid two')
  const expected=['العامل','البصمة الصباحية','آخر بصمة','قبض الأحد','إضافي الأحد','الصافي']
  expect([...view.container.querySelector('.sunday-team thead').querySelectorAll('th')].map(n=>n.textContent)).toEqual(expected)
- expect(view.container.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(3)
+ expect(view.container.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(6)
+ for(const total of view.container.querySelectorAll('.sunday-team tfoot tr,.sunday-grand tbody tr')){
+  expect(total.children).toHaveLength(6);expect(total.querySelector('[colspan]')).toBeNull()
+  expect(total.children[1].textContent).toBe('—');expect(total.children[2].textContent).toBe('—')
+  expect(total.querySelector('small')).toBeNull()
+ }
+ expect(view.container.querySelector('.sunday-team tfoot th').textContent).toBe('إجمالي الفريق')
+ expect(view.container.querySelector('.sunday-grand tbody th').textContent).toBe('الإجمالي العام')
  const report=view.container.querySelector('.sunday-report')
  for(const label of ['الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت','النقل','الإضافي الدوبل','عدد العمال'])expect(report.textContent).not.toContain(label)
  const popup={document:{write:vi.fn(),close:vi.fn()},print:vi.fn()};vi.spyOn(window,'open').mockReturnValue(popup)
  fireEvent.click(screen.getByRole('button',{name:'طباعة تقرير الأحد'}))
  const doc=new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html')
  expect([...doc.querySelector('.sunday-team thead').querySelectorAll('th')].map(n=>n.textContent)).toEqual(expected)
- expect(doc.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(3)
- expect(doc.querySelector('.sunday-team tfoot tr').querySelectorAll('td')).toHaveLength(3)
+ expect(doc.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(6)
+ expect(doc.querySelector('.sunday-team tfoot tr').querySelectorAll('td')).toHaveLength(5)
+ for(const total of doc.querySelectorAll('.sunday-team tfoot tr,.sunday-grand tbody tr')){
+  expect(total.children).toHaveLength(6);expect(total.querySelector('[colspan]')).toBeNull();expect(total.querySelector('small')).toBeNull()
+  expect(total.children[1].textContent).toBe('—');expect(total.children[2].textContent).toBe('—')
+ }
+ const grand=doc.querySelector('.sunday-grand tbody tr').children
+ expect(grand[3].textContent).toContain('40,000');expect(grand[4].textContent).toContain('0.00');expect(grand[5].textContent).toContain('40,000')
 })
 it.skipIf(!process.env.SUNDAY_REPORT_AUDIT)('real November 22 NIOKA keeps the actual morning/final punches and Sunday 50000 net in six cells',async()=>{
  const data=JSON.parse(readFileSync(process.env.SUNDAY_REPORT_AUDIT,'utf8'));api.load.mockResolvedValue(data)

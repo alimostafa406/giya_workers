@@ -32,6 +32,9 @@ const duration=value=>value>0?formatBiometricOvertimeDuration(value):'—'
 const money=(amount,currency)=>amount==null?'—':!currency||currency==='UNCONFIGURED'?(Number(amount)===0?'0':'—'):formatPayrollMoney(amount,{currency,paymentType:'weekly'})
 const clock=value=>value?String(value).slice(0,5):'—'
 function Amounts({totals,family='currencies'}){return Object.entries(totals[family]).map(([currency,amount])=><bdi dir="ltr" className="block" key={currency}>{money(amount,currency)}</bdi>)}
+function SundayTotalRow({totals,label}){
+ return <tr className={sheet.totalRow}><th scope="row" className="px-3 py-3 text-start whitespace-nowrap">{label}</th><td className={sheet.cell}>—</td><td className={sheet.cell}>—</td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="baseCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="overtimeCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals}/></td></tr>
+}
 export default function SundayPayroll(){
  const {language,direction}=useTranslation(),l=labels[language]||labels.en
  const today=currentBusinessDate(),initial=new URLSearchParams(window.location.search).get('date')
@@ -80,11 +83,11 @@ export default function SundayPayroll(){
       <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{row.overtimeMinutes>0?money(row.overtimeAmount,row.currency):'—'}</bdi></td>
       <td className={`${sheet.cell} font-extrabold`}><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></td>
      </tr>)}</tbody>
-     <tfoot className={sheet.total}><tr className={sheet.totalRow}><th className="px-3 py-3 text-start" colSpan="3">{l.netTotal}</th><td className={sheet.cell}><small>{l.baseTotal}</small><Amounts totals={group.totals} family="baseCurrencies"/></td><td className={sheet.cell}><small>{l.overtimeTotal}</small><Amounts totals={group.totals} family="overtimeCurrencies"/></td><td className={sheet.cell}><small>{l.netTotal}</small><Amounts totals={group.totals}/></td></tr></tfoot>
+     <tfoot className={sheet.total}><SundayTotalRow totals={group.totals} label={({ar:'إجمالي الفريق',en:'Team total',fr:'Total équipe'})[language]||'Team total'}/></tfoot>
     </PayrollSheetFrame>
    </article>)}
    {!loading&&!groups.length&&<p>{l.empty}</p>}
-   {groups.length>0&&<section className="team space-y-3 sunday-grand"><h2 className="font-extrabold">{l.grand}</h2><PayrollSheetFrame variant="summary"><thead className="bg-slate-50/90"><tr>{['baseTotal','overtimeTotal','total'].map(key=><th className={sheet.header} key={key}>{l[key]}</th>)}</tr></thead><tbody><tr className={sheet.row}><td><Amounts totals={totals} family="baseCurrencies"/></td><td><Amounts totals={totals} family="overtimeCurrencies"/></td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></PayrollSheetFrame></section>}
+   {groups.length>0&&<section className="team space-y-3 sunday-grand"><h2 className="font-extrabold">{l.grand}</h2><PayrollSheetFrame variant="summary"><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup><thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={sheet.header} key={key}>{l[key]}</th>)}</tr></thead><tbody className={sheet.total}><SundayTotalRow totals={totals} label={({ar:'الإجمالي العام',en:'Grand total',fr:'Total général'})[language]||'Grand total'}/></tbody></PayrollSheetFrame></section>}
   </div>
   {!loading&&data&&<SundayOvertimeSection date={date} sources={data.biometricOvertimeReviews||[]} team={team} search={search} onSaved={async()=>setData(await getSundayPayroll(date))}/>}
  </section>
