@@ -6,11 +6,10 @@ import {currentBusinessDate} from '../utils/payrollCalculations'
 import {formatPayrollMoney} from '../utils/payrollCurrency'
 import {isSundayDate,latestSunday,sundayReportRows,sundayReportTotals,sundayTeamGroups} from '../utils/sundayPayroll'
 import {finishPayrollPrint} from '../utils/teamReportPrintLayout'
-import {teamReportPrintCss} from '../utils/teamWeeklyReport'
+import {payrollRenderedPrintCss} from '../utils/printRenderedPayroll'
+import PayrollSheetFrame,{PayrollWorkerIdentity,payrollSheetClasses as sheet} from '../components/Payroll/PayrollSheetFrame'
 import {formatBiometricOvertimeDuration} from '../utils/biometricOvertimeReview'
 import SundayOvertimeSection from '../components/Payroll/SundayOvertimeSection'
-import sundayStyles from './SundayPayroll.css?inline'
-import './TeamWeeklyReport.css'
 import './SundayPayroll.css'
 
 const labels={
@@ -47,12 +46,13 @@ export default function SundayPayroll(){
  const groups=sundayTeamGroups(visible),totals=sundayReportTotals(visible)
  const print=()=>{const popup=window.open('','_blank');if(!popup)return
   const content=report.current.cloneNode(true);content.querySelectorAll('button').forEach(n=>n.remove())
-  popup.document.write(`<!doctype html><html lang="${language}" dir="${direction}"><head><meta charset="utf-8"><title>${l.title}</title><style>${teamReportPrintCss}\n${sundayStyles}</style></head><body>${content.outerHTML}</body></html>`)
+  content.querySelectorAll('table').forEach(table=>{table.removeAttribute('class');table.querySelectorAll('[class]').forEach(node=>node.removeAttribute('class'))})
+  popup.document.write(`<!doctype html><html lang="${language}" dir="${direction}"><head><meta charset="utf-8"><title>${l.title}</title><style>${payrollRenderedPrintCss}\n.sunday-report{display:block}.sunday-team,.sunday-grand{margin:0;padding:0}.sunday-team header{margin-bottom:2mm}.sunday-team .overflow-x-auto{overflow:visible}.surface-card{border:0;box-shadow:none}</style></head><body>${content.outerHTML}</body></html>`)
   popup.document.close();finishPayrollPrint(popup)
  }
- return <section lang={language} dir={direction} className="team-weekly-report sunday-payroll">
+ return <section lang={language} dir={direction} className="space-y-4 sunday-payroll">
   <h1 className="text-2xl font-bold">{l.title}</h1>
-  <div className="team-report-controls surface-card">
+  <div className="surface-card flex flex-wrap items-end gap-3 p-4">
    <label>{l.date}<input className="input-base" type="date" step="7" min="1970-01-04" max={today} value={date} onChange={e=>{if(!isSundayDate(e.target.value)||e.target.value>today){setError(l.invalid);return}setTeam('');setDate(e.target.value)}}/></label>
    <label>{l.team}<select className="input-base" value={team} onChange={e=>setTeam(e.target.value)}><option value="">{l.all}</option>{teams.map(group=><option key={group.id} value={group.id}>{group.name||l.unknown}</option>)}</select></label>
    <input className="input-base" type="search" aria-label={l.search} placeholder={l.search} value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -61,27 +61,27 @@ export default function SundayPayroll(){
   {loading&&<p role="status">{l.loading}</p>}{error&&<p role="alert">{error}</p>}
   <div ref={report} className="team-report-all sunday-report">
    <header className="team-report-header sunday-report-heading"><h2>{l.title}</h2><p>{l.date}: <bdi dir="ltr">{date}</bdi></p><p>{l.note}</p></header>
-   {groups.map(group=><article className="team-report-content sunday-team" key={group.id} data-team={group.id}>
-    <header className="team-report-header"><h2>{group.name||l.unknown}</h2><p>{l.workers}: {group.totals.workers}</p></header>
-    <div className="overflow-x-auto"><table><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup>
-     <thead><tr>{columns.map(key=><th key={key}>{l[key]}</th>)}</tr></thead>
-     <tbody>{group.rows.map(row=><tr key={row.worker.id} data-worker={row.worker.id}>
-      <td>{row.worker.full_name}<small className="block">#{row.worker.employee_code} · {row.worker.payment_type==='monthly'?l.monthly:l.weekly}</small>
+   {groups.map(group=><article className="team space-y-3 sunday-team" key={group.id} data-team={group.id}>
+    <header className="mb-3 grid gap-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><h2 className="font-extrabold">{group.name||l.unknown}</h2><p>{l.workers}: {group.totals.workers}</p><p className="font-extrabold">{l.netTotal}: <Amounts totals={group.totals}/></p></header>
+    <PayrollSheetFrame variant="sunday"><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup>
+     <thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={key==='worker'?'px-3 py-2.5 text-start text-xs font-extrabold text-(--muted)':sheet.header} key={key}>{key==='net'?({ar:'صافي القبض',en:'Net payable',fr:'Net à payer'})[language]||l[key]:l[key]}</th>)}</tr></thead>
+     <tbody>{group.rows.map(row=><tr className={sheet.row} key={row.worker.id} data-worker={row.worker.id}>
+      <td className="px-3 py-2.5"><PayrollWorkerIdentity worker={row.worker} secondary={row.worker.payment_type==='monthly'?l.monthly:l.weekly}/>
        {!row.present&&<small className="block">{l.incomplete}</small>}
        {row.present&&row.daily==null&&<small className="block">{l.missing}</small>}
        {row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}
        {row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block">{l.otPending}: <bdi dir="ltr">{duration(row.candidateMinutes)}</bdi></small>}
       </td>
-      <td><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td><bdi dir="ltr">{clock(row.evidence?.display_check_out)}</bdi></td>
-      <td><bdi dir="ltr">{money(row.daily,row.currency)}</bdi></td><td><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
-      <td><bdi dir="ltr">{duration(row.overtimeMinutes)}</bdi></td><td><bdi dir="ltr">{money(row.overtimeAmount,row.currency)}</bdi></td>
-      <td><strong><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></strong></td>
+      <td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_out)}</bdi></td>
+      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{money(row.daily,row.currency)}</bdi></td><td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
+      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{duration(row.overtimeMinutes)}</bdi></td><td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{row.overtimeMinutes>0?money(row.overtimeAmount,row.currency):'—'}</bdi></td>
+      <td className={`${sheet.cell} font-extrabold`}><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></td>
      </tr>)}</tbody>
-     <tfoot><tr className="team-report-total-row"><th colSpan="4">{l.presentCount}: {group.totals.present}</th><td><Amounts totals={group.totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(group.totals.overtimeMinutes)}</bdi></td><td><Amounts totals={group.totals} family="overtimeCurrencies"/></td><td><Amounts totals={group.totals}/></td></tr></tfoot>
-    </table></div>
+     <tfoot className={sheet.total}><tr className={sheet.totalRow}><th className="px-3 py-3 text-start" colSpan="4">{l.presentCount}: {group.totals.present}</th><td className={sheet.cell}><Amounts totals={group.totals} family="baseCurrencies"/></td><td className={sheet.cell}><bdi dir="ltr">{duration(group.totals.overtimeMinutes)}</bdi></td><td className={sheet.cell}><Amounts totals={group.totals} family="overtimeCurrencies"/></td><td className={sheet.cell}><Amounts totals={group.totals}/></td></tr></tfoot>
+    </PayrollSheetFrame>
    </article>)}
    {!loading&&!groups.length&&<p>{l.empty}</p>}
-   {groups.length>0&&<section className="team-report-content sunday-grand"><h2>{l.grand}</h2><table><thead><tr>{['teamCount','presentCount','baseTotal','overtime','overtimeTotal','total'].map(key=><th key={key}>{l[key]}</th>)}</tr></thead><tbody><tr><td>{groups.length}</td><td>{totals.present}</td><td><Amounts totals={totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(totals.overtimeMinutes)}</bdi></td><td><Amounts totals={totals} family="overtimeCurrencies"/></td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></table></section>}
+   {groups.length>0&&<section className="team space-y-3 sunday-grand"><h2 className="font-extrabold">{l.grand}</h2><PayrollSheetFrame variant="summary"><thead className="bg-slate-50/90"><tr>{['teamCount','presentCount','baseTotal','overtime','overtimeTotal','total'].map(key=><th className={sheet.header} key={key}>{l[key]}</th>)}</tr></thead><tbody><tr className={sheet.row}><td>{groups.length}</td><td>{totals.present}</td><td><Amounts totals={totals} family="baseCurrencies"/></td><td><bdi dir="ltr">{duration(totals.overtimeMinutes)}</bdi></td><td><Amounts totals={totals} family="overtimeCurrencies"/></td><td><strong><Amounts totals={totals}/></strong></td></tr></tbody></PayrollSheetFrame></section>}
   </div>
   {!loading&&data&&<SundayOvertimeSection date={date} sources={data.biometricOvertimeReviews||[]} team={team} search={search} onSaved={async()=>setData(await getSundayPayroll(date))}/>}
  </section>
