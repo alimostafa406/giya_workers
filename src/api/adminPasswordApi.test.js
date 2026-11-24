@@ -41,3 +41,13 @@ it('server reauthentication policy is preserved and raw server errors are not ex
  mock.updateUser.mockResolvedValue({error:{code:'reauthentication_needed',message:next}})
  await expect(changeAdminPassword(current,next,next)).rejects.toMatchObject({code:'reauthRequired',message:'reauthRequired'})
 })
+it.each(['1234567','abcdefg','a1b2c3d'])('submits seven-character password %s unchanged to Supabase Auth',async password=>{
+ expect(passwordValidation(current,password,password)).toBeNull()
+ await changeAdminPassword(current,password,password)
+ expect(mock.updateUser).toHaveBeenCalledWith({password,current_password:current})
+})
+it('six characters are blocked locally, but a Supabase rejection of seven characters remains an error',async()=>{
+ expect(passwordValidation(current,'123456','123456')).toBe('tooShort')
+ mock.updateUser.mockResolvedValue({error:{code:'weak_password'}})
+ await expect(changeAdminPassword(current,'1234567','1234567')).rejects.toMatchObject({code:'weakPassword'})
+})
