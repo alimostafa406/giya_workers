@@ -11,7 +11,7 @@ begin
  and (e.event_timestamp at time zone 'Africa/Kinshasa')::time between '07:00' and '09:00'
  and private.confirmed_biometric_identity_worker(e.device_id,e.device_employee_no)=e.worker_id
  limit 1;
- -- A real morning arrival may be inside 08:00–08:35.
+ -- A real morning arrival may be early, from 06:30 through 08:35.
  sample.event_timestamp:=timestamp '2026-11-22 08:05:04' at time zone 'Africa/Kinshasa';
  definition:=pg_get_functiondef('private.sunday_work_evidence_raw(uuid,date)'::regprocedure);
  definition:=replace(definition,'private.sunday_work_evidence_raw','pg_temp.sunday_threshold_test');
@@ -48,7 +48,7 @@ begin
   assert (answer->>'eligible')::boolean and (answer->>'punch_count')::integer=punches,'First/final evidence must support multiple punches';
   assert answer->>'morning'='08:05:04' and answer->>'checkout'='19:01:16','Intermediate punches must not replace first/final';
  end loop;
- foreach clock in array array['06:29:59','06:30:00','07:45:00','07:59:59','08:00:00','08:27:00','08:35:00','08:35:01','08:36:00','09:05:04'] loop
+ foreach clock in array array['06:29:59','06:30:00','07:30:00','07:45:00','07:59:00','07:59:59','08:00:00','08:20:00','08:27:00','08:35:00','08:35:01','08:36:00','09:05:04'] loop
   delete from pg_temp.sunday_test_events;
   sample.event_timestamp:=(date '2026-11-22'+clock::time) at time zone 'Africa/Kinshasa';
   insert into pg_temp.sunday_test_events select sample.*;
@@ -56,7 +56,7 @@ begin
   update pg_temp.sunday_test_events set event_timestamp=timestamp '2026-11-22 19:01:16' at time zone 'Africa/Kinshasa'
    where ctid=(select ctid from pg_temp.sunday_test_events order by ctid desc limit 1);
   answer:=pg_temp.sunday_threshold_test(sample.worker_id,'2026-11-22');
-  assert (answer->>'eligible')::boolean=(clock::time between time '08:00' and time '08:35'),'First check-in boundary failed: '||clock;
+  assert (answer->>'eligible')::boolean=(clock::time between time '06:30' and time '08:35'),'First check-in boundary failed: '||clock;
  end loop;
  answer:=pg_temp.sunday_threshold_test(sample.worker_id,'2026-11-23');
  assert not (answer->>'eligible')::boolean,'Monday must not use Sunday rule';
