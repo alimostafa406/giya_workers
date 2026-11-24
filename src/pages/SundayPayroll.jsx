@@ -30,14 +30,17 @@ Object.assign(labels.fr,{checkIn:'Pointage du matin',checkOut:'Dernier pointage'
 Object.assign(labels.ar,{sundayTransport:'نقل الأحد',missingSundayPay:'إعداد قبض الأحد مطلوب'})
 Object.assign(labels.en,{sundayTransport:'Sunday transport',missingSundayPay:'Sunday pay configuration required'})
 Object.assign(labels.fr,{sundayTransport:'Transport dimanche',missingSundayPay:'Paie du dimanche à configurer'})
-const columns=['worker','checkIn','checkOut','sundayPay','sundayTransport','overtimePay','net']
-const widths=[22,11,11,14,14,14,14]
+Object.assign(labels.ar,{overtimeTime:'وقت إضافي الأحد',overtimePay:'مبلغ إضافي الأحد',otPending:'بانتظار المراجعة'})
+Object.assign(labels.en,{overtimeTime:'Sunday OT time',overtimePay:'Sunday OT amount',otPending:'Awaiting review'})
+Object.assign(labels.fr,{overtimeTime:'Durée suppl. dimanche',overtimePay:'Montant suppl. dimanche',otPending:'À examiner'})
+const columns=['worker','checkIn','checkOut','sundayPay','sundayTransport','overtimeTime','overtimePay','net']
+const widths=[20,10,10,12,12,12,12,12]
 const duration=value=>value>0?formatBiometricOvertimeDuration(value):'—'
 const money=(amount,currency)=>amount==null?'—':!currency||currency==='UNCONFIGURED'?(Number(amount)===0?'0':'—'):formatPayrollMoney(amount,{currency,paymentType:'weekly'})
 const clock=value=>value?String(value).slice(0,5):'—'
 function Amounts({totals,family='currencies'}){return Object.entries(totals[family]).map(([currency,amount])=><bdi dir="ltr" className="block" key={currency}>{money(amount,currency)}</bdi>)}
 function SundayTotalRow({totals,label}){
- return <tr className={sheet.totalRow}><th scope="row" className="px-3 py-3 text-start whitespace-nowrap">{label}</th><td className={sheet.cell}>—</td><td className={sheet.cell}>—</td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="baseCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="transportCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="overtimeCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals}/></td></tr>
+ return <tr className={sheet.totalRow}><th scope="row" className="px-3 py-3 text-start whitespace-nowrap">{label}</th><td className={sheet.cell}>—</td><td className={sheet.cell}>—</td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="baseCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="transportCurrencies"/></td><td className={sheet.cell}>—</td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="overtimeCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals}/></td></tr>
 }
 export default function SundayPayroll(){
  const {language,direction}=useTranslation(),l=labels[language]||labels.en
@@ -81,11 +84,11 @@ export default function SundayPayroll(){
        {!row.present&&<small className="block">{l.incomplete}</small>}
        {row.missingSundayPay?<small className="block">{l.missingSundayPay}</small>:row.present&&!row.fixedMonthly&&row.daily==null&&<small className="block">{l.missing}</small>}
        {row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}
-       {row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block">{l.otPending}: <bdi dir="ltr">{duration(row.candidateMinutes)}</bdi></small>}
       </td>
       <td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.last_punch||row.evidence?.display_check_out)}</bdi></td>
       <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
       <td className={sheet.cell}><bdi dir="ltr">{money(row.transportAmount,row.currency)}</bdi></td>
+      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{duration(row.candidateMinutes||row.overtimeMinutes)}</bdi>{row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block text-xs font-normal text-(--muted)">{l.otPending}</small>}</td>
       <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{row.overtimeMinutes>0?money(row.overtimeAmount,row.currency):'—'}</bdi></td>
       <td className={`${sheet.cell} font-extrabold`}><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></td>
      </tr>)}</tbody>
