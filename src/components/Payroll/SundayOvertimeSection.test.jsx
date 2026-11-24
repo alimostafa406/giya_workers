@@ -10,6 +10,19 @@ const api=vi.hoisted(()=>({decide:vi.fn()}))
 vi.mock('../../api/biometricOvertimeReviewApi',()=>({decideBiometricOvertime:api.decide}))
 afterEach(()=>{cleanup();vi.clearAllMocks()})
 const date='2026-11-22'
+it.skipIf(!process.env.SUNDAY_APPROVED_AUDIT)('real approved records reload with adjusted time and report money exactly once',()=>{
+ const data=JSON.parse(readFileSync(process.env.SUNDAY_APPROVED_AUDIT,'utf8'))
+ render(<SundayOvertimeSection date={date} sources={data.biometricOvertimeReviews} onSaved={vi.fn()}/>)
+ expect(screen.getByLabelText('الوقت المعتمد juresse').value).toBe('5h00')
+ expect(screen.getByText('5h01')).not.toBeNull()
+ expect(screen.getByLabelText('الوقت المعتمد khonde nzita').value).toBe('7h57')
+ const rows=sundayReportRows(data,date)
+ for(const [code,minutes,amount] of [['71',300,17500],['300',477,19875]]){
+  const row=rows.find(r=>r.worker.employee_code===code)
+  expect(row.overtimeMinutes).toBe(minutes);expect(row.overtimeAmount).toBe(amount)
+  expect(row.netAmount).toBe(row.amount==null?null:row.amount+row.transportAmount+amount)
+ }
+})
 it.skipIf(!process.env.SUNDAY_OT_AUDIT)('renders only real qualifying November 22 workers from canonical production sources',()=>{
  const rows=JSON.parse(readFileSync(process.env.SUNDAY_OT_AUDIT,'utf8'))
  const view=render(<SundayOvertimeSection date={date} sources={rows} onSaved={vi.fn()}/>)
@@ -27,10 +40,33 @@ it('visible controls bulk approve/reject canonical decisions and Sunday net adds
   return <><output data-testid="net">{sundayReportRows(data,date).reduce((sum,r)=>sum+r.netAmount,0).toFixed(2)}</output><SundayOvertimeSection date={date} sources={rows} onSaved={async()=>setRows(stored)}/></>}
  render(<Harness/>);expect(screen.getByText('إضافي الأحد')).not.toBeNull();expect(screen.getByTestId('net').textContent).toBe('80000.00')
  fireEvent.click(screen.getByRole('button',{name:'اختيار الكل الظاهر'}));expect(screen.getAllByRole('checkbox').every(c=>c.checked)).toBe(true)
- fireEvent.click(screen.getByRole('button',{name:'موافقة على المختارين'}));await waitFor(()=>expect(screen.getByTestId('net').textContent).toBe('117433.33'))
+ fireEvent.click(screen.getAllByRole('button',{name:'موافقة على المختارين'})[0]);await waitFor(()=>expect(screen.getByTestId('net').textContent).toBe('117433.33'))
  expect(api.decide.mock.calls[0][1]).toHaveLength(2);expect(api.decide.mock.calls[0][2]).toBe('approved')
- fireEvent.click(screen.getByRole('button',{name:'اختيار الكل الظاهر'}));fireEvent.click(screen.getByRole('button',{name:'رفض المختارين'}));await waitFor(()=>expect(screen.getByTestId('net').textContent).toBe('80000.00'))
+ fireEvent.click(screen.getByRole('button',{name:'اختيار الكل الظاهر'}));fireEvent.click(screen.getAllByRole('button',{name:'رفض المختارين'})[0]);await waitFor(()=>expect(screen.getByTestId('net').textContent).toBe('80000.00'))
  expect(screen.getAllByText('مرفوض')).toHaveLength(2)
+})
+it('team approval preserves individual increases/decreases and raw evidence',async()=>{
+ const rows=sources(),saved=vi.fn();api.decide.mockResolvedValue([])
+ render(<SundayOvertimeSection date={date} sources={rows} onSaved={saved}/>)
+ fireEvent.change(screen.getByLabelText('الوقت المعتمد juresse'),{target:{value:'4h30'}})
+ fireEvent.change(screen.getByLabelText('الوقت المعتمد khonde'),{target:{value:'8h00'}})
+ fireEvent.change(screen.getByLabelText('سبب التعديل juresse'),{target:{value:'مراجعة الإدارة'}})
+ expect(screen.getByText('5h01')).not.toBeNull();expect(screen.getByText('7h57')).not.toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'موافقة على الفريق'}))
+ await waitFor(()=>expect(saved).toHaveBeenCalledOnce())
+ const entries=api.decide.mock.calls[0][1]
+ expect(entries.map(r=>r.payableMinutes)).toEqual([270,480])
+ expect(entries.map(r=>r.minutes)).toEqual([301,477])
+ expect(entries[0].adjustmentNote).toBe('مراجعة الإدارة')
+ expect(rows.every(r=>r.review===null)).toBe(true)
+})
+it('rejects invalid durations without writing and honors locked rows',()=>{
+ const rows=sources();rows[1].locked=true
+ render(<SundayOvertimeSection date={date} sources={rows} onSaved={vi.fn()}/>)
+ expect(screen.getByLabelText('الوقت المعتمد khonde').disabled).toBe(true)
+ fireEvent.change(screen.getByLabelText('الوقت المعتمد juresse'),{target:{value:'bad'}})
+ fireEvent.click(screen.getByRole('button',{name:'موافقة على الفريق'}))
+ expect(screen.getByRole('alert')).not.toBeNull();expect(api.decide).not.toHaveBeenCalled()
 })
 it('filters selection to visible sources and disables locked writes',()=>{
  const rows=sources();rows[1].locked=true

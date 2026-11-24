@@ -38,6 +38,7 @@ import AdvancedSettings from '../pages/AdvancedSettings'
 import AttendanceOvertimeSettings from '../pages/AttendanceOvertimeSettings'
 import Payroll from '../pages/Payroll'
 import SundayPayroll from '../pages/SundayPayroll'
+import SundayOvertimeReview from '../pages/SundayOvertimeReview'
 import PayrollPublication from '../pages/PayrollPublication'
 import OutsideWork from '../pages/OutsideWork'
 import ForeignAttendance from '../pages/ForeignAttendance'
@@ -173,6 +174,7 @@ function AppRouter() {
             <Route path="/settings/attendance-overtime" element={<AttendanceOvertimeSettings />} />
             <Route path="/payroll" element={<Payroll />} />
             <Route path="/payroll/sunday" element={<SundayPayroll />} />
+            <Route path="/payroll/sunday-overtime" element={<SundayOvertimeReview />} />
             <Route path="/payroll/publication" element={<PayrollPublication />} />
             <Route path="/payroll/compensation-review" element={<CompensationReviewReport />} />
           </Route>
