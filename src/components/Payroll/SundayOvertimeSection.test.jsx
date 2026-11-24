@@ -6,8 +6,8 @@ import SundayOvertimeSection from './SundayOvertimeSection'
 import {sundayReportRows} from '../../utils/sundayPayroll'
 import {readFileSync} from 'node:fs'
 globalThis.React=React
-const api=vi.hoisted(()=>({decide:vi.fn()}))
-vi.mock('../../api/biometricOvertimeReviewApi',()=>({decideBiometricOvertime:api.decide}))
+const api=vi.hoisted(()=>({decide:vi.fn(),save:vi.fn()}))
+vi.mock('../../api/biometricOvertimeReviewApi',()=>({decideBiometricOvertime:api.decide,saveSundayEvidence:api.save}))
 afterEach(()=>{cleanup();vi.clearAllMocks()})
 const date='2026-11-22'
 it.skipIf(!process.env.SUNDAY_APPROVED_AUDIT)('real approved records reload with adjusted time and report money exactly once',()=>{
@@ -37,6 +37,28 @@ it.skipIf(!process.env.SUNDAY_OT_AUDIT)('renders only real qualifying November 2
 function sources(){return [['j','juresse','71',301,3500],['k','khonde','300',477,2500]].map(([id,name,code,minutes,rate])=>({sunday_evidence:true,work_date:date,
  worker:{id,full_name:name,employee_code:code,team_id:'t',team_name:'Chauffeur',payment_type:'monthly',is_active:true,payroll_compensation_terms:[{payment_type:'monthly',effective_from:'2026-01-01',monthly_salary:520000,currency_code:'CDF',overtime_rate_per_hour:rate}]},
  attendance:{worker_id:id,attendance_date:date,id:null},evidence:{last_at:'2026-11-22T18:01:16Z'},raw_minutes:minutes,hourly_rate:rate,currency:'CDF',source_fingerprint:id,review:null}))}
+it('separates raw clocks from approved evidence, recalculates suggestion, saves without approval, and resets',async()=>{
+ const row=sources()[0];row.evidence.first_at='2026-11-22T07:05:04Z';row.sunday_settings={overtime_start:'14:00:00'}
+ const saved=vi.fn();api.save.mockResolvedValue({version:1})
+ const view=render(<SundayOvertimeSection date={date} sources={[row]} onSaved={saved}/>)
+ expect(screen.getByText('08:05:04')).not.toBeNull();expect(screen.getByText('19:01:16')).not.toBeNull()
+ fireEvent.change(screen.getByLabelText('أول بصمة معتمدة juresse'),{target:{value:'08:00:00'}})
+ fireEvent.change(screen.getByLabelText('آخر بصمة معتمدة juresse'),{target:{value:'18:30:00'}})
+ expect(screen.getByLabelText('الوقت المعتمد juresse').value).toBe('4h30')
+ fireEvent.click(screen.getByRole('button',{name:'موافقة'}))
+ expect(api.decide).not.toHaveBeenCalled();expect(screen.getByRole('alert')).not.toBeNull()
+ fireEvent.change(screen.getByLabelText('الوقت المعتمد juresse'),{target:{value:'4h00'}})
+ fireEvent.click(screen.getByRole('button',{name:'حفظ الدليل المعتمد'}))
+ await waitFor(()=>expect(saved).toHaveBeenCalledOnce())
+ expect(api.save.mock.calls[0][2]).toEqual({first:'2026-11-22T08:00:00+01:00',last:'2026-11-22T18:30:00+01:00',minutes:240,note:'',reset:false})
+ expect(row.evidence.last_at).toBe('2026-11-22T18:01:16Z');expect(screen.getByText('5h01')).not.toBeNull()
+ const updated={...row,approved_evidence_valid:true,approved_evidence:{version:1,approved_first_punch:'2026-11-22T07:00:00Z',approved_last_punch:'2026-11-22T17:30:00Z'},suggested_approved_minutes:240,source_fingerprint:'new',review:{decision:'approved',minutes:300,source_fingerprint:'old'}}
+ view.rerender(<SundayOvertimeSection date={date} sources={[updated]} onSaved={saved}/>)
+ expect(screen.getByLabelText('آخر بصمة معتمدة juresse').value).toBe('18:30:00')
+ expect(screen.getByText('يحتاج مراجعة من جديد')).not.toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'استرجاع من البصمة الأصلية'}))
+ await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(2));expect(api.save.mock.calls[1][2].reset).toBe(true)
+})
 it('visible controls bulk approve/reject canonical decisions and Sunday net adds approved OT once',async()=>{
  let stored=sources()
  api.decide.mockImplementation(async(day,entries,decision)=>{expect(day).toBe(date);stored=stored.map(s=>entries.some(e=>e.worker.id===s.worker.id)?{...s,review:{decision,minutes:s.raw_minutes,version:1,source_fingerprint:s.source_fingerprint}}:s);return[]})

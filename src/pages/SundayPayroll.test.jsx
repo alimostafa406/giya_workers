@@ -17,6 +17,17 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
+it('screen and print use approved Sunday clocks while raw punch fields remain intact',async()=>{
+ const data=fixture();Object.assign(data.sunday_evidence[1],{admin_evidence_override:true,display_check_in:'08:00:00',display_check_out:'18:30:00',first_punch:'08:05:04',last_punch:'19:01:16'})
+ api.load.mockResolvedValue(data);const view=mount('ar');await screen.findByText('Valid two')
+ const cells=view.container.querySelector('[data-worker=two]').children
+ expect(cells[1].textContent).toBe('08:00');expect(cells[2].textContent).toBe('18:30')
+ expect(data.sunday_evidence[1].last_punch).toBe('19:01:16')
+ const popup={document:{write:vi.fn(),close:vi.fn()},print:vi.fn()};vi.spyOn(window,'open').mockReturnValue(popup)
+ fireEvent.click(screen.getByRole('button',{name:'طباعة تقرير الأحد'}))
+ const doc=new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html')
+ expect(doc.querySelector('[data-worker=two]').children[2].textContent).toBe('18:30')
+})
 it('links the selected Sunday to dedicated review without inline approval controls',async()=>{
  api.load.mockResolvedValue({workers:[],sunday_evidence:[]})
  mount('ar');await screen.findByText('لا يوجد حضور يوم أحد مطابق')

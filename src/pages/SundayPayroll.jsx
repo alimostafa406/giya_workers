@@ -85,10 +85,10 @@ export default function SundayPayroll(){
        {row.missingSundayPay?<small className="block">{l.missingSundayPay}</small>:row.present&&!row.fixedMonthly&&row.daily==null&&<small className="block">{l.missing}</small>}
        {row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}
       </td>
-      <td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.last_punch||row.evidence?.display_check_out)}</bdi></td>
+      <td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.admin_evidence_override?row.evidence?.display_check_out:row.evidence?.last_punch||row.evidence?.display_check_out)}</bdi></td>
       <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
       <td className={sheet.cell}><bdi dir="ltr">{money(row.transportAmount,row.currency)}</bdi></td>
-      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{duration(row.candidateMinutes||row.overtimeMinutes)}</bdi>{row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block text-xs font-normal text-(--muted)">{l.otPending}</small>}</td>
+      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{duration(row.displayOvertimeMinutes)}</bdi>{row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block text-xs font-normal text-(--muted)">{l.otPending}</small>}</td>
       <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{row.overtimeMinutes>0?money(row.overtimeAmount,row.currency):'—'}</bdi></td>
       <td className={`${sheet.cell} font-extrabold`}><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></td>
      </tr>)}</tbody>

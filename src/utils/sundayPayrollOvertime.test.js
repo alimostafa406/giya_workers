@@ -35,6 +35,14 @@ it('stale evidence does not pay and adjusted approved minutes are respected',()=
  adjusted.biometricOvertimeReviews[0].review.history=[{source_fingerprint:'f',minutes:60,original_biometric_minutes:301}]
  expect(sundayReportRows(adjusted,date)[0]).toMatchObject({overtimeMinutes:60,overtimeAmount:3000,netAmount:43000})
 })
+it('approved Sunday evidence suggestions stay non-payable until explicit reapproval, then pay once',()=>{
+ const d=data();const s=d.biometricOvertimeReviews[0]
+ Object.assign(s,{sunday_evidence:true,raw_minutes:301,source_fingerprint:'edited',suggested_approved_minutes:270,approved_evidence_valid:true,approved_evidence:{approved_first_punch:'2026-11-22T07:00:00Z'}})
+ expect(sundayReportRows(d,date)[0]).toMatchObject({overtimeMinutes:0,displayOvertimeMinutes:270,netAmount:40000})
+ s.review={decision:'approved',minutes:255,source_fingerprint:'edited',version:2,history:[{source_fingerprint:'edited',minutes:255,original_biometric_minutes:301}]}
+ expect(sundayReportRows(d,date)[0]).toMatchObject({overtimeMinutes:255,displayOvertimeMinutes:255,overtimeAmount:12750,netAmount:52750})
+ expect(s.raw_minutes).toBe(301)
+})
 it('a recurring preference cannot bypass the canonical pending OT decision',()=>{
  const d=data('pending');d.biometricOvertimeReviews[0].sunday_evidence=true;d.biometricOvertimeReviews[0].raw_minutes=301;d.biometricOvertimeReviews[0].sunday_settings={overtime_requires_approval:false}
  expect(sundayReportRows(d,date)[0]).toMatchObject({overtimeMinutes:0,overtimeAmount:0,netAmount:40000})
