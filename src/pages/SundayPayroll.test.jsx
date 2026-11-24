@@ -17,13 +17,26 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
+it.skipIf(!process.env.SUNDAY_OT_TIME_AUDIT)('real pending Juresse and Khonde durations appear in their own cells on screen and print',async()=>{
+ const data=JSON.parse(readFileSync(process.env.SUNDAY_OT_TIME_AUDIT,'utf8'));api.load.mockResolvedValue(data)
+ window.history.replaceState({},'','/payroll/sunday?date=2026-11-22');localStorage.setItem('workers_app_language','ar')
+ const view=render(<LanguageProvider><SundayPayroll/></LanguageProvider>);await screen.findAllByText('juresse')
+ for(const [code,time] of [['71','5h01'],['300','7h57']]){
+  const worker=data.workers.find(w=>w.employee_code===code),cells=view.container.querySelector(`[data-worker="${worker.id}"]`).children
+  expect(cells).toHaveLength(8);expect(cells[5].querySelector('bdi').textContent).toBe(time)
+  expect(cells[6].textContent).toBe('—')
+ }
+ const popup={document:{write:vi.fn(),close:vi.fn()},print:vi.fn()};vi.spyOn(window,'open').mockReturnValue(popup);fireEvent.click(screen.getByRole('button',{name:'طباعة تقرير الأحد'}))
+ const doc=new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html')
+ for(const [code,time] of [['71','5h01'],['300','7h57']]){const id=data.workers.find(w=>w.employee_code===code).id;expect(doc.querySelector(`[data-worker="${id}"]`).children[5].querySelector('bdi').textContent).toBe(time)}
+})
 it('renders monthly fixed Sunday pay, separate transport and x4 approved OT in screen and print',async()=>{
  const data=fixture(),worker=data.workers[1];worker.payment_type='monthly';Object.assign(worker.payroll_compensation_terms[0],{payment_type:'monthly',monthly_salary:0,overtime_rate_per_hour:2500})
  data.sunday_evidence[1].sunday_settings={pay_model:'sunday_specific',sunday_fixed_pay:20000,sunday_transport:3000,overtime_multiplier:4}
  data.biometricOvertimeReviews=[{worker,attendance:{worker_id:'two',attendance_date:date},work_date:date,sunday_evidence:true,evidence:{last_at:'2026-08-23T15:00:00Z'},hourly_rate:10000,currency:'CDF',raw_minutes:120,source_fingerprint:'f',review:{decision:'approved',minutes:120,source_fingerprint:'f'}}]
  api.load.mockResolvedValue(data);const view=mount('ar');await screen.findAllByText('Valid two')
  const cells=view.container.querySelector('[data-worker=two]').querySelectorAll('td')
- expect(cells[3].textContent).toContain('20,000');expect(cells[4].textContent).toContain('3,000');expect(cells[5].textContent).toContain('20,000');expect(cells[6].textContent).toContain('43,000')
+ expect(cells[3].textContent).toContain('20,000');expect(cells[4].textContent).toContain('3,000');expect(cells[6].textContent).toContain('20,000');expect(cells[7].textContent).toContain('43,000')
  expect(view.container.querySelector('[data-worker=two]').textContent).not.toContain('إعداد الأجر مطلوب')
  const popup={document:{write:vi.fn(),close:vi.fn()},print:vi.fn()};vi.spyOn(window,'open').mockReturnValue(popup);fireEvent.click(screen.getByRole('button',{name:'طباعة تقرير الأحد'}))
  const doc=new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html');expect(doc.querySelector('[data-worker=two]').textContent).toContain('43,000')
@@ -65,13 +78,13 @@ it('worker name opens recurring Sunday settings, saves through canonical API and
  const cutoff=await within(reopened).findByLabelText('آخر وقت دخول مقبول')
  expect(cutoff.value).toBe('08:45');expect(within(reopened).getByLabelText('معامل إضافي الأحد').value).toBe('2.5');expect(api.settings).toHaveBeenCalledTimes(2)
 })
-it('screen and print align seven Sunday columns and total rows without colspan or nested labels',async()=>{
+it('screen and print align eight Sunday columns and total rows without colspan or nested labels',async()=>{
  api.load.mockResolvedValue(fixture());const view=mount('ar');await screen.findByText('Valid two')
- const expected=['العامل','البصمة الصباحية','آخر بصمة','قبض الأحد','نقل الأحد','إضافي الأحد','الصافي']
+ const expected=['العامل','البصمة الصباحية','آخر بصمة','قبض الأحد','نقل الأحد','وقت إضافي الأحد','مبلغ إضافي الأحد','الصافي']
  expect([...view.container.querySelector('.sunday-team thead').querySelectorAll('th')].map(n=>n.textContent)).toEqual(expected)
- expect(view.container.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(7)
+ expect(view.container.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(8)
  for(const total of view.container.querySelectorAll('.sunday-team tfoot tr,.sunday-grand tbody tr')){
-  expect(total.children).toHaveLength(7);expect(total.querySelector('[colspan]')).toBeNull()
+  expect(total.children).toHaveLength(8);expect(total.querySelector('[colspan]')).toBeNull()
   expect(total.children[1].textContent).toBe('—');expect(total.children[2].textContent).toBe('—')
   expect(total.querySelector('small')).toBeNull()
  }
@@ -83,21 +96,21 @@ it('screen and print align seven Sunday columns and total rows without colspan o
  fireEvent.click(screen.getByRole('button',{name:'طباعة تقرير الأحد'}))
  const doc=new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html')
  expect([...doc.querySelector('.sunday-team thead').querySelectorAll('th')].map(n=>n.textContent)).toEqual(expected)
- expect(doc.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(7)
- expect(doc.querySelector('.sunday-team tfoot tr').querySelectorAll('td')).toHaveLength(6)
+ expect(doc.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(8)
+ expect(doc.querySelector('.sunday-team tfoot tr').querySelectorAll('td')).toHaveLength(7)
  for(const total of doc.querySelectorAll('.sunday-team tfoot tr,.sunday-grand tbody tr')){
-  expect(total.children).toHaveLength(7);expect(total.querySelector('[colspan]')).toBeNull();expect(total.querySelector('small')).toBeNull()
+  expect(total.children).toHaveLength(8);expect(total.querySelector('[colspan]')).toBeNull();expect(total.querySelector('small')).toBeNull()
   expect(total.children[1].textContent).toBe('—');expect(total.children[2].textContent).toBe('—')
  }
  const grand=doc.querySelector('.sunday-grand tbody tr').children
- expect(grand[3].textContent).toContain('40,000');expect(grand[4].textContent).toContain('0.00');expect(grand[6].textContent).toContain('40,000')
+ expect(grand[3].textContent).toContain('40,000');expect(grand[4].textContent).toContain('0.00');expect(grand[7].textContent).toContain('40,000')
 })
-it.skipIf(!process.env.SUNDAY_REPORT_AUDIT)('real November 22 NIOKA keeps the actual morning/final punches and Sunday 50000 net in seven cells',async()=>{
+it.skipIf(!process.env.SUNDAY_REPORT_AUDIT)('real November 22 NIOKA keeps the actual morning/final punches and Sunday 50000 net in eight cells',async()=>{
  const data=JSON.parse(readFileSync(process.env.SUNDAY_REPORT_AUDIT,'utf8'));api.load.mockResolvedValue(data)
  window.history.replaceState({},'','/payroll/sunday?date=2026-11-22');localStorage.setItem('workers_app_language','ar')
  const view=render(<LanguageProvider><SundayPayroll/></LanguageProvider>);await screen.findByText('NIOKA')
  const cells=view.container.querySelector('[data-worker="0a8a264f-59cc-48cd-9864-676227d483d6"]').querySelectorAll('td')
- expect(cells).toHaveLength(7);expect(cells[1].textContent).toBe('08:04');expect(cells[2].textContent).toBe('13:50');expect(cells[3].textContent).toContain('50,000');expect(cells[5].textContent).toBe('—');expect(cells[6].textContent).toContain('50,000')
+ expect(cells).toHaveLength(8);expect(cells[1].textContent).toBe('08:04');expect(cells[2].textContent).toBe('13:50');expect(cells[3].textContent).toContain('50,000');expect(cells[6].textContent).toBe('—');expect(cells[7].textContent).toContain('50,000')
 })
 it('shares the main payroll table frame, row, worker identity and footer classes',async()=>{
  api.load.mockResolvedValue(fixture());const view=mount();await screen.findByText('Valid two')
@@ -115,9 +128,10 @@ it.each(['approved','pending','rejected'])('shows only canonical %s Sunday OT re
  data.biometricOvertimeReviews=[{worker:data.workers[1],attendance:{worker_id:'two',attendance_date:date},work_date:date,sunday_evidence:true,evidence:{last_at:'2026-08-23T14:00:00Z'},hourly_rate:3000,currency:'CDF',raw_minutes:60,source_fingerprint:'f',review:{decision,minutes:60,source_fingerprint:'f'}}]
  api.load.mockResolvedValue(data);const view=mount();await screen.findAllByText('Valid two')
  const cells=view.container.querySelector('[data-worker=two]').querySelectorAll('td')
- expect(cells).toHaveLength(7)
- expect(cells[5].textContent).toBe(decision==='approved'?'CDF 3,000.00':'—')
- expect(cells[6].textContent).toContain(decision==='approved'?'43,000':'40,000')
+ expect(cells).toHaveLength(8)
+ expect(cells[5].querySelector('bdi').textContent).toBe('1h00')
+ expect(cells[6].textContent).toBe(decision==='approved'?'CDF 3,000.00':'—')
+ expect(cells[7].textContent).toContain(decision==='approved'?'43,000':'40,000')
  expect(screen.queryByRole('button',{name:'اعتماد عمل الأحد'})).toBeNull()
 })
 it('shows Sunday base, canonical payable manual OT, net and status in separate screen and print columns',async()=>{
@@ -125,11 +139,11 @@ it('shows Sunday base, canonical payable manual OT, net and status in separate s
  data.attendance.push({worker_id:'two',attendance_date:date,status:'present',manual_override:true,emergency_overtime_mode:'manual_overtime_duration',emergency_overtime_minutes:120})
  api.load.mockResolvedValue(data);const view=mount();await screen.findByText('Valid two')
  const cells=view.container.querySelector('[data-worker=two]').querySelectorAll('td')
- expect(cells).toHaveLength(7);expect(cells[3].textContent).toContain('40,000');expect(cells[5].textContent).toContain('6,000');expect(cells[6].textContent).toContain('46,000')
+ expect(cells).toHaveLength(8);expect(cells[3].textContent).toContain('40,000');expect(cells[6].textContent).toContain('6,000');expect(cells[7].textContent).toContain('46,000')
  const popup={document:{write:vi.fn(),close:vi.fn()},print:vi.fn()};vi.spyOn(window,'open').mockReturnValue(popup)
  fireEvent.click(screen.getByRole('button',{name:'Print Sunday report'}))
  const doc=new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html')
- expect(doc.querySelector('[data-worker=two]').querySelectorAll('td')).toHaveLength(7);expect(doc.querySelector('[data-worker=two]').textContent).toContain('46,000')
+ expect(doc.querySelector('[data-worker=two]').querySelectorAll('td')).toHaveLength(8);expect(doc.querySelector('[data-worker=two]').textContent).toContain('46,000')
  expect(api.confirm).not.toHaveBeenCalled()
 })
 it('renders persisted Sunday evidence before attendance finalization or payroll approval exists',async()=>{
@@ -137,16 +151,16 @@ it('renders persisted Sunday evidence before attendance finalization or payroll 
  const view=mount();await screen.findByText('One punch')
  expect(screen.getByText('Valid two')).not.toBeNull()
  expect(view.container.querySelectorAll('.sunday-team [data-worker]')).toHaveLength(3)
- expect(view.container.querySelector('[data-worker=one]').querySelectorAll('td')[6].textContent).toContain('0.00')
+ expect(view.container.querySelector('[data-worker=one]').querySelectorAll('td')[7].textContent).toContain('0.00')
  expect(api.confirm).not.toHaveBeenCalled()
 })
-it('groups attendees into seven-column Sunday-only team tables, keeps incomplete punches unpaid, and hides absent/empty teams',async()=>{
+it('groups attendees into eight-column Sunday-only team tables, keeps incomplete punches unpaid, and hides absent/empty teams',async()=>{
  api.load.mockResolvedValue(fixture());const view=mount('ar');await screen.findByText('One punch')
  const groups=view.container.querySelectorAll('.sunday-team');expect(groups).toHaveLength(2);expect(screen.queryByText('Absent worker')).toBeNull();expect(screen.queryByText('Team Empty')).toBeNull()
- for(const group of groups){expect(group.querySelectorAll('thead th')).toHaveLength(7);expect(group.querySelector('tfoot')).not.toBeNull()}
- const one=view.container.querySelector('[data-worker=one]');expect(one.textContent).toContain('07:05');expect(one.textContent).toContain('غير مكتمل');expect(one.querySelectorAll('td')[2].textContent).toBe('—');expect(one.querySelectorAll('td')[6].textContent).toContain('0.00');expect(within(one).queryByRole('button',{name:'اعتماد عمل الأحد'})).toBeNull()
- const two=view.container.querySelector('[data-worker=two]');expect(two.textContent).toContain('14:03');expect(two.querySelectorAll('td')[6].textContent).toContain('40,000')
- const morning=view.container.querySelector('[data-worker=morning]');expect(morning.textContent).toContain('غير مكتمل');expect(morning.querySelectorAll('td')[6].textContent).toContain('0.00')
+ for(const group of groups){expect(group.querySelectorAll('thead th')).toHaveLength(8);expect(group.querySelector('tfoot')).not.toBeNull()}
+ const one=view.container.querySelector('[data-worker=one]');expect(one.textContent).toContain('07:05');expect(one.textContent).toContain('غير مكتمل');expect(one.querySelectorAll('td')[2].textContent).toBe('—');expect(one.querySelectorAll('td')[7].textContent).toContain('0.00');expect(within(one).queryByRole('button',{name:'اعتماد عمل الأحد'})).toBeNull()
+ const two=view.container.querySelector('[data-worker=two]');expect(two.textContent).toContain('14:03');expect(two.querySelectorAll('td')[7].textContent).toContain('40,000')
+ const morning=view.container.querySelector('[data-worker=morning]');expect(morning.textContent).toContain('غير مكتمل');expect(morning.querySelectorAll('td')[7].textContent).toContain('0.00')
  expect(view.container.querySelector('.sunday-grand tbody').textContent).toContain('40,000')
  expect(within(two).queryByRole('button',{name:'اعتماد عمل الأحد'})).toBeNull();expect(screen.queryByText('بانتظار الاعتماد')).toBeNull()
 })
@@ -158,7 +172,7 @@ it.each(['ar','en','fr'])('prints only filtered team rows with all counts, total
  fireEvent.click(screen.getByRole('button',{name:({ar:'طباعة تقرير الأحد',fr:'Imprimer le dimanche',en:'Print Sunday report'})[language]}));expect(popup.print).toHaveBeenCalledOnce()
  const html=popup.document.write.mock.calls[0][0],doc=new DOMParser().parseFromString(html,'text/html')
  expect(html).toContain(payrollRenderedPrintCss)
- expect(doc.querySelectorAll('.sunday-team')).toHaveLength(1);expect(doc.querySelector('.sunday-team thead').querySelectorAll('th')).toHaveLength(7);expect(doc.querySelector('.sunday-team tfoot')).not.toBeNull();expect(doc.querySelector('.sunday-grand')).not.toBeNull();expect(doc.body.textContent).not.toContain('One punch');expect(doc.body.textContent).toContain('40,000');expect(doc.querySelector('button')).toBeNull();expect(html).toContain('A4 landscape');expect(doc.documentElement.dir).toBe(language==='ar'?'rtl':'ltr')
+ expect(doc.querySelectorAll('.sunday-team')).toHaveLength(1);expect(doc.querySelector('.sunday-team thead').querySelectorAll('th')).toHaveLength(8);expect(doc.querySelector('.sunday-team tfoot')).not.toBeNull();expect(doc.querySelector('.sunday-grand')).not.toBeNull();expect(doc.body.textContent).not.toContain('One punch');expect(doc.body.textContent).toContain('40,000');expect(doc.querySelector('button')).toBeNull();expect(html).toContain('A4 landscape');expect(doc.documentElement.dir).toBe(language==='ar'?'rtl':'ltr')
  fireEvent.change(screen.getByRole('searchbox'),{target:{value:'no match'}});expect(view.container.querySelectorAll('.sunday-team')).toHaveLength(0)
 })
 it('rejects a non-Sunday without requesting/replacing the selected date',async()=>{
