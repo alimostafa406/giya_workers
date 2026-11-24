@@ -20,6 +20,23 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
+it('grand summary counts only visible workers and sums adjusted approved minutes, excluding pending/rejected/stale',async()=>{
+ const data=fixture(),worker=data.workers[1];worker.payroll_compensation_terms[0].overtime_rate_per_hour=3000
+ const states=[['two','approved',false],['pending','pending',false],['rejected','rejected',false],['stale','approved',true]]
+ for(const [id] of states.slice(1)){
+  data.workers.push({...worker,id,full_name:id});data.sunday_evidence.push({worker_id:id,eligible:true,punch_count:2})
+ }
+ data.biometricOvertimeReviews=states.map(([id,decision,stale])=>({worker:data.workers.find(w=>w.id===id),attendance:{worker_id:id,attendance_date:date},work_date:date,sunday_evidence:true,evidence:{},raw_minutes:60,source_fingerprint:id,review:{decision,minutes:45,source_fingerprint:stale?'old':id,history:[{minutes:45,original_biometric_minutes:60,source_fingerprint:stale?'old':id}]}}))
+ api.load.mockResolvedValue(data);const view=mount('ar');await screen.findByText('Valid two')
+ const summary=()=>view.container.querySelector('.sunday-grand tbody tr').children
+ expect(summary()[1].textContent).toBe('إجمالي العمال: 6');expect(summary()[2].textContent).toBe('المكتملون: 4')
+ expect(summary()[5].textContent).toBe('45 min');expect(summary()[6].textContent).toContain('2,250')
+ fireEvent.change(screen.getByLabelText('الفريق'),{target:{value:'A'}})
+ expect(summary()[1].textContent).toBe('إجمالي العمال: 2');expect(summary()[2].textContent).toBe('المكتملون: 0');expect(summary()[5].textContent).toBe('—')
+ fireEvent.change(screen.getByLabelText('الفريق'),{target:{value:'B'}})
+ expect(summary()[1].textContent).toBe('إجمالي العمال: 4');expect(summary()[2].textContent).toBe('المكتملون: 4');expect(summary()[5].textContent).toBe('45 min')
+ expect(view.container.querySelector('.sunday-team tfoot tr').children[1].textContent).toBe('—')
+})
 it.skipIf(!process.env.SUNDAY_TOTAL_AUDIT)('real Sunday grand/team totals render one canonical money value per aligned cell on screen and print',async()=>{
  const data=JSON.parse(readFileSync(process.env.SUNDAY_TOTAL_AUDIT,'utf8')),before=JSON.stringify(data);api.load.mockResolvedValue(data)
  window.history.replaceState(null,'','/payroll/sunday?date=2026-11-22');localStorage.setItem('workers_app_language','ar')
@@ -28,6 +45,11 @@ it.skipIf(!process.env.SUNDAY_TOTAL_AUDIT)('real Sunday grand/team totals render
  const check=root=>{
   const grand=root.querySelectorAll('.sunday-grand [data-total-currency]');expect(grand).toHaveLength(1)
   const cells=grand[0].children;expect(cells).toHaveLength(8)
+  expect(cells[1].textContent).toBe(`إجمالي العمال: ${totals.workers}`)
+  expect(cells[2].textContent).toBe(`المكتملون: ${totals.present}`)
+  expect(cells[5].textContent).toBe(`${Math.floor(totals.overtimeMinutes/60)}h${String(totals.overtimeMinutes%60).padStart(2,'0')}`)
+  expect(root.querySelector('.sunday-grand thead').textContent).not.toContain('البصمة الصباحية')
+  expect(root.querySelector('.sunday-grand thead').textContent).not.toContain('آخر بصمة')
   for(const [index,key] of [[3,'baseCurrencies'],[4,'transportCurrencies'],[6,'overtimeCurrencies'],[7,'currencies']]){
    expect(cells[index].querySelectorAll('bdi')).toHaveLength(1)
    expect(cells[index].textContent).toBe(formatPayrollMoney(totals[key].CDF,{currency:'CDF',paymentType:'weekly'}))
@@ -165,7 +187,7 @@ it('screen and print align eight Sunday columns and total rows without colspan o
  expect(view.container.querySelector('.sunday-grand thead').querySelectorAll('th')).toHaveLength(8)
  for(const total of view.container.querySelectorAll('.sunday-team tfoot tr,.sunday-grand tbody tr')){
   expect(total.children).toHaveLength(8);expect(total.querySelector('[colspan]')).toBeNull()
-  expect(total.children[1].textContent).toBe('—');expect(total.children[2].textContent).toBe('—')
+  expect(total.children[1].textContent).toBe(total.closest('.sunday-grand')?'إجمالي العمال: 3':'—');expect(total.children[2].textContent).toBe(total.closest('.sunday-grand')?'المكتملون: 1':'—')
   expect(total.querySelector('small')).toBeNull()
  }
  expect(view.container.querySelector('.sunday-team tfoot th').textContent).toBe('إجمالي الفريق')
@@ -180,7 +202,7 @@ it('screen and print align eight Sunday columns and total rows without colspan o
  expect(doc.querySelector('.sunday-team tfoot tr').querySelectorAll('td')).toHaveLength(7)
  for(const total of doc.querySelectorAll('.sunday-team tfoot tr,.sunday-grand tbody tr')){
   expect(total.children).toHaveLength(8);expect(total.querySelector('[colspan]')).toBeNull();expect(total.querySelector('small')).toBeNull()
-  expect(total.children[1].textContent).toBe('—');expect(total.children[2].textContent).toBe('—')
+  expect(total.children[1].textContent).toBe(total.closest('.sunday-grand')?'إجمالي العمال: 3':'—');expect(total.children[2].textContent).toBe(total.closest('.sunday-grand')?'المكتملون: 1':'—')
  }
  const grand=doc.querySelector('.sunday-grand tbody tr').children
  expect(grand[3].textContent).toContain('40,000');expect(grand[4].textContent).toContain('0.00');expect(grand[7].textContent).toContain('40,000')
