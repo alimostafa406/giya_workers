@@ -15,6 +15,10 @@
 .sunday-hourly-review td .input-base { display: block; width: 112px; height: 30px; padding: 4px 6px; margin-block: 2px; font-size: 12px; border-radius: 6px; }
 .sunday-hourly-review td bdi { white-space: nowrap; }
 .sunday-ot-empty { text-align: center; padding: 24px 12px; color: var(--muted); border: 1px dashed var(--border, #e2e8f0); border-radius: 8px; }
+.sunday-hourly-review button.sunday-inline-value { height: auto; padding: 2px 3px; background: transparent; color: inherit; border: 0; border-bottom: 1px dashed currentColor; border-radius: 3px; cursor: pointer; }
+.sunday-hourly-review button.sunday-inline-value:hover, .sunday-hourly-review button.sunday-inline-value:focus-visible { background: #f1f5f9; outline: 2px solid #94a3b8; outline-offset: 1px; }
+.sunday-hourly-review button.sunday-inline-value:disabled { cursor: default; opacity: .6; }
+.sunday-inline-editor { display: inline-block; }
 @media (max-width: 600px) {
  .sunday-hourly-review { padding: 10px; }
  .sunday-ot-toolbar { gap: 10px; }

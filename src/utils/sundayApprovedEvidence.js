@@ -1,6 +1,7 @@
 // Kinshasa is UTC+01:00 without seasonal clock changes. Keep the work date
 // explicit; 00:00–02:00 is the following calendar day in Sunday's window.
 export function sundayEvidenceTimestamp(date,clock){
+ if(/^\d{1,2}$/.test(clock||'')&&Number(clock)<=23)clock=String(clock).padStart(2,'0')+':00:00'
  if(!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(clock||''))return null
  const normalized=clock.length===5?clock+':00':clock
  let day=date

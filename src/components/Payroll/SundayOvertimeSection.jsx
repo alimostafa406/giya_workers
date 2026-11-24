@@ -7,6 +7,7 @@ import {getErrorMessage} from '../../api/axios'
 import {parseWeeklyDuration} from '../../utils/weeklyManualOvertime'
 import './SundayOvertimeSection.css'
 import {sundayEvidenceTimestamp,suggestedSundayMinutes} from '../../utils/sundayApprovedEvidence'
+import SundayInlineValue from './SundayInlineValue'
 
 const labels={pending:'قيد المراجعة',approved:'معتمد',rejected:'مرفوض'}
 const canAct=r=>!r.locked&&(r.stale||r.status==='pending')
@@ -21,20 +22,24 @@ export default function SundayOvertimeSection({date,sources=[],team='',search=''
  const teams=[...new Map(rows.map(r=>[String(r.worker.team_id||'unassigned'),r.worker.team_name||'بدون فريق'])).entries()]
  const visible=rows.filter(r=>(!selectedTeam||String(r.worker.team_id||'unassigned')===selectedTeam)&&(status==='all'||(status==='pending'?(r.stale||r.status==='pending'):status==='stale'?r.stale:!r.stale&&r.status===status)))
  const actionable=visible.filter(canAct),chosen=actionable.filter(r=>selected.includes(r.worker.id))
- const minutesFor=r=>{const text=(adjustments[r.worker.id]?.duration??duration(r.approvedMinutes)).trim();const m=text.match(/^(\d+)\s*min$/i);return m?Number(m[1]):parseWeeklyDuration(text.replace('h',':'))}
+ const minutesFor=(r,draft=adjustments[r.worker.id])=>{const text=(draft?.duration??duration(r.approvedMinutes)).trim();const m=text.match(/^(\d+)\s*min$/i);return m?Number(m[1]):parseWeeklyDuration(text.replace('h',':'))}
  const groups=[...new Set(visible.map(r=>r.worker.team_id||'unassigned'))].map(id=>({id,rows:visible.filter(r=>(r.worker.team_id||'unassigned')===id)}))
  const evidenceClock=(r,key)=>clock(r.approved_evidence_valid&&r.approved_evidence?.[`approved_${key}_punch`]||r.evidence[`${key}_at`])
- const editEvidence=(r,key,value)=>setAdjustments(old=>{const draft={...old[r.worker.id],[key]:value,evidenceDirty:true}
-  const minutes=suggestedSundayMinutes(date,draft.first??evidenceClock(r,'first'),draft.last??evidenceClock(r,'last'),r.sunday_settings?.overtime_start)
-  return {...old,[r.worker.id]:{...draft,duration:minutes==null?'':duration(minutes)}}
- })
- const saveEvidence=async(r,reset=false)=>{
-  if(saving||r.locked)return
-  const draft=adjustments[r.worker.id]||{},first=sundayEvidenceTimestamp(date,draft.first??evidenceClock(r,'first')),last=sundayEvidenceTimestamp(date,draft.last??evidenceClock(r,'last')),minutes=minutesFor(r)
-  if(!reset&&(!first||!last||new Date(first)>=new Date(last)||!Number.isInteger(minutes)||minutes<0||minutes>1440)){setError('أدخل أوقاتاً صحيحة بنظام 24 ساعة ومدة إضافي صحيحة');return}
+ const saveEvidence=async(r,reset=false,draft=adjustments[r.worker.id]||{})=>{
+  if(saving||r.locked)return false
+  const first=sundayEvidenceTimestamp(date,draft.first??evidenceClock(r,'first')),last=sundayEvidenceTimestamp(date,draft.last??evidenceClock(r,'last')),minutes=minutesFor(r,draft)
+  if(!reset&&(!first||!last||new Date(first)>=new Date(last)||!Number.isInteger(minutes)||minutes<0||minutes>1440)){setError('أدخل أوقاتاً صحيحة بنظام 24 ساعة ومدة إضافي صحيحة');return false}
   setSaving(true);setError('')
-  try{await saveSundayEvidence(date,r,{first,last,minutes,note:draft.note||'',reset});await onSaved();setMessage('تم حفظ الدليل المعتمد — يلزم اعتماد الإضافي بشكل منفصل')}
-  catch(e){setError(getErrorMessage(e))}finally{setSaving(false)}
+  try{await saveSundayEvidence(date,r,{first,last,minutes,note:draft.note||'',reset});setAdjustments(old=>({...old,[r.worker.id]:reset?{}:draft}));await onSaved();setMessage('تم حفظ الدليل المعتمد — يلزم اعتماد الإضافي بشكل منفصل');return true}
+  catch(e){setError(getErrorMessage(e));return false}finally{setSaving(false)}
+ }
+ const saveInline=(r,key,value)=>{
+  const draft={...adjustments[r.worker.id],[key]:value}
+  if(key!=='duration'){
+   const minutes=suggestedSundayMinutes(date,draft.first??evidenceClock(r,'first'),draft.last??evidenceClock(r,'last'),r.sunday_settings?.overtime_start)
+   draft.duration=minutes==null?'':duration(minutes)
+  }
+  return saveEvidence(r,false,draft)
  }
  const decide=async(entries,decision)=>{
   if(saving||!entries.length)return
@@ -70,13 +75,13 @@ export default function SundayOvertimeSection({date,sources=[],team='',search=''
    return <tr key={r.worker.id} data-sunday-ot-worker={r.worker.id}>
     <td><input type="checkbox" aria-label={r.worker.full_name} disabled={saving||!canAct(r)} checked={canAct(r)&&selected.includes(r.worker.id)} onChange={()=>setSelected(old=>old.includes(r.worker.id)?old.filter(id=>id!==r.worker.id):[...old,r.worker.id])}/></td>
     <td>{r.worker.full_name}</td><td>{r.worker.employee_code}</td><td>{r.worker.team_name}</td><td><bdi dir="ltr">{clock(r.evidence.first_at)}</bdi></td><td><bdi dir="ltr">{clock(r.evidence.last_at)}</bdi></td>
-    {['first','last'].map((key)=><td key={key}><input className="input-base" dir="ltr" type="text" inputMode="text" placeholder="HH:mm:ss" aria-label={`${key==='first'?'أول':'آخر'} بصمة معتمدة ${r.worker.full_name}`} disabled={saving||r.locked} value={adjustments[r.worker.id]?.[key]??evidenceClock(r,key)} onChange={e=>editEvidence(r,key,e.target.value)}/></td>)}
+    {['first','last'].map((key)=><td key={key}><SundayInlineValue label={`${key==='first'?'أول':'آخر'} بصمة معتمدة ${r.worker.full_name}`} disabled={saving||r.locked} value={adjustments[r.worker.id]?.[key]??evidenceClock(r,key)} onSave={value=>saveInline(r,key,value)}/></td>)}
     <td><bdi dir="ltr">{r.sunday_settings?.overtime_start||'14:00'}</bdi></td>
     <td><bdi dir="ltr">{duration(r.minutes)}</bdi></td>
-    <td><input className="input-base" dir="ltr" aria-label={`الوقت المعتمد ${r.worker.full_name}`} disabled={saving||r.locked} value={adjustments[r.worker.id]?.duration??duration(r.approvedMinutes)} onChange={e=>setAdjustments(old=>({...old,[r.worker.id]:{...old[r.worker.id],duration:e.target.value}}))}/><input className="input-base" aria-label={`سبب التعديل ${r.worker.full_name}`} placeholder="سبب / ملاحظات" maxLength={1000} disabled={saving||r.locked} value={adjustments[r.worker.id]?.note||''} onChange={e=>setAdjustments(old=>({...old,[r.worker.id]:{...old[r.worker.id],note:e.target.value}}))}/></td>
+    <td><SundayInlineValue label={`الوقت المعتمد ${r.worker.full_name}`} disabled={saving||r.locked} value={adjustments[r.worker.id]?.duration??duration(r.approvedMinutes)} onSave={value=>saveInline(r,'duration',value)}/><input className="input-base" aria-label={`سبب التعديل ${r.worker.full_name}`} placeholder="سبب / ملاحظات" maxLength={1000} disabled={saving||r.locked} value={adjustments[r.worker.id]?.note||''} onChange={e=>setAdjustments(old=>({...old,[r.worker.id]:{...old[r.worker.id],note:e.target.value}}))}/></td>
     <td><bdi dir="ltr">{money(r.hourly_rate,r.currency)}</bdi></td><td><bdi dir="ltr">{money(pay.overtimePay,r.currency)}</bdi></td>
     <td>{labels[r.status]}{r.stale&&<small className="block">يحتاج مراجعة من جديد</small>}</td>
-    <td><div className="sunday-ot-actions"><button type="button" className="btn-secondary" disabled={saving||r.locked} onClick={()=>saveEvidence(r)}>حفظ الدليل المعتمد</button><button type="button" className="btn-secondary" disabled={saving||r.locked||!r.approved_evidence} onClick={()=>saveEvidence(r,true)}>استرجاع من البصمة الأصلية</button><button type="button" className="btn-secondary" disabled={saving||!canAct(r)} onClick={()=>decide([r],'approved')}>موافقة</button> <button type="button" className="btn-secondary" disabled={saving||!canAct(r)} onClick={()=>decide([r],'rejected')}>رفض</button></div></td>
+    <td><div className="sunday-ot-actions"><button type="button" className="btn-secondary" disabled={saving||r.locked||!r.approved_evidence} onClick={()=>saveEvidence(r,true)}>استرجاع من البصمة الأصلية</button><button type="button" className="btn-secondary" disabled={saving||!canAct(r)} onClick={()=>decide([r],'approved')}>موافقة</button> <button type="button" className="btn-secondary" disabled={saving||!canAct(r)} onClick={()=>decide([r],'rejected')}>رفض</button></div></td>
    </tr>})}</tbody></table></div></article>)}{!visible.length&&<p className="sunday-ot-empty" role="status">لا يوجد إضافي أحد مطابق للفلاتر الحالية</p>}
  </section>
 }
