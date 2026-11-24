@@ -9,7 +9,6 @@ import {finishPayrollPrint} from '../utils/teamReportPrintLayout'
 import {payrollRenderedPrintCss} from '../utils/printRenderedPayroll'
 import PayrollSheetFrame,{PayrollWorkerIdentity,payrollSheetClasses as sheet} from '../components/Payroll/PayrollSheetFrame'
 import {formatBiometricOvertimeDuration} from '../utils/biometricOvertimeReview'
-import SundayOvertimeSection from '../components/Payroll/SundayOvertimeSection'
 import WorkerSundaySettingsModal from '../components/Payroll/WorkerSundaySettingsModal'
 import './SundayPayroll.css'
 
@@ -71,6 +70,7 @@ export default function SundayPayroll(){
    <label>{l.team}<select className="input-base" value={team} onChange={e=>setTeam(e.target.value)}><option value="">{l.all}</option>{teams.map(group=><option key={group.id} value={group.id}>{group.name||l.unknown}</option>)}</select></label>
    <input className="input-base" type="search" aria-label={l.search} placeholder={l.search} value={search} onChange={e=>setSearch(e.target.value)}/>
    <button type="button" className="btn-primary" disabled={loading||!visible.length} onClick={print}>{l.print}</button>
+   <a className="btn-primary" href={`/payroll/sunday-overtime?date=${date}`}>إضافي الأحد</a>
   </div>
   {loading&&<p role="status">{l.loading}</p>}{error&&<p role="alert">{error}</p>}
   <div ref={report} className="team-report-all sunday-report">
@@ -98,7 +98,6 @@ export default function SundayPayroll(){
    {!loading&&!groups.length&&<p>{l.empty}</p>}
    {groups.length>0&&<section className="team space-y-3 sunday-grand"><h2 className="font-extrabold">{l.grand}</h2><PayrollSheetFrame variant="summary"><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup><thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={sheet.header} key={key}>{l[key]}</th>)}</tr></thead><tbody className={sheet.total}><SundayTotalRow totals={totals} label={({ar:'الإجمالي العام',en:'Grand total',fr:'Total général'})[language]||'Grand total'}/></tbody></PayrollSheetFrame></section>}
   </div>
-  {!loading&&data&&<SundayOvertimeSection date={date} sources={data.biometricOvertimeReviews||[]} team={team} search={search} onSaved={async()=>setData(await getSundayPayroll(date))}/>}
   <WorkerSundaySettingsModal worker={settingsWorker} onClose={()=>setSettingsWorker(null)} onSaved={async()=>setData(await getSundayPayroll(date))}/>
  </section>
 }

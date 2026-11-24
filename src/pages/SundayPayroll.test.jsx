@@ -17,6 +17,12 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
+it('links the selected Sunday to dedicated review without inline approval controls',async()=>{
+ api.load.mockResolvedValue({workers:[],sunday_evidence:[]})
+ mount('ar');await screen.findByText('لا يوجد حضور يوم أحد مطابق')
+ expect(screen.getByRole('link',{name:'إضافي الأحد'}).getAttribute('href')).toBe('/payroll/sunday-overtime?date='+date)
+ expect(screen.queryByRole('button',{name:'موافقة على المختارين'})).toBeNull()
+})
 it.skipIf(!process.env.SUNDAY_OT_TIME_AUDIT)('real pending Juresse and Khonde durations appear in their own cells on screen and print',async()=>{
  const data=JSON.parse(readFileSync(process.env.SUNDAY_OT_TIME_AUDIT,'utf8'));api.load.mockResolvedValue(data)
  window.history.replaceState({},'','/payroll/sunday?date=2026-11-22');localStorage.setItem('workers_app_language','ar')
