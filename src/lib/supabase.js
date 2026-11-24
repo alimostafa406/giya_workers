@@ -26,3 +26,8 @@ export const getSupabaseClient = () => {
 }
 
 export const supabase = getSupabaseClient()
+
+// Current-password verification must not replace the dashboard's saved session.
+export const createPasswordVerificationClient = () => createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'workers-admin-password-verification' },
+})

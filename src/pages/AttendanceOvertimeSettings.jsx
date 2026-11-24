@@ -3,6 +3,7 @@ import OvertimeReportSettings from '../components/Reports/OvertimeReportSettings
 import { useOvertimeReportSettings } from '../utils/useOvertimeReportSettings.js'
 import { useTranslation } from '../i18n/LanguageContext.jsx'
 import { useAuthStore } from '../store/authStore.js'
+import AdminPasswordChange from '../components/Forms/AdminPasswordChange'
 
 export default function AttendanceOvertimeSettings() {
   const { t, language } = useTranslation()
@@ -13,6 +14,7 @@ export default function AttendanceOvertimeSettings() {
     <p className="mb-2 text-sm text-(--muted)">{t('navigation.settings')}</p>
     <h1 className="mb-5 text-2xl font-extrabold">{t('navigation.attendanceOvertimeSettings')}</h1>
     <OvertimeReportSettings model={model} />
+    <AdminPasswordChange />
     <a className="btn-secondary mt-6 inline-flex" href="/attendance/double-overtime-review">مراجعة إضافي يوم كامل</a>
   </section>
 }
