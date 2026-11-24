@@ -57,13 +57,14 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
 }
 
 export function sundayReportTotals(rows){
- const totals={workers:rows.length,present:0,onePunch:0,twoPunch:0,currencies:{},baseCurrencies:{},transportCurrencies:{},overtimeCurrencies:{},currencyCounts:{},incompleteWorkers:0,overtimeMinutes:0}
+ const totals={workers:rows.length,present:0,onePunch:0,twoPunch:0,currencies:{},baseCurrencies:{},transportCurrencies:{},overtimeCurrencies:{},currencyCounts:{},incompleteWorkers:0,overtimeMinutes:0,overtimeMinutesByCurrency:{}}
  for(const row of rows){
   if(row.present)totals.present++
   if(row.punchCount===1)totals.onePunch++
   if(row.punchCount>=2)totals.twoPunch++
   totals.overtimeMinutes+=row.overtimeMinutes||0
   const currency=row.currency||'UNCONFIGURED'
+  totals.overtimeMinutesByCurrency[currency]=(totals.overtimeMinutesByCurrency[currency]||0)+(Number(row.overtimeMinutes)||0)
   totals.currencyCounts[currency]=(totals.currencyCounts[currency]||0)+1
   const known=value=>value!=null&&Number.isFinite(Number(value))?Number(value):0
   const base=known(row.amount),transport=known(row.transportAmount),overtime=known(row.overtimeAmount)
