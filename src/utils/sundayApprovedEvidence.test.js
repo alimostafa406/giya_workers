@@ -2,6 +2,7 @@ import {expect,it} from 'vitest'
 import {sundayEvidenceTimestamp,suggestedSundayMinutes} from './sundayApprovedEvidence'
 it('keeps seconds, local work date, next-day window, and strict OT threshold',()=>{
  expect(sundayEvidenceTimestamp('2026-11-22','08:00')).toBe('2026-11-22T08:00:00+01:00')
+ expect(sundayEvidenceTimestamp('2026-11-22','8')).toBe('2026-11-22T08:00:00+01:00')
  expect(sundayEvidenceTimestamp('2026-11-22','00:31:44')).toBe('2026-11-23T00:31:44+01:00')
  expect(sundayEvidenceTimestamp('2026-11-22','25:00')).toBeNull()
  expect(suggestedSundayMinutes('2026-11-22','08:00','18:30')).toBe(270)

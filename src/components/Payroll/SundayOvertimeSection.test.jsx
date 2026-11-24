@@ -17,9 +17,9 @@ it.skipIf(!process.env.SUNDAY_APPROVED_AUDIT)('real approved records reload with
  fireEvent.change(screen.getByLabelText('الحالة'),{target:{value:'approved'}})
  expect(screen.getAllByRole('checkbox').every(c=>c.disabled)).toBe(true)
  expect(screen.getAllByRole('button',{name:'موافقة'}).every(b=>b.disabled)).toBe(true)
- expect(screen.getByLabelText('الوقت المعتمد juresse').value).toBe('5h00')
+ expect(screen.getByLabelText('الوقت المعتمد juresse').dataset.value).toBe('5h00')
  expect(screen.getByText('5h01')).not.toBeNull()
- expect(screen.getByLabelText('الوقت المعتمد khonde nzita').value).toBe('7h57')
+ expect(screen.getByLabelText('الوقت المعتمد khonde nzita').dataset.value).toBe('7h57')
  const rows=sundayReportRows(data,date)
  for(const [code,minutes,amount] of [['71',300,17500],['300',477,19875]]){
   const row=rows.find(r=>r.worker.employee_code===code)
@@ -36,28 +36,34 @@ it.skipIf(!process.env.SUNDAY_OT_AUDIT)('renders only real qualifying November 2
 })
 function sources(){return [['j','juresse','71',301,3500],['k','khonde','300',477,2500]].map(([id,name,code,minutes,rate])=>({sunday_evidence:true,work_date:date,
  worker:{id,full_name:name,employee_code:code,team_id:'t',team_name:'Chauffeur',payment_type:'monthly',is_active:true,payroll_compensation_terms:[{payment_type:'monthly',effective_from:'2026-01-01',monthly_salary:520000,currency_code:'CDF',overtime_rate_per_hour:rate}]},
- attendance:{worker_id:id,attendance_date:date,id:null},evidence:{last_at:'2026-11-22T18:01:16Z'},raw_minutes:minutes,hourly_rate:rate,currency:'CDF',source_fingerprint:id,review:null}))}
+ attendance:{worker_id:id,attendance_date:date,id:null},evidence:{first_at:'2026-11-22T07:05:04Z',last_at:'2026-11-22T18:01:16Z'},raw_minutes:minutes,hourly_rate:rate,currency:'CDF',source_fingerprint:id,review:null}))}
 it('separates raw clocks from approved evidence, recalculates suggestion, saves without approval, and resets',async()=>{
  const row=sources()[0];row.evidence.first_at='2026-11-22T07:05:04Z';row.sunday_settings={overtime_start:'14:00:00'}
  const saved=vi.fn();api.save.mockResolvedValue({version:1})
  const view=render(<SundayOvertimeSection date={date} sources={[row]} onSaved={saved}/>)
- expect(screen.getByText('08:05:04')).not.toBeNull();expect(screen.getByText('19:01:16')).not.toBeNull()
+ expect(screen.getAllByText('08:05:04')).toHaveLength(2);expect(screen.getAllByText('19:01:16')).toHaveLength(2)
+ fireEvent.click(screen.getByLabelText('أول بصمة معتمدة juresse'))
  fireEvent.change(screen.getByLabelText('أول بصمة معتمدة juresse'),{target:{value:'08:00:00'}})
- fireEvent.change(screen.getByLabelText('آخر بصمة معتمدة juresse'),{target:{value:'18:30:00'}})
- expect(screen.getByLabelText('الوقت المعتمد juresse').value).toBe('4h30')
- fireEvent.click(screen.getByRole('button',{name:'موافقة'}))
- expect(api.decide).not.toHaveBeenCalled();expect(screen.getByRole('alert')).not.toBeNull()
- fireEvent.change(screen.getByLabelText('الوقت المعتمد juresse'),{target:{value:'4h00'}})
- fireEvent.click(screen.getByRole('button',{name:'حفظ الدليل المعتمد'}))
+ fireEvent.keyDown(screen.getByLabelText('أول بصمة معتمدة juresse'),{key:'Enter'})
  await waitFor(()=>expect(saved).toHaveBeenCalledOnce())
- expect(api.save.mock.calls[0][2]).toEqual({first:'2026-11-22T08:00:00+01:00',last:'2026-11-22T18:30:00+01:00',minutes:240,note:'',reset:false})
+ fireEvent.click(screen.getByLabelText('آخر بصمة معتمدة juresse'))
+ fireEvent.change(screen.getByLabelText('آخر بصمة معتمدة juresse'),{target:{value:'18:30:00'}})
+ fireEvent.keyDown(screen.getByLabelText('آخر بصمة معتمدة juresse'),{key:'Enter'})
+ await waitFor(()=>expect(saved).toHaveBeenCalledTimes(2))
+ expect(screen.getByLabelText('الوقت المعتمد juresse').dataset.value).toBe('4h30')
+ fireEvent.click(screen.getByLabelText('الوقت المعتمد juresse'))
+ fireEvent.change(screen.getByLabelText('الوقت المعتمد juresse'),{target:{value:'4h00'}})
+ fireEvent.keyDown(screen.getByLabelText('الوقت المعتمد juresse'),{key:'Enter'})
+ await waitFor(()=>expect(saved).toHaveBeenCalledTimes(3))
+ expect(api.save.mock.calls[2][2]).toEqual({first:'2026-11-22T08:00:00+01:00',last:'2026-11-22T18:30:00+01:00',minutes:240,note:'',reset:false})
+ expect(api.decide).not.toHaveBeenCalled()
  expect(row.evidence.last_at).toBe('2026-11-22T18:01:16Z');expect(screen.getByText('5h01')).not.toBeNull()
  const updated={...row,approved_evidence_valid:true,approved_evidence:{version:1,approved_first_punch:'2026-11-22T07:00:00Z',approved_last_punch:'2026-11-22T17:30:00Z'},suggested_approved_minutes:240,source_fingerprint:'new',review:{decision:'approved',minutes:300,source_fingerprint:'old'}}
  view.rerender(<SundayOvertimeSection date={date} sources={[updated]} onSaved={saved}/>)
- expect(screen.getByLabelText('آخر بصمة معتمدة juresse').value).toBe('18:30:00')
+ expect(screen.getByLabelText('آخر بصمة معتمدة juresse').dataset.value).toBe('18:30:00')
  expect(screen.getByText('يحتاج مراجعة من جديد')).not.toBeNull()
  fireEvent.click(screen.getByRole('button',{name:'استرجاع من البصمة الأصلية'}))
- await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(2));expect(api.save.mock.calls[1][2].reset).toBe(true)
+ await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(4));expect(api.save.mock.calls[3][2].reset).toBe(true)
 })
 it('visible controls bulk approve/reject canonical decisions and Sunday net adds approved OT once',async()=>{
  let stored=sources()
@@ -99,9 +105,9 @@ it('pending includes stale, history is read-only, and bulk only sends actionable
 })
 it('team approval preserves individual increases/decreases and raw evidence',async()=>{
  const rows=sources(),saved=vi.fn();api.decide.mockResolvedValue([])
+ rows[0].suggested_approved_minutes=270;rows[1].suggested_approved_minutes=480
  render(<SundayOvertimeSection date={date} sources={rows} onSaved={saved}/>)
- fireEvent.change(screen.getByLabelText('الوقت المعتمد juresse'),{target:{value:'4h30'}})
- fireEvent.change(screen.getByLabelText('الوقت المعتمد khonde'),{target:{value:'8h00'}})
+ // These edited durations have already been saved through the inline controls.
  fireEvent.change(screen.getByLabelText('سبب التعديل juresse'),{target:{value:'مراجعة الإدارة'}})
  expect(screen.getByText('5h01')).not.toBeNull();expect(screen.getByText('7h57')).not.toBeNull()
  fireEvent.click(screen.getByRole('button',{name:'موافقة على الفريق'}))
@@ -116,8 +122,9 @@ it('rejects invalid durations without writing and honors locked rows',()=>{
  const rows=sources();rows[1].locked=true
  render(<SundayOvertimeSection date={date} sources={rows} onSaved={vi.fn()}/>)
  expect(screen.getByLabelText('الوقت المعتمد khonde').disabled).toBe(true)
+ fireEvent.click(screen.getByLabelText('الوقت المعتمد juresse'))
  fireEvent.change(screen.getByLabelText('الوقت المعتمد juresse'),{target:{value:'bad'}})
- fireEvent.click(screen.getByRole('button',{name:'موافقة على الفريق'}))
+ fireEvent.keyDown(screen.getByLabelText('الوقت المعتمد juresse'),{key:'Enter'})
  expect(screen.getByRole('alert')).not.toBeNull();expect(api.decide).not.toHaveBeenCalled()
 })
 it('filters selection to visible sources and disables locked writes',()=>{
