@@ -5,6 +5,16 @@ import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import SundayInlineValue from './SundayInlineValue'
 globalThis.React=React
 afterEach(cleanup)
+it('opening a shortened display without changes does not save and an open edit retains its original version context',async()=>{
+ const oldSave=vi.fn().mockResolvedValue(true),newSave=vi.fn()
+ const view=render(<SundayInlineValue label="Clock" value="08:28" editValue="08:28:38" onSave={oldSave}/>)
+ fireEvent.click(screen.getByRole('button'));fireEvent.keyDown(screen.getByRole('textbox'),{key:'Enter'})
+ expect(oldSave).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button'));fireEvent.change(screen.getByRole('textbox'),{target:{value:'08:05'}})
+ view.rerender(<SundayInlineValue label="Clock" value="08:30" editValue="08:30:00" onSave={newSave}/>)
+ fireEvent.keyDown(screen.getByRole('textbox'),{key:'Enter'})
+ await waitFor(()=>expect(oldSave).toHaveBeenCalledWith('08:05'));expect(newSave).not.toHaveBeenCalled()
+})
 it('click edits, Escape cancels, Enter saves once and returns to text',async()=>{
  let complete;const save=vi.fn(()=>new Promise(resolve=>{complete=resolve}))
  render(<SundayInlineValue label="Approved time" value="19:01:16" onSave={save}/>)

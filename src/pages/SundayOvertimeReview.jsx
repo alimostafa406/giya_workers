@@ -4,11 +4,13 @@ import {currentBusinessDate} from '../utils/payrollCalculations'
 import {isSundayDate,latestSunday} from '../utils/sundayPayroll'
 import {getErrorMessage} from '../api/axios'
 import SundayOvertimeSection from '../components/Payroll/SundayOvertimeSection'
+import {subscribeSundayEvidenceUpdates} from '../utils/sundayEvidenceUpdates'
 
 export default function SundayOvertimeReview(){
  const today=currentBusinessDate(),requested=new URLSearchParams(window.location.search).get('date')
  const [date,setDate]=useState(isSundayDate(requested)&&requested<=today?requested:latestSunday(today))
  const [sources,setSources]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[reload,setReload]=useState(0)
+ useEffect(()=>subscribeSundayEvidenceUpdates(date,()=>setReload(n=>n+1)),[date])
  useEffect(()=>{let active=true;setLoading(true);setSources([]);setError('')
   getBiometricOvertimeReviews(date).then(rows=>{if(active)setSources(rows)}).catch(e=>{if(active)setError(getErrorMessage(e))}).finally(()=>{if(active)setLoading(false)})
   return()=>{active=false}

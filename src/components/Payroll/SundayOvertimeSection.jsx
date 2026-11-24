@@ -6,7 +6,7 @@ import {formatPayrollMoney} from '../../utils/payrollCurrency'
 import {getErrorMessage} from '../../api/axios'
 import {parseWeeklyDuration} from '../../utils/weeklyManualOvertime'
 import './SundayOvertimeSection.css'
-import {sundayEvidenceTimestamp,suggestedSundayMinutes} from '../../utils/sundayApprovedEvidence'
+import {approvedSundayClock,sundayInlineDraft,sundayInlinePayload} from '../../utils/sundayApprovedEvidence'
 import SundayInlineValue from './SundayInlineValue'
 
 const labels={pending:'قيد المراجعة',approved:'معتمد',rejected:'مرفوض'}
@@ -24,21 +24,17 @@ export default function SundayOvertimeSection({date,sources=[],team='',search=''
  const actionable=visible.filter(canAct),chosen=actionable.filter(r=>selected.includes(r.worker.id))
  const minutesFor=(r,draft=adjustments[r.worker.id])=>{const text=(draft?.duration??duration(r.approvedMinutes)).trim();const m=text.match(/^(\d+)\s*min$/i);return m?Number(m[1]):parseWeeklyDuration(text.replace('h',':'))}
  const groups=[...new Set(visible.map(r=>r.worker.team_id||'unassigned'))].map(id=>({id,rows:visible.filter(r=>(r.worker.team_id||'unassigned')===id)}))
- const evidenceClock=(r,key)=>clock(r.approved_evidence_valid&&r.approved_evidence?.[`approved_${key}_punch`]||r.evidence[`${key}_at`])
+ const evidenceClock=approvedSundayClock
  const saveEvidence=async(r,reset=false,draft=adjustments[r.worker.id]||{})=>{
   if(saving||r.locked)return false
-  const first=sundayEvidenceTimestamp(date,draft.first??evidenceClock(r,'first')),last=sundayEvidenceTimestamp(date,draft.last??evidenceClock(r,'last')),minutes=minutesFor(r,draft)
-  if(!reset&&(!first||!last||new Date(first)>=new Date(last)||!Number.isInteger(minutes)||minutes<0||minutes>1440)){setError('أدخل أوقاتاً صحيحة بنظام 24 ساعة ومدة إضافي صحيحة');return false}
+  let payload={first:null,last:null,minutes:null,note:draft.note||''}
+  try{if(!reset)payload=sundayInlinePayload(r,date,draft)}catch(e){setError(getErrorMessage(e));return false}
   setSaving(true);setError('')
-  try{await saveSundayEvidence(date,r,{first,last,minutes,note:draft.note||'',reset});setAdjustments(old=>({...old,[r.worker.id]:reset?{}:draft}));await onSaved();setMessage('تم حفظ الدليل المعتمد — يلزم اعتماد الإضافي بشكل منفصل');return true}
+  try{await saveSundayEvidence(date,r,{...payload,reset});setAdjustments(old=>({...old,[r.worker.id]:reset?{}:draft}));await onSaved();setMessage('تم حفظ الدليل المعتمد — يلزم اعتماد الإضافي بشكل منفصل');return true}
   catch(e){setError(getErrorMessage(e));return false}finally{setSaving(false)}
  }
  const saveInline=(r,key,value)=>{
-  const draft={...adjustments[r.worker.id],[key]:value}
-  if(key!=='duration'){
-   const minutes=suggestedSundayMinutes(date,draft.first??evidenceClock(r,'first'),draft.last??evidenceClock(r,'last'),r.sunday_settings?.overtime_start)
-   draft.duration=minutes==null?'':duration(minutes)
-  }
+  const draft=sundayInlineDraft(r,date,key,value,adjustments[r.worker.id])
   return saveEvidence(r,false,draft)
  }
  const decide=async(entries,decision)=>{

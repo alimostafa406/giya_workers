@@ -8,7 +8,11 @@ import {isSundayDate,latestSunday,sundayReportRows,sundayReportTotals,sundayTeam
 import {finishPayrollPrint} from '../utils/teamReportPrintLayout'
 import {payrollRenderedPrintCss} from '../utils/printRenderedPayroll'
 import PayrollSheetFrame,{PayrollWorkerIdentity,payrollSheetClasses as sheet} from '../components/Payroll/PayrollSheetFrame'
-import {formatBiometricOvertimeDuration} from '../utils/biometricOvertimeReview'
+import {biometricReviewRows,formatBiometricOvertimeDuration} from '../utils/biometricOvertimeReview'
+import {saveSundayEvidence} from '../api/biometricOvertimeReviewApi'
+import {approvedSundayClock,sundayInlineDraft,sundayInlinePayload} from '../utils/sundayApprovedEvidence'
+import SundayInlineValue from '../components/Payroll/SundayInlineValue'
+import {subscribeSundayEvidenceUpdates} from '../utils/sundayEvidenceUpdates'
 import WorkerSundaySettingsModal from '../components/Payroll/WorkerSundaySettingsModal'
 import './SundayPayroll.css'
 
@@ -47,18 +51,33 @@ export default function SundayPayroll(){
  const [date,setDate]=useState(isSundayDate(initial)&&initial<=today?initial:latestSunday(today))
  const [team,setTeam]=useState(''),[search,setSearch]=useState(''),[data,setData]=useState(null)
  const [loading,setLoading]=useState(true),[error,setError]=useState('')
+ const [saving,setSaving]=useState(false)
  const [settingsWorker,setSettingsWorker]=useState(null)
  const report=useRef(null)
  useEffect(()=>{let active=true;setLoading(true);setError('');setData(null)
   getSundayPayroll(date).then(value=>{if(active)setData(value)}).catch(e=>{if(active)setError(getErrorMessage(e))}).finally(()=>{if(active)setLoading(false)})
-  return()=>{active=false}
+  const unsubscribe=subscribeSundayEvidenceUpdates(date,()=>getSundayPayroll(date).then(value=>{if(active)setData(value)}).catch(e=>{if(active)setError(getErrorMessage(e))}))
+  return()=>{active=false;unsubscribe()}
  },[date])
  const rows=useMemo(()=>sundayReportRows(data,date),[data,date])
  const teams=sundayTeamGroups(rows)
  const visible=rows.filter(row=>(!team||(row.worker.team_id||'unassigned')===team)&&`${row.worker.full_name} ${row.worker.employee_code}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
  const groups=sundayTeamGroups(visible),totals=sundayReportTotals(visible)
+ const editSource=row=>{
+  const source=(data?.sundayEvidenceEditSources||data?.biometricOvertimeReviews||[]).find(s=>String(s.worker.id)===String(row.worker.id))
+  return source&&(biometricReviewRows([source])[0]||{...source,approvedMinutes:Number(source.suggested_approved_minutes??source.raw_minutes??0)})
+ }
+ const saveCell=async(row,key,value)=>{
+  const source=editSource(row);if(!source||source.locked||saving)return false
+  try{
+   const payload=sundayInlinePayload(source,date,sundayInlineDraft(source,date,key,value))
+   setSaving(true);setError('');await saveSundayEvidence(date,source,payload)
+   setData(await getSundayPayroll(date));return true
+  }catch(e){setError(getErrorMessage(e));return false}finally{setSaving(false)}
+ }
  const print=()=>{const popup=window.open('','_blank');if(!popup)return
   const content=report.current.cloneNode(true);content.querySelectorAll('button').forEach(n=>n.replaceWith(...n.childNodes))
+  content.querySelectorAll('[data-inline-print]').forEach(n=>n.replaceWith(document.createTextNode(n.getAttribute('data-inline-print'))))
   content.querySelectorAll('table').forEach(table=>{table.removeAttribute('class');table.querySelectorAll('[class]').forEach(node=>node.removeAttribute('class'))})
   popup.document.write(`<!doctype html><html lang="${language}" dir="${direction}"><head><meta charset="utf-8"><title>${l.title}</title><style>${payrollRenderedPrintCss}\n.sunday-report{display:block}.sunday-team,.sunday-grand{margin:0;padding:0}.sunday-team header{margin-bottom:2mm}.sunday-team .overflow-x-auto{overflow:visible}.surface-card{border:0;box-shadow:none}</style></head><body>${content.outerHTML}</body></html>`)
   popup.document.close();finishPayrollPrint(popup)
@@ -66,10 +85,10 @@ export default function SundayPayroll(){
  return <section lang={language} dir={direction} className="space-y-4 sunday-payroll">
   <h1 className="text-2xl font-bold">{l.title}</h1>
   <div className="surface-card flex flex-wrap items-end gap-3 p-4">
-   <label>{l.date}<input className="input-base" type="date" step="7" min="1970-01-04" max={today} value={date} onChange={e=>{if(!isSundayDate(e.target.value)||e.target.value>today){setError(l.invalid);return}setTeam('');setDate(e.target.value)}}/></label>
+   <label>{l.date}<input className="input-base" type="date" step="7" min="1970-01-04" max={today} value={date} disabled={saving} onChange={e=>{if(!isSundayDate(e.target.value)||e.target.value>today){setError(l.invalid);return}setTeam('');setDate(e.target.value)}}/></label>
    <label>{l.team}<select className="input-base" value={team} onChange={e=>setTeam(e.target.value)}><option value="">{l.all}</option>{teams.map(group=><option key={group.id} value={group.id}>{group.name||l.unknown}</option>)}</select></label>
    <input className="input-base" type="search" aria-label={l.search} placeholder={l.search} value={search} onChange={e=>setSearch(e.target.value)}/>
-   <button type="button" className="btn-primary" disabled={loading||!visible.length} onClick={print}>{l.print}</button>
+   <button type="button" className="btn-primary" disabled={loading||saving||!visible.length} onClick={print}>{l.print}</button>
    <a className="btn-primary" href={`/payroll/sunday-overtime?date=${date}`}>إضافي الأحد</a>
   </div>
   {loading&&<p role="status">{l.loading}</p>}{error&&<p role="alert">{error}</p>}
@@ -79,19 +98,19 @@ export default function SundayPayroll(){
     <header className="mb-3 rounded-xl bg-slate-50 p-4 text-sm"><h2 className="font-extrabold">{group.name||l.unknown}</h2></header>
     <PayrollSheetFrame variant="sunday"><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup>
      <thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={key==='worker'?'px-3 py-2.5 text-start text-xs font-extrabold text-(--muted)':sheet.header} key={key}>{l[key]}</th>)}</tr></thead>
-     <tbody>{group.rows.map(row=><tr className={sheet.row} key={row.worker.id} data-worker={row.worker.id}>
+     <tbody>{group.rows.map(row=>{const source=editSource(row),disabled=saving||!source||source.locked;return <tr className={sheet.row} key={row.worker.id} data-worker={row.worker.id}>
       <td className="px-3 py-2.5"><button type="button" className="text-start hover:underline" onClick={()=>setSettingsWorker(row.worker)}><PayrollWorkerIdentity worker={row.worker}/></button>{row.worker.sunday_settings_custom&&<small className="block text-xs text-(--muted)">إعدادات خاصة</small>}
        {!row.present&&<small className="block">{l.incomplete}</small>}
        {row.missingSundayPay?<small className="block">{l.missingSundayPay}</small>:row.present&&!row.fixedMonthly&&row.daily==null&&<small className="block">{l.missing}</small>}
        {row.evidence?.manual&&<small className="block">{row.present?l.manual:l.protected}</small>}
       </td>
-      <td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))}</bdi></td><td className={sheet.cell}><bdi dir="ltr">{clock(row.evidence?.admin_evidence_override?row.evidence?.display_check_out:row.evidence?.last_punch||row.evidence?.display_check_out)}</bdi></td>
+      <td className={sheet.cell}><SundayInlineValue label={`${l.checkIn} ${row.worker.full_name}`} value={clock(row.evidence?.display_check_in||(row.punchCount>1?row.evidence?.first_punch:null))} editValue={row.evidence?.display_check_in?approvedSundayClock(source||{},'first'):''} disabled={disabled} onSave={value=>saveCell(row,'first',value)}/></td><td className={sheet.cell}><SundayInlineValue label={`${l.checkOut} ${row.worker.full_name}`} value={clock(row.evidence?.admin_evidence_override?row.evidence?.display_check_out:row.evidence?.last_punch||row.evidence?.display_check_out)} editValue={approvedSundayClock(source||{},'last')} disabled={disabled} onSave={value=>saveCell(row,'last',value)}/></td>
       <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{money(row.amount,row.currency)}</bdi></td>
       <td className={sheet.cell}><bdi dir="ltr">{money(row.transportAmount,row.currency)}</bdi></td>
-      <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{duration(row.displayOvertimeMinutes)}</bdi>{row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block text-xs font-normal text-(--muted)">{l.otPending}</small>}</td>
+      <td className={`${sheet.cell} font-bold`}><SundayInlineValue label={`${l.overtimeTime} ${row.worker.full_name}`} value={duration(row.displayOvertimeMinutes)} editValue={formatBiometricOvertimeDuration(source?.approvedMinutes||0)} disabled={disabled} onSave={value=>saveCell(row,'duration',value)}/>{row.candidateMinutes>0&&!row.overtimeMinutes&&row.overtimeReviewStatus!=='rejected'&&<small className="block text-xs font-normal text-(--muted)">{l.otPending}</small>}</td>
       <td className={`${sheet.cell} font-bold`}><bdi dir="ltr">{row.overtimeMinutes>0?money(row.overtimeAmount,row.currency):'—'}</bdi></td>
       <td className={`${sheet.cell} font-extrabold`}><bdi dir="ltr">{money(row.netAmount,row.currency)}</bdi></td>
-     </tr>)}</tbody>
+     </tr>})}</tbody>
      <tfoot className={sheet.total}><SundayTotalRow totals={group.totals} label={({ar:'إجمالي الفريق',en:'Team total',fr:'Total équipe'})[language]||'Team total'}/></tfoot>
     </PayrollSheetFrame>
    </article>)}
