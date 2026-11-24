@@ -57,17 +57,32 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
 }
 
 export function sundayReportTotals(rows){
- const totals={workers:rows.length,present:0,onePunch:0,twoPunch:0,currencies:{},baseCurrencies:{},transportCurrencies:{},overtimeCurrencies:{},overtimeMinutes:0}
+ const totals={workers:rows.length,present:0,onePunch:0,twoPunch:0,currencies:{},baseCurrencies:{},transportCurrencies:{},overtimeCurrencies:{},currencyCounts:{},incompleteWorkers:0,overtimeMinutes:0}
  for(const row of rows){
   if(row.present)totals.present++
   if(row.punchCount===1)totals.onePunch++
   if(row.punchCount>=2)totals.twoPunch++
   totals.overtimeMinutes+=row.overtimeMinutes||0
-  const currency=row.currency||'UNCONFIGURED',previous=totals.currencies[currency]??0
-  totals.currencies[currency]=totals.currencies[currency]===null||row.netAmount==null?null:Math.round((previous+row.netAmount)*100)/100
-  for(const [key,value] of [['baseCurrencies',row.amount],['transportCurrencies',row.transportAmount||0],['overtimeCurrencies',row.overtimeAmount===undefined?0:row.overtimeAmount]])totals[key][currency]=totals[key][currency]===null||value==null?null:Math.round(((totals[key][currency]||0)+value)*100)/100
+  const currency=row.currency||'UNCONFIGURED'
+  totals.currencyCounts[currency]=(totals.currencyCounts[currency]||0)+1
+  const known=value=>value!=null&&Number.isFinite(Number(value))?Number(value):0
+  const base=known(row.amount),transport=known(row.transportAmount),overtime=known(row.overtimeAmount)
+  if(row.amount==null||row.overtimeAmount===null||currency==='UNCONFIGURED')totals.incompleteWorkers++
+  // Missing configuration must not erase other workers' known payable amounts.
+  // This is a report subtotal, never a replacement worker payroll calculation.
+  const net=row.netAmount==null?base+transport+overtime:known(row.netAmount)
+  for(const [key,value] of [['baseCurrencies',base],['transportCurrencies',transport],['overtimeCurrencies',overtime],['currencies',net]]){
+   totals[key][currency]=(Math.round((totals[key][currency]||0)*100)+Math.round(value*100))/100
+  }
  }
  return totals
+}
+export function sundayTotalCurrencies(totals){
+ const currencies=Object.keys(totals.currencyCounts||totals.currencies)
+ const payable=currencies.filter(currency=>['baseCurrencies','transportCurrencies','overtimeCurrencies','currencies'].some(key=>Number(totals[key]?.[currency])!==0&&Number.isFinite(Number(totals[key]?.[currency]))))
+ // Never concatenate currencies or convert them. Real multi-currency pay gets
+ // separate aligned rows; foreign zero-only placeholders add no payroll value.
+ return payable.length?payable:currencies.sort((a,b)=>(totals.currencyCounts?.[b]||0)-(totals.currencyCounts?.[a]||0)).slice(0,1)
 }
 export function sundayTeamGroups(rows){
  const groups=new Map()

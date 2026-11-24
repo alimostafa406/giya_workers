@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { applyWeeklySundayPay, isSundayDate, latestSunday, sundayReportRows, sundayTeamGroups, sundayReportTotals } from './sundayPayroll'
+import { applyWeeklySundayPay, isSundayDate, latestSunday, sundayReportRows, sundayTeamGroups, sundayReportTotals,sundayTotalCurrencies } from './sundayPayroll'
 import {readFileSync} from 'node:fs'
 
 const date='2026-10-18'
 const fixture=payment_type=>({date,sunday_evidence:[{worker_id:'w',eligible:true,reason:'eligible',punch_count:2,morning:'07:05:00',checkout:'14:03:00'}],rules:{monthly_working_day_divisor:26},workers:[{id:'w',payment_type,is_active:false,payroll_compensation_terms:[{payment_type,effective_from:'2026-01-01',daily_rate:20000,monthly_salary:520000,currency_code:'CDF'}]}],attendance:[{worker_id:'w',attendance_date:date,status:'present',attendance_day_fraction:1,attendance_source:'outside_work',check_in:null,check_out:null}]})
 describe('Sunday canonical report',()=>{
+ it('keeps configured payable totals despite missing wages and omits zero-only foreign currency placeholders',()=>{
+  const rows=[{currency:'CDF',amount:100,transportAmount:10,overtimeAmount:20,netAmount:130},{currency:'CDF',amount:null,transportAmount:0,overtimeAmount:5,netAmount:null},{currency:'USD',amount:null,transportAmount:0,overtimeAmount:0,netAmount:null}],before=JSON.stringify(rows)
+  const totals=sundayReportTotals(rows)
+  expect(totals).toMatchObject({baseCurrencies:{CDF:100,USD:0},transportCurrencies:{CDF:10,USD:0},overtimeCurrencies:{CDF:25,USD:0},currencies:{CDF:135,USD:0},incompleteWorkers:2})
+  expect(sundayTotalCurrencies(totals)).toEqual(['CDF']);expect(JSON.stringify(rows)).toBe(before)
+  expect(totals.currencies.CDF).toBe(totals.baseCurrencies.CDF+totals.transportCurrencies.CDF+totals.overtimeCurrencies.CDF)
+ })
+ it('preserves real currencies separately instead of adding or concatenating them',()=>{
+  const totals=sundayReportTotals([{currency:'CDF',amount:100,netAmount:100},{currency:'USD',amount:5,netAmount:5}])
+  expect(sundayTotalCurrencies(totals)).toEqual(['CDF','USD']);expect(totals.currencies).toEqual({CDF:100,USD:5})
+  expect(sundayTotalCurrencies(sundayReportTotals([{currency:'CDF',amount:0,netAmount:0}]))).toEqual(['CDF'])
+ })
  it('uses the effective recurring multiplier but keeps an existing Sunday ledger frozen',()=>{
   const data=fixture('weekly');data.sunday_evidence[0].sunday_settings={pay_multiplier:3}
   expect(sundayReportRows(data,date)[0]).toMatchObject({daily:20000,multiplier:3,amount:60000})

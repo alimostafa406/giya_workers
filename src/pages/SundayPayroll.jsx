@@ -4,7 +4,7 @@ import {getErrorMessage} from '../api/axios'
 import {useTranslation} from '../i18n/LanguageContext'
 import {currentBusinessDate} from '../utils/payrollCalculations'
 import {formatPayrollMoney} from '../utils/payrollCurrency'
-import {isSundayDate,latestSunday,sundayReportRows,sundayReportTotals,sundayTeamGroups} from '../utils/sundayPayroll'
+import {isSundayDate,latestSunday,sundayReportRows,sundayReportTotals,sundayTeamGroups,sundayTotalCurrencies} from '../utils/sundayPayroll'
 import {finishPayrollPrint} from '../utils/teamReportPrintLayout'
 import {payrollRenderedPrintCss} from '../utils/printRenderedPayroll'
 import PayrollSheetFrame,{PayrollWorkerIdentity,payrollSheetClasses as sheet} from '../components/Payroll/PayrollSheetFrame'
@@ -41,9 +41,10 @@ const widths=[20,10,10,12,12,12,12,12]
 const duration=value=>value>0?formatBiometricOvertimeDuration(value):'—'
 const money=(amount,currency)=>amount==null?'—':!currency||currency==='UNCONFIGURED'?(Number(amount)===0?'0':'—'):formatPayrollMoney(amount,{currency,paymentType:'weekly'})
 const clock=value=>value?String(value).slice(0,5):'—'
-function Amounts({totals,family='currencies'}){return Object.entries(totals[family]).map(([currency,amount])=><bdi dir="ltr" className="block" key={currency}>{money(amount,currency)}</bdi>)}
+function Amounts({totals,currency,family='currencies'}){return <bdi dir="ltr">{money(totals[family][currency]??0,currency)}</bdi>}
 function SundayTotalRow({totals,label}){
- return <tr className={sheet.totalRow}><th scope="row" className="px-3 py-3 text-start whitespace-nowrap">{label}</th><td className={sheet.cell}>—</td><td className={sheet.cell}>—</td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="baseCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="transportCurrencies"/></td><td className={sheet.cell}>—</td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} family="overtimeCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals}/></td></tr>
+ const currencies=sundayTotalCurrencies(totals)
+ return currencies.map(currency=><tr className={sheet.totalRow} key={currency} data-total-currency={currency}><th scope="row" className="px-3 py-3 text-start whitespace-nowrap">{label}{currencies.length>1?` — ${currency}`:''}</th><td className={sheet.cell}>—</td><td className={sheet.cell}>—</td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} currency={currency} family="baseCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} currency={currency} family="transportCurrencies"/></td><td className={sheet.cell}>—</td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} currency={currency} family="overtimeCurrencies"/></td><td className={`${sheet.cell} whitespace-nowrap`}><Amounts totals={totals} currency={currency}/></td></tr>)
 }
 export default function SundayPayroll(){
  const {language,direction}=useTranslation(),l=labels[language]||labels.en
@@ -115,6 +116,7 @@ export default function SundayPayroll(){
     </PayrollSheetFrame>
    </article>)}
    {!loading&&!groups.length&&<p>{l.empty}</p>}
+   {totals.incompleteWorkers>0&&<p className="text-xs text-(--muted)" role="note">{({ar:'الإجماليات تشمل المبالغ المحددة فقط؛ توجد إعدادات أجور غير مكتملة.',en:'Totals include configured amounts only; some wage settings are incomplete.',fr:'Les totaux incluent les montants configurés ; certains salaires restent à configurer.'})[language]||'Totals include configured amounts only.'}</p>}
    {groups.length>0&&<section className="team space-y-3 sunday-grand"><h2 className="font-extrabold">{l.grand}</h2><PayrollSheetFrame variant="summary"><colgroup>{widths.map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup><thead className="bg-slate-50/90"><tr>{columns.map(key=><th className={sheet.header} key={key}>{l[key]}</th>)}</tr></thead><tbody className={sheet.total}><SundayTotalRow totals={totals} label={({ar:'الإجمالي العام',en:'Grand total',fr:'Total général'})[language]||'Grand total'}/></tbody></PayrollSheetFrame></section>}
   </div>
   <WorkerSundaySettingsModal worker={settingsWorker} onClose={()=>setSettingsWorker(null)} onSaved={async()=>setData(await getSundayPayroll(date))}/>
