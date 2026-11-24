@@ -8,7 +8,7 @@ declare wid uuid;cfg jsonb;saved jsonb;settings jsonb;first_day date;second_day 
 begin
  select id into strict wid from public.workers where employee_code='179';
  cfg:=private.worker_sunday_settings_for_date(wid,'2026-11-22');
- assert cfg->>'checkin_cutoff'='08:20:00' and (cfg->>'pay_multiplier')::numeric=2,'Historical defaults changed';
+ assert cfg->>'checkin_cutoff'='08:35:00' and (cfg->>'pay_multiplier')::numeric=2,'Global defaults changed';
  settings:=jsonb_build_object('enabled',true,'checkin_cutoff','09:00','shift_end','14:30','checkout_threshold','13:45','pay_multiplier',3,'overtime_start','15:00','overtime_requires_approval',false,'note','rollback fixture');
  cfg:=public.admin_get_worker_sunday_settings(wid);
  saved:=public.admin_save_worker_sunday_settings(wid,settings,(cfg->>'version')::integer);
@@ -17,7 +17,7 @@ begin
  assert private.worker_sunday_settings_for_date(wid,first_day)->>'checkin_cutoff'='09:00:00','First Sunday did not reuse settings';
  assert private.worker_sunday_settings_for_date(wid,second_day)->>'checkin_cutoff'='09:00:00','Second Sunday did not reuse settings';
  assert (private.worker_sunday_settings_for_date(wid,second_day)->>'pay_multiplier')::numeric=3,'Custom multiplier missing';
- assert private.worker_sunday_settings_for_date(wid,'2026-11-22')->>'checkin_cutoff'='08:20:00','History changed';
+ assert private.worker_sunday_settings_for_date(wid,'2026-11-22')->>'checkin_cutoff'='08:35:00','Custom settings changed the global fallback';
  select * into strict sample from public.biometric_attendance_events where worker_id=wid and attendance_date='2026-11-22' limit 1;
  sample.attendance_date:=first_day;sample.event_timestamp:=(first_day+time '08:45') at time zone 'Africa/Kinshasa';
  insert into pg_temp.sunday_settings_test_events select sample.*;
