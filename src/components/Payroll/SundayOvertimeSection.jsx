@@ -5,16 +5,20 @@ import {calculateWeeklyOvertimePay} from '../../utils/weeklyPayrollOvertime'
 import {formatPayrollMoney} from '../../utils/payrollCurrency'
 import {getErrorMessage} from '../../api/axios'
 import {parseWeeklyDuration} from '../../utils/weeklyManualOvertime'
+import './SundayOvertimeSection.css'
 
 const labels={pending:'قيد المراجعة',approved:'معتمد',rejected:'مرفوض'}
 const canAct=r=>!r.locked&&(r.stale||r.status==='pending')
-export default function SundayOvertimeSection({date,sources=[],team='',search='',onSaved}){
+export default function SundayOvertimeSection({date,sources=[],team='',search='',onSaved,dateControl}){
  const [selected,setSelected]=useState([]),[saving,setSaving]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('')
  const [adjustments,setAdjustments]=useState({})
  const [status,setStatus]=useState('pending')
+ const [selectedTeam,setSelectedTeam]=useState('')
+ useEffect(()=>{setSelectedTeam('')},[date])
  useEffect(()=>{setSelected([]);setAdjustments({});setError('');setMessage('')},[date,sources])
  const rows=biometricReviewRows(sources).filter(r=>r.sunday_evidence&&r.work_date===date&&(!team||String(r.worker.team_id)===team)&&`${r.worker.full_name} ${r.worker.employee_code}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
- const visible=rows.filter(r=>status==='all'||status==='pending'?(status==='all'||r.stale||r.status==='pending'):status==='stale'?r.stale:!r.stale&&r.status===status)
+ const teams=[...new Map(rows.map(r=>[String(r.worker.team_id||'unassigned'),r.worker.team_name||'بدون فريق'])).entries()]
+ const visible=rows.filter(r=>(!selectedTeam||String(r.worker.team_id||'unassigned')===selectedTeam)&&(status==='all'||(status==='pending'?(r.stale||r.status==='pending'):status==='stale'?r.stale:!r.stale&&r.status===status)))
  const actionable=visible.filter(canAct),chosen=actionable.filter(r=>selected.includes(r.worker.id))
  const minutesFor=r=>{const text=(adjustments[r.worker.id]?.duration??duration(r.approvedMinutes)).trim();const m=text.match(/^(\d+)\s*min$/i);return m?Number(m[1]):parseWeeklyDuration(text.replace('h',':'))}
  const groups=[...new Set(visible.map(r=>r.worker.team_id||'unassigned'))].map(id=>({id,rows:visible.filter(r=>(r.worker.team_id||'unassigned')===id)}))
@@ -29,16 +33,19 @@ export default function SundayOvertimeSection({date,sources=[],team='',search=''
  }
  const clock=value=>value?new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Kinshasa',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(value)):'—'
  const money=(value,currency)=>value==null||!currency?'—':formatPayrollMoney(value,{currency,paymentType:'weekly'})
- return <section className="sunday-hourly-review surface-card p-4" dir="rtl"><h2>إضافي الأحد</h2>
+ return <section className="sunday-hourly-review surface-card" dir="rtl"><h2>إضافي الأحد</h2>
   <p className="text-sm">إضافي الأحد يبدأ حسب إعدادات العامل ويخضع للمراجعة. قبض الأحد والنقل مستقلان ويستحقان عند اكتمال الحضور.</p>
-  <div className="flex flex-wrap gap-2 my-2">
+  <fieldset className="sunday-ot-toolbar" disabled={saving}>
+   <div className="sunday-ot-filters">{dateControl}
+   <label>الفريق<select className="input-base" value={selectedTeam} onChange={e=>{setSelectedTeam(e.target.value);setSelected([])}}><option value="">كل الفرق</option>{teams.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>
    <label>الحالة<select className="input-base" value={status} disabled={saving} onChange={e=>{setStatus(e.target.value);setSelected([])}}>{[['pending','قيد المراجعة'],['approved','معتمد'],['rejected','مرفوض'],['stale','يحتاج مراجعة'],['all','الكل']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+   </div><div className="sunday-ot-actions">
    <button type="button" className="btn-secondary" disabled={saving||!actionable.length} onClick={()=>setSelected(actionable.map(r=>r.worker.id))}>اختيار الكل الظاهر</button>
    <button type="button" className="btn-primary" disabled={saving||!chosen.length} onClick={()=>decide(chosen,'approved')}>موافقة على المختارين</button>
    <button type="button" className="btn-secondary" disabled={saving||!chosen.length} onClick={()=>decide(chosen,'rejected')}>رفض المختارين</button>
-  </div>
+  </div></fieldset>
   {error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
-  {groups.map(group=><article key={group.id} className="space-y-3 my-4"><h3 className="font-bold">{group.rows[0].worker.team_name||'بدون فريق'}</h3><div className="flex flex-wrap gap-2">
+  {groups.map(group=><article key={group.id} className="sunday-ot-team" data-sunday-ot-team={group.id}><header className="sunday-ot-team-heading"><h3 className="font-bold">{group.rows[0].worker.team_name||'بدون فريق'}</h3><span className="text-xs text-(--muted)">عدد العمال: {group.rows.length}</span></header><div className="sunday-ot-actions">
    <button type="button" className="btn-secondary" disabled={saving||!group.rows.some(canAct)} onClick={()=>setSelected(old=>[...new Set([...old,...group.rows.filter(canAct).map(r=>r.worker.id)])])}>اختيار كل عمال الفريق</button>
    <button type="button" className="btn-primary" disabled={saving||!group.rows.some(canAct)} onClick={()=>decide(group.rows.filter(canAct),'approved')}>موافقة على الفريق</button>
    <button type="button" className="btn-secondary" disabled={saving||!group.rows.some(r=>canAct(r)&&selected.includes(r.worker.id))} onClick={()=>decide(group.rows.filter(r=>selected.includes(r.worker.id)),'approved')}>موافقة على المختارين</button>
@@ -54,6 +61,6 @@ export default function SundayOvertimeSection({date,sources=[],team='',search=''
     <td><bdi dir="ltr">{money(r.hourly_rate,r.currency)}</bdi></td><td><bdi dir="ltr">{money(pay.overtimePay,r.currency)}</bdi></td>
     <td>{labels[r.status]}{r.stale&&<small className="block">يحتاج مراجعة من جديد</small>}</td>
     <td><button type="button" className="btn-secondary" disabled={saving||!canAct(r)} onClick={()=>decide([r],'approved')}>موافقة</button> <button type="button" className="btn-secondary" disabled={saving||!canAct(r)} onClick={()=>decide([r],'rejected')}>رفض</button></td>
-   </tr>})}</tbody></table></div></article>)}{!visible.length&&<p>لا يوجد إضافي أحد مؤهل</p>}
+   </tr>})}</tbody></table></div></article>)}{!visible.length&&<p className="sunday-ot-empty" role="status">لا يوجد إضافي أحد مطابق للفلاتر الحالية</p>}
  </section>
 }
