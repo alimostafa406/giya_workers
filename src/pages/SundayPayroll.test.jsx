@@ -7,6 +7,8 @@ import SundayPayroll from './SundayPayroll'
 import WeeklyPayrollSheet from '../components/Payroll/WeeklyPayrollSheet'
 import {payrollRenderedPrintCss} from '../utils/printRenderedPayroll'
 import {readFileSync} from 'node:fs'
+import {sundayReportRows,sundayReportTotals} from '../utils/sundayPayroll'
+import {formatPayrollMoney} from '../utils/payrollCurrency'
 globalThis.React=React
 const api=vi.hoisted(()=>({load:vi.fn(),confirm:vi.fn(),settings:vi.fn(),saveSettings:vi.fn(),saveEvidence:vi.fn()}))
 vi.mock('../api/biometricOvertimeReviewApi',()=>({saveSundayEvidence:api.saveEvidence}))
@@ -18,6 +20,28 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
+it.skipIf(!process.env.SUNDAY_TOTAL_AUDIT)('real Sunday grand/team totals render one canonical money value per aligned cell on screen and print',async()=>{
+ const data=JSON.parse(readFileSync(process.env.SUNDAY_TOTAL_AUDIT,'utf8')),before=JSON.stringify(data);api.load.mockResolvedValue(data)
+ window.history.replaceState(null,'','/payroll/sunday?date=2026-11-22');localStorage.setItem('workers_app_language','ar')
+ const view=render(<LanguageProvider><SundayPayroll/></LanguageProvider>);await screen.findByText('IFASO')
+ const totals=sundayReportTotals(sundayReportRows(data,'2026-11-22'))
+ const check=root=>{
+  const grand=root.querySelectorAll('.sunday-grand [data-total-currency]');expect(grand).toHaveLength(1)
+  const cells=grand[0].children;expect(cells).toHaveLength(8)
+  for(const [index,key] of [[3,'baseCurrencies'],[4,'transportCurrencies'],[6,'overtimeCurrencies'],[7,'currencies']]){
+   expect(cells[index].querySelectorAll('bdi')).toHaveLength(1)
+   expect(cells[index].textContent).toBe(formatPayrollMoney(totals[key].CDF,{currency:'CDF',paymentType:'weekly'}))
+   expect(cells[index].textContent).not.toContain('$');expect(cells[index].textContent).not.toContain('—')
+  }
+  for(const row of root.querySelectorAll('.sunday-team [data-total-currency]'))for(const index of [3,4,6,7])expect(row.children[index].querySelectorAll('bdi')).toHaveLength(1)
+ }
+ check(view.container)
+ expect(totals.currencies.CDF).toBeCloseTo(totals.baseCurrencies.CDF+totals.transportCurrencies.CDF+totals.overtimeCurrencies.CDF,2)
+ expect(screen.getByRole('note')).not.toBeNull()
+ const popup={document:{write:vi.fn(),close:vi.fn()},print:vi.fn()};vi.spyOn(window,'open').mockReturnValue(popup)
+ fireEvent.click(screen.getByRole('button',{name:'طباعة تقرير الأحد'}));check(new DOMParser().parseFromString(popup.document.write.mock.calls[0][0],'text/html'))
+ expect(JSON.stringify(data)).toBe(before)
+})
 it.skipIf(!process.env.SUNDAY_REPORT_EDIT_AUDIT)('real November 22 IFASO dash and EMMANUEL clocks are enabled inline controls',async()=>{
  const data=JSON.parse(readFileSync(process.env.SUNDAY_REPORT_EDIT_AUDIT,'utf8'));api.load.mockResolvedValue(data)
  window.history.replaceState(null,'','/payroll/sunday?date=2026-11-22');localStorage.setItem('workers_app_language','ar')
