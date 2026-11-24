@@ -24,7 +24,7 @@ function derivedBiometricRows(sources = []) {
     const originalMinutes = audit?.source_fingerprint === review?.source_fingerprint && Number(audit?.minutes) === Number(review?.minutes)
       ? audit.original_biometric_minutes ?? review?.minutes : review?.minutes
     const stale = Boolean(review && (review.source_fingerprint !== source.source_fingerprint || Number(originalMinutes) !== minutes))
-    return { ...source, minutes, approvedMinutes: review && !stale ? Number(review.minutes) : minutes, stale, status: review && !stale ? review.decision : 'pending' }
+    return { ...source, minutes, approvedMinutes: review && !stale ? Number(review.minutes) : Number(source.suggested_approved_minutes ?? minutes), stale, status: review && !stale ? review.decision : 'pending' }
   }).filter((row) => row.minutes > 0)
 }
 export function biometricReviewRows(sources = []) {

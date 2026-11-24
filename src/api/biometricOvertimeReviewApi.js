@@ -14,3 +14,11 @@ export async function decideBiometricOvertime(date, rows, decision) {
   if (error) throw error
   return data
 }
+export async function saveSundayEvidence(date,row,{first,last,minutes,note='',reset=false}){
+ const {data,error}=await getSupabaseClient().rpc('admin_save_sunday_evidence',{
+  p_worker:row.worker.id,p_date:date,p_first:first,p_last:last,p_minutes:minutes,p_reset:reset,p_note:note,
+  p_expected_version:row.approved_evidence?.version||0,p_source_fingerprint:row.source_fingerprint,
+ })
+ if(error)throw error
+ return data
+}

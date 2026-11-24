@@ -48,8 +48,10 @@ export function sundayReportRows(data, date, today = currentBusinessDate()) {
     const overtimeReviewStatus=sundaySource?biometricReviewRows([sundaySource])[0]?.status:null
     const canonicalCandidate=biometricReviewRows(data.biometricOvertimeReviews||[]).find(s=>String(s.worker.id)===String(worker.id)&&s.attendance.attendance_date===date)
     const candidateMinutes=canonicalCandidate?.minutes??(!Array.isArray(data.biometricOvertimeReviews)&&present?weeklyPayrollOvertimeForDetail({date,worker,row:{check_out:evidence?.checkout}}).eveningOvertimeMinutes:0)
+    const displayOvertimeMinutes=canonicalCandidate?.approved_evidence_valid&&canonicalCandidate.approved_evidence?.approved_first_punch
+      ?canonicalCandidate.approvedMinutes:candidateMinutes||overtimeMinutes
     const netAmount=payment?.payment_status==='cancelled'?0:amount==null||overtimeAmount==null?null:Math.round((amount+transportAmount+overtimeAmount)*100)/100
-    return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,transportAmount,missingSundayPay,fixedMonthly,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,overtimeReviewStatus,
+    return [{worker,attendance,payment,present,evidence,punchCount,outsideEvidence,conflict,currency,daily,amount,transportAmount,missingSundayPay,fixedMonthly,netAmount,overtimeMinutes,overtimeAmount,candidateMinutes,displayOvertimeMinutes,overtimeReviewStatus,
       multiplier,canConfirm:present && !confirmed && daily!=null && Boolean(currency)}]
   })
 }
