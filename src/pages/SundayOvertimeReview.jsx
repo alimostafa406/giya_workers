@@ -14,10 +14,10 @@ export default function SundayOvertimeReview(){
   return()=>{active=false}
  },[date,reload])
  return <section dir="rtl" className="space-y-4"><h1 className="text-2xl font-bold">مراجعة إضافي الأحد</h1>
-  <div className="surface-card flex flex-wrap gap-3 p-4"><label>تاريخ الأحد<input type="date" className="input-base" min="1970-01-04" step="7" max={today} value={date} onChange={e=>{
+  <a className="btn-secondary" href={`/payroll/sunday?date=${date}`}>تقرير أجور الأحد</a>
+  {error&&<p role="alert">{error}</p>}{loading?<p role="status">جاري التحميل...</p>:<SundayOvertimeSection date={date} sources={sources} onSaved={async()=>setReload(n=>n+1)} dateControl={<label>تاريخ الأحد<input type="date" className="input-base" min="1970-01-04" step="7" max={today} value={date} onChange={e=>{
    if(!isSundayDate(e.target.value)||e.target.value>today){setError('اختر تاريخ أحد غير مستقبلي');return}
    setDate(e.target.value);window.history.replaceState(null,'',`?date=${e.target.value}`)
-  }}/></label><a className="btn-secondary" href={`/payroll/sunday?date=${date}`}>تقرير أجور الأحد</a></div>
-  {error&&<p role="alert">{error}</p>}{loading?<p role="status">جاري التحميل...</p>:<SundayOvertimeSection date={date} sources={sources} onSaved={async()=>setReload(n=>n+1)}/>}
+  }}/></label>}/>}
  </section>
 }

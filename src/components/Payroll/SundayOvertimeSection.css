@@ -1,0 +1,23 @@
+.sunday-hourly-review { padding: 12px; }
+.sunday-hourly-review > h2 { font-size: 1rem; font-weight: 700; }
+.sunday-hourly-review > p { margin-block: 4px 10px; }
+.sunday-ot-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; margin-block: 10px; min-width: 0; }
+.sunday-ot-filters, .sunday-ot-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sunday-ot-filters { align-items: end; gap: 10px; }
+.sunday-ot-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; }
+.sunday-ot-filters .input-base { width: 170px; max-width: 100%; height: 34px; padding: 5px 8px; font-size: 13px; border-radius: 7px; }
+.sunday-hourly-review button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 34px; padding: 5px 10px; border-radius: 7px; font-size: 12px; line-height: 20px; white-space: nowrap; }
+.sunday-ot-team { margin-block: 14px; }
+.sunday-ot-team-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.sunday-ot-team > .sunday-ot-actions { margin-bottom: 6px; }
+.sunday-hourly-review table { font-size: 12px; }
+.sunday-hourly-review th, .sunday-hourly-review td { padding: 5px 7px; border: 1px solid var(--border, #e2e8f0); vertical-align: middle; }
+.sunday-hourly-review td .input-base { display: block; width: 112px; height: 30px; padding: 4px 6px; margin-block: 2px; font-size: 12px; border-radius: 6px; }
+.sunday-hourly-review td bdi { white-space: nowrap; }
+.sunday-ot-empty { text-align: center; padding: 24px 12px; color: var(--muted); border: 1px dashed var(--border, #e2e8f0); border-radius: 8px; }
+@media (max-width: 600px) {
+ .sunday-hourly-review { padding: 10px; }
+ .sunday-ot-toolbar { gap: 10px; }
+ .sunday-ot-filters { flex-wrap: wrap; }
+ .sunday-ot-filters .input-base { width: 150px; }
+}
