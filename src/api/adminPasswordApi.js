@@ -3,7 +3,7 @@ import {supabase,createPasswordVerificationClient} from '../lib/supabase'
 const failure=code=>Object.assign(new Error(code),{code})
 export function passwordValidation(currentPassword,newPassword,confirmation){
  if(!currentPassword)return 'currentRequired'
- if(newPassword.length<12)return 'tooShort'
+ if(newPassword.length<7)return 'tooShort'
  if(newPassword!==confirmation)return 'mismatch'
  if(newPassword===currentPassword)return 'samePassword'
  return null
