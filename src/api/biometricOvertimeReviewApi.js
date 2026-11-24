@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
+import {notifySundayEvidenceUpdate} from '../utils/sundayEvidenceUpdates'
 
 export async function getBiometricOvertimeReviews(start, end = start) {
   if (!start || !end) return []
@@ -20,5 +21,6 @@ export async function saveSundayEvidence(date,row,{first,last,minutes,note='',re
   p_expected_version:row.approved_evidence?.version||0,p_source_fingerprint:row.source_fingerprint,
  })
  if(error)throw error
+ notifySundayEvidenceUpdate(date)
  return data
 }

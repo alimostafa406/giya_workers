@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react'
 import {afterEach,expect,it,vi} from 'vitest'
-import {cleanup,fireEvent,render,screen,within} from '@testing-library/react'
+import {cleanup,fireEvent,render,screen,within,waitFor} from '@testing-library/react'
 import {LanguageProvider} from '../i18n/LanguageContext'
 import SundayPayroll from './SundayPayroll'
 import WeeklyPayrollSheet from '../components/Payroll/WeeklyPayrollSheet'
 import {payrollRenderedPrintCss} from '../utils/printRenderedPayroll'
 import {readFileSync} from 'node:fs'
 globalThis.React=React
-const api=vi.hoisted(()=>({load:vi.fn(),confirm:vi.fn(),settings:vi.fn(),saveSettings:vi.fn()}))
+const api=vi.hoisted(()=>({load:vi.fn(),confirm:vi.fn(),settings:vi.fn(),saveSettings:vi.fn(),saveEvidence:vi.fn()}))
+vi.mock('../api/biometricOvertimeReviewApi',()=>({saveSundayEvidence:api.saveEvidence}))
 vi.mock('../api/sundayPayrollApi',()=>({getSundayPayroll:api.load,confirmSundayPayroll:api.confirm,getWorkerSundaySettings:api.settings,saveWorkerSundaySettings:api.saveSettings}))
 vi.mock('../utils/teamReportPrintLayout',()=>({payrollLandscapePrintCss:'@page{size:A4 landscape}',finishPayrollPrint:p=>p.print()}))
 afterEach(()=>{cleanup();vi.clearAllMocks();vi.restoreAllMocks();localStorage.clear()})
@@ -17,6 +18,44 @@ function fixture(){return {date,rules:{},workers:[['one','One punch','A'],['two'
  attendance:[{worker_id:'absent',attendance_date:date,status:'absent'}],
  sunday_evidence:[{worker_id:'one',eligible:false,reason:'missing_out',punch_count:1,display_check_in:'07:05:00',display_check_out:null},{worker_id:'two',eligible:true,reason:'eligible',punch_count:2,display_check_in:'07:05:00',display_check_out:'14:03:00'},{worker_id:'absent',eligible:false,punch_count:0},{worker_id:'morning',eligible:false,punch_count:2,display_check_in:'07:02:00',display_check_out:'08:03:00'}]}}
 function mount(language='en'){window.history.replaceState({},'','/payroll/sunday?date='+date);localStorage.setItem('workers_app_language',language);return render(<LanguageProvider><SundayPayroll/></LanguageProvider>)}
+it.skipIf(!process.env.SUNDAY_REPORT_EDIT_AUDIT)('real November 22 IFASO dash and EMMANUEL clocks are enabled inline controls',async()=>{
+ const data=JSON.parse(readFileSync(process.env.SUNDAY_REPORT_EDIT_AUDIT,'utf8'));api.load.mockResolvedValue(data)
+ window.history.replaceState(null,'','/payroll/sunday?date=2026-11-22');localStorage.setItem('workers_app_language','ar')
+ render(<LanguageProvider><SundayPayroll/></LanguageProvider>);await screen.findByText('IFASO')
+ for(const [label,text] of [['البصمة الصباحية IFASO','—'],['البصمة الصباحية EMMANUEL','08:28'],['آخر بصمة EMMANUEL','08:28']]){
+  const button=screen.getByLabelText(label);expect(button.disabled).toBe(false);expect(button.textContent).toBe(text)
+  fireEvent.click(button);expect(screen.getByLabelText(label).tagName).toBe('INPUT')
+  fireEvent.keyDown(screen.getByLabelText(label),{key:'Escape'})
+ }
+ expect(api.saveEvidence).not.toHaveBeenCalled()
+})
+it('IFASO dash and EMMANUEL clocks edit inline, refresh eligibility/pay and keep OT pending',async()=>{
+ const day='2026-11-22',workers=[['i','IFASO','19'],['e','EMMANUEL','20']].map(([id,full_name,employee_code])=>({id,full_name,employee_code,team_id:'t',team_name:'Adminstration',payment_type:'weekly',payroll_compensation_terms:[{payment_type:'weekly',daily_rate:25000,overtime_rate_per_hour:3500,currency_code:'CDF',effective_from:'2026-01-01'}]}))
+ let state={date:day,workers,sunday_evidence:[{worker_id:'i',eligible:false,punch_count:1,first_punch:'14:02:01',last_punch:'14:02:01',display_check_in:null,display_check_out:'14:02:01'},{worker_id:'e',eligible:false,punch_count:1,first_punch:'08:28:38',last_punch:'08:28:38',display_check_in:'08:28:38'}],biometricOvertimeReviews:[],sundayEvidenceEditSources:workers.map((worker,i)=>({worker,work_date:day,sunday_evidence:true,attendance:{worker_id:worker.id,attendance_date:day},evidence:{first_at:`${day}T${i?'07:28:38':'13:02:01'}Z`,last_at:`${day}T${i?'07:28:38':'13:02:01'}Z`},raw_minutes:i?0:2,source_fingerprint:worker.id,sunday_settings:{overtime_start:'14:00:00'},hourly_rate:3500,currency:'CDF',review:null}))}
+ const raw=state.sundayEvidenceEditSources.map(s=>JSON.stringify(s.evidence))
+ api.load.mockImplementation(async()=>structuredClone(state))
+ api.saveEvidence.mockImplementation(async(_day,s,payload)=>{
+  const next={...s,source_fingerprint:s.source_fingerprint+'v',approved_evidence_valid:true,approved_evidence:{version:(s.approved_evidence?.version||0)+1,approved_first_punch:payload.first,approved_last_punch:payload.last},suggested_approved_minutes:payload.minutes}
+  state={...state,sundayEvidenceEditSources:state.sundayEvidenceEditSources.map(x=>x.worker.id===s.worker.id?next:x),biometricOvertimeReviews:payload.minutes>0?[next]:[],sunday_evidence:state.sunday_evidence.map(e=>e.worker_id===s.worker.id?{...e,admin_evidence_override:true,eligible:payload.first.slice(11,16)<='08:20'&&payload.last.slice(11,16)>='13:30',display_check_in:payload.first.slice(11,19),display_check_out:payload.last.slice(11,19)}:e)}
+ })
+ window.history.replaceState(null,'','/payroll/sunday?date='+day);localStorage.setItem('workers_app_language','ar')
+ render(<LanguageProvider><SundayPayroll/></LanguageProvider>);await screen.findByText('IFASO')
+ expect(screen.getByLabelText('البصمة الصباحية IFASO').textContent).toBe('—')
+ fireEvent.click(screen.getByLabelText('البصمة الصباحية IFASO'))
+ fireEvent.change(screen.getByLabelText('البصمة الصباحية IFASO'),{target:{value:'08:05'}})
+ fireEvent.keyDown(screen.getByLabelText('البصمة الصباحية IFASO'),{key:'Escape'});expect(api.saveEvidence).not.toHaveBeenCalled()
+ const edit=async(label,value,count)=>{fireEvent.click(screen.getByLabelText(label));fireEvent.change(screen.getByLabelText(label),{target:{value}});fireEvent.keyDown(screen.getByLabelText(label),{key:'Enter'});await waitFor(()=>expect(api.load).toHaveBeenCalledTimes(count+1));await waitFor(()=>expect(screen.getByLabelText(label).tagName).toBe('BUTTON'))}
+ await edit('البصمة الصباحية IFASO','08:05',1)
+ expect(screen.getByLabelText('البصمة الصباحية IFASO').closest('tr').children[3].textContent).toContain('50,000')
+ expect(screen.getByLabelText('البصمة الصباحية EMMANUEL').textContent).toBe('08:28');expect(screen.getByLabelText('آخر بصمة EMMANUEL').textContent).toBe('08:28')
+ await edit('آخر بصمة EMMANUEL','18:30',2)
+ await edit('البصمة الصباحية EMMANUEL','08:05',3)
+ await edit('وقت إضافي الأحد EMMANUEL','4h00',4)
+ const cells=screen.getByLabelText('البصمة الصباحية EMMANUEL').closest('tr').children
+ expect(cells[3].textContent).toContain('50,000');expect(cells[5].textContent).toContain('4h00');expect(cells[6].textContent).toBe('—');expect(cells[7].textContent).toContain('50,000')
+ expect(state.sundayEvidenceEditSources.map(s=>JSON.stringify(s.evidence))).toEqual(raw)
+ expect(api.saveEvidence.mock.calls[3][2].minutes).toBe(240)
+})
 it('screen and print use approved Sunday clocks while raw punch fields remain intact',async()=>{
  const data=fixture();Object.assign(data.sunday_evidence[1],{admin_evidence_override:true,display_check_in:'08:00:00',display_check_out:'18:30:00',first_punch:'08:05:04',last_punch:'19:01:16'})
  api.load.mockResolvedValue(data);const view=mount('ar');await screen.findByText('Valid two')
@@ -62,7 +101,7 @@ it('monthly settings expose fixed Sunday pay, Sunday transport and OT multiplier
  const data=fixture();data.workers[1].payment_type='monthly';data.workers[1].payroll_compensation_terms[0].payment_type='monthly'
  api.load.mockResolvedValue(data);api.settings.mockResolvedValue({enabled:true,checkin_cutoff:'08:20',shift_end:'14:00',checkout_threshold:'13:30',pay_multiplier:2,overtime_start:'14:00',overtime_requires_approval:true,version:0,sunday_fixed_pay:null,sunday_transport:0,overtime_multiplier:1})
  api.saveSettings.mockResolvedValue({version:1})
- const view=mount('ar');await screen.findByText('Valid two');fireEvent.click(within(view.container.querySelector('[data-worker=two]')).getByRole('button'))
+ const view=mount('ar');await screen.findByText('Valid two');fireEvent.click(within(view.container.querySelector('[data-worker=two]').children[0]).getByRole('button'))
  const dialog=await screen.findByRole('dialog');await within(dialog).findByLabelText('قبض يوم الأحد')
  expect(within(dialog).getByText('إعداد قبض الأحد مطلوب')).not.toBeNull()
  fireEvent.change(within(dialog).getByLabelText('قبض يوم الأحد'),{target:{value:'20000'}})
@@ -78,7 +117,7 @@ it('worker name opens recurring Sunday settings, saves through canonical API and
  let stored=defaults
  api.settings.mockImplementation(async()=>stored);api.saveSettings.mockImplementation(async(_id,values)=>{custom=true;stored={...values,version:1};return stored})
  const view=mount('ar');await screen.findByText('Valid two')
- fireEvent.click(within(view.container.querySelector('[data-worker=two]')).getByRole('button'))
+ fireEvent.click(within(view.container.querySelector('[data-worker=two]').children[0]).getByRole('button'))
  const modal=await screen.findByRole('dialog',{name:'إعدادات الأحد — Valid two'})
  await within(modal).findByRole('button',{name:'حفظ إعدادات الأحد'})
  expect(within(modal).queryByLabelText('قبض يوم الأحد')).toBeNull()
@@ -90,7 +129,7 @@ it('worker name opens recurring Sunday settings, saves through canonical API and
  expect(api.saveSettings).toHaveBeenCalledWith('two',expect.objectContaining({checkin_cutoff:'08:45',pay_multiplier:2,overtime_multiplier:'2.5',overtime_requires_approval:true}),0)
  fireEvent.change(view.container.querySelector('input[type=date]'),{target:{value:'2026-08-16'}})
  await screen.findByText('إعدادات خاصة');expect(api.load).toHaveBeenLastCalledWith('2026-08-16')
- fireEvent.click(within(view.container.querySelector('[data-worker=two]')).getByRole('button'))
+ fireEvent.click(within(view.container.querySelector('[data-worker=two]').children[0]).getByRole('button'))
  const reopened=await screen.findByRole('dialog',{name:'إعدادات الأحد — Valid two'})
  const cutoff=await within(reopened).findByLabelText('آخر وقت دخول مقبول')
  expect(cutoff.value).toBe('08:45');expect(within(reopened).getByLabelText('معامل إضافي الأحد').value).toBe('2.5');expect(api.settings).toHaveBeenCalledTimes(2)

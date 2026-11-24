@@ -25,7 +25,7 @@ function derivedBiometricRows(sources = []) {
       ? audit.original_biometric_minutes ?? review?.minutes : review?.minutes
     const stale = Boolean(review && (review.source_fingerprint !== source.source_fingerprint || Number(originalMinutes) !== minutes))
     return { ...source, minutes, approvedMinutes: review && !stale ? Number(review.minutes) : Number(source.suggested_approved_minutes ?? minutes), stale, status: review && !stale ? review.decision : 'pending' }
-  }).filter((row) => row.minutes > 0)
+  }).filter((row) => row.minutes > 0 || (row.sunday_evidence && row.approved_evidence_valid && row.approved_evidence?.approved_first_punch && Number(row.suggested_approved_minutes)>0))
 }
 export function biometricReviewRows(sources = []) {
   // The canonical calculation owns the strict >30-minute eligibility check,
