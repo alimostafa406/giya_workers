@@ -121,6 +121,10 @@ begin
         when c.confirmed_count = 0 and c.evidence_owner_count > 0 then 'needs_review'
         when c.confirmed_count = 0 then 'unmapped'
         when w.id is null or w.is_active is false then 'inactive_worker'
+        when a.id is null and w.attendance_shift = 'night'
+          and (c.event_timestamp at time zone 'Africa/Kinshasa')::time > time '06:30'
+          and (c.event_timestamp at time zone 'Africa/Kinshasa')::time < time '17:00'
+          then 'outside_attendance_window'
         when a.id is null then 'attendance_not_applied'
         else 'resolved'
       end as reason
@@ -129,7 +133,10 @@ begin
     left join public.worker_staff_classification as sc on sc.worker_id = w.id
     left join public.attendance as a
       on a.worker_id = w.id
-     and a.attendance_date = c.attendance_date
+     and a.attendance_date = case
+       when w.attendance_shift = 'night'
+        and (c.event_timestamp at time zone 'Africa/Kinshasa')::time <= time '06:30'
+       then c.attendance_date - 1 else c.attendance_date end
   )
   select
     r.event_id,

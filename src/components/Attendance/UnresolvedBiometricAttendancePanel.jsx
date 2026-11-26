@@ -1,3 +1,4 @@
+import { groupUnresolvedBiometricAttendance } from '../../utils/unresolvedBiometricAttendance'
 import { Link } from 'react-router-dom'
 import { safeBiometricDisplayName } from '../../utils/biometricDisplayName'
 import { biometricDeviceIdentityKey, currentBiometricNamesByIdentity } from '../../utils/recentUnmappedIdentities'
@@ -14,6 +15,8 @@ const labels = {
     unmapped: 'هوية غير مربوطة',
     inactive_worker: 'العامل المرتبط غير نشط',
     ambiguous: 'تعارض ملكية حقيقي',
+    outside_attendance_window: 'البصمات خارج نافذة الدوام الليلي المضبوطة (17:00–06:30)',
+    events: 'بصمات', devices: 'الأجهزة', details: 'تفاصيل البصمات',
     attendance_not_applied: 'الربط مؤكد لكن الحضور لم يُطبّق',
   },
   en: {
@@ -27,6 +30,8 @@ const labels = {
     unmapped: 'Unmapped identity',
     inactive_worker: 'Mapped worker is inactive',
     ambiguous: 'Genuine ownership conflict',
+    outside_attendance_window: 'Punches outside configured night window (17:00–06:30)',
+    events: 'punches', devices: 'Devices', details: 'Raw event details',
     attendance_not_applied: 'Confirmed mapping but attendance was not applied',
   },
   fr: {
@@ -40,6 +45,8 @@ const labels = {
     unmapped: 'Identité non liée',
     inactive_worker: 'Le travailleur lié est inactif',
     ambiguous: 'Conflit réel de propriété',
+    outside_attendance_window: 'Pointages hors de la plage de nuit (17:00–06:30)',
+    events: 'pointages', devices: 'Appareils', details: 'Détails des pointages',
     attendance_not_applied: 'Liaison confirmée mais présence non appliquée',
   },
 }
@@ -49,6 +56,7 @@ const localTime = (value) => value
   : '—'
 
 export default function UnresolvedBiometricAttendancePanel({ rows = [], currentIdentityNames = [], unavailable = false, loading = false, language = 'en' }) {
+  const issues = groupUnresolvedBiometricAttendance(rows)
   const text = labels[language] || labels.en
   const currentNameByIdentity = currentBiometricNamesByIdentity(currentIdentityNames)
   const displayName = (row) => row.resolution_reason === 'unmapped'
@@ -62,7 +70,7 @@ export default function UnresolvedBiometricAttendancePanel({ rows = [], currentI
           <p className="mt-1 text-sm text-(--muted)">{text.description}</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="rounded-full bg-red-200 px-4 py-2 text-xl font-extrabold text-red-900">{loading ? '…' : rows.length}</span>
+          <span className="rounded-full bg-red-200 px-4 py-2 text-xl font-extrabold text-red-900">{loading ? '…' : issues.length}</span>
           <Link className="btn-secondary" to="/biometric-mapping">{text.review}</Link>
         </div>
       </div>
@@ -70,17 +78,21 @@ export default function UnresolvedBiometricAttendancePanel({ rows = [], currentI
       {!unavailable && !loading && rows.length === 0 ? <p className="p-4 text-sm text-(--muted)">{text.empty}</p> : null}
       {!unavailable && rows.length ? (
         <div className="divide-y divide-(--border)">
-          {rows.map((row) => (
-            <div key={row.event_id} className="grid gap-2 p-4 md:grid-cols-[9rem_1fr_1fr]">
-              <div dir="ltr" className="font-bold">{localTime(row.event_timestamp)}</div>
+          {issues.map((row) => (
+            <div key={row.issue_key} className="grid gap-2 p-4 md:grid-cols-[9rem_1fr_1fr]">
+              <div dir="ltr" className="font-bold">{localTime(row.first_timestamp)} → {localTime(row.last_timestamp)}<p className="mt-1 text-xs">{row.events.length} {text.events}</p></div>
               <div>
                 <p className="font-bold">{displayName(row)} <span dir="ltr" className="text-sm text-(--muted)">#{row.device_employee_no}</span></p>
-                <p className="text-xs text-(--muted)">{row.device_id}</p>
+                <p className="text-xs text-(--muted)">{text.devices}: {row.devices.join(', ')}</p>
               </div>
               <div>
                 <span className={`status-badge ${row.resolution_reason === 'ambiguous' ? 'status-badge--danger' : 'status-badge--warning'}`}>{text[row.resolution_reason] || row.resolution_reason}</span>
                 {row.worker_name ? <p className="mt-1 text-xs">{text.worker}: {row.worker_name} <span dir="ltr">({row.employee_code || '—'})</span></p> : null}
               </div>
+              <details className="md:col-span-3 text-xs text-(--muted)">
+                <summary className="cursor-pointer">{text.details}</summary>
+                {row.events.map(event => <p key={event.event_id} dir="ltr">{localTime(event.event_timestamp)} · {event.device_id} · #{event.device_employee_no}</p>)}
+              </details>
             </div>
           ))}
         </div>
