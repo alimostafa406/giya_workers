@@ -49,3 +49,14 @@ describe('supervisor sheet roster', () => {
     expect(sheet.groups[0].workers.map((worker) => worker.id)).toEqual(['one'])
   })
 })
+
+
+it('excludes authoritative FINAL Outside Work from open exact populations, but preserves historical final sheets', () => {
+  const row = { worker_id: 'one', attendance_date: '2026-10-12', status: 'present', attendance_source: 'outside_work', manual_override: false,
+    biometric_sync_metadata: { outside_work: { movement_ids: ['final-movement'] } } }
+  const open = buildSupervisorSheet({ workers: roster, attendance: [row], date: '2026-10-12', exactPopulation: true })
+  expect(missingIds(open.groups)).not.toContain('one')
+  expect(missingIds(buildSupervisorSheet({ workers: roster, attendance: [row], date: '2026-10-13', exactPopulation: true }).groups)).toContain('one')
+  expect(missingIds(buildSupervisorSheet({ workers: roster, attendance: [row], date: '2026-10-12', exactPopulation: true, preserveFinalSheet: true }).groups)).toContain('one')
+  expect(missingIds(buildSupervisorSheet({ workers: roster, attendance: [{ ...row, biometric_sync_metadata: {} }], date: '2026-10-12', exactPopulation: true }).groups)).toContain('one')
+})

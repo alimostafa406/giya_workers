@@ -70,7 +70,7 @@ export default function SupervisorSheet() {
           getWorkerBiometricSearchIndexRequest(),
         ])
         if (!mountedRef.current || (frozenRef.current && !reload) || selectedDateRef.current !== date) return
-        setReadOnly(Boolean(history && (!history.available || history.read_only || !history.exact_population)) || draft?.read_only === true)
+        setReadOnly(Boolean(history && (!history.available || history.read_only || !history.exact_population)) || draft?.read_only === true || draft?.status === 'finalized')
         setExactPopulation(history?.exact_population === true)
         setReconstructed(history?.reconstructed === true)
         const restored = savedSupervisorResults(asArray(attendanceResult.data), date)
@@ -144,9 +144,49 @@ export default function SupervisorSheet() {
     return () => { disposed = true; window.clearInterval(timer) }
   }, [date, historical, locked, finalWindow, frozen, refreshSnapshot])
 
+  // A frozen population is immutable evidence, but FINAL Outside Work can
+  // remove actionable decisions while the sheet is still open.
+  useEffect(() => {
+    if (!frozen || readOnly || !draftContext || draftState === 'finalized') return undefined
+    let stopped = false, busy = false
+    const refreshOutsideWork = async () => {
+      if (busy || savingRef.current || document.visibilityState === 'hidden') return
+      busy = true
+      try {
+        const context = await getSupervisorDraftRequest(date)
+        if (stopped || selectedDateRef.current !== date || savingRef.current) return
+        if (context?.status === 'finalized') {
+          setReadOnly(true); setDraftConflict(true)
+          return
+        }
+        if (context?.snapshot_token !== draftContext.snapshot_token) {
+          const review = await getHistoricalSupervisorReviewRequest(date)
+          if (stopped || selectedDateRef.current !== date || savingRef.current || !review?.exact_population) return
+          const excluded = new Set((review.outside_work_excluded_worker_ids || []).map(String))
+          const nextIds = new Set(asArray(review.workers).map(worker => String(worker.id)))
+          const previousIds = new Set(workers.map(worker => String(worker.id)))
+          const onlyOutsideRemoved = [...nextIds].every(id => previousIds.has(id))
+            && [...previousIds].filter(id => !nextIds.has(id)).every(id => excluded.has(id))
+          setWorkers(asArray(review.workers)); setTeams(asArray(review.teams)); setAttendance(asArray(review.attendance))
+          setResults(current => Object.fromEntries(Object.entries(current).filter(([id]) => nextIds.has(id))))
+          if (onlyOutsideRemoved && context.revision === draftContext.revision) {
+            setDraftContext(context)
+            baselineRef.current = Object.fromEntries(Object.entries(baselineRef.current).filter(([id]) => nextIds.has(id)))
+          } else setDraftConflict(true)
+        } else if (context?.revision !== draftContext.revision || context?.official_token !== draftContext.official_token) {
+          setDraftConflict(true)
+        }
+      } catch { /* Preserve current choices; backend version checks fail closed. */ }
+      finally { busy = false }
+    }
+    const timer = window.setInterval(refreshOutsideWork, 15_000)
+    window.addEventListener('focus', refreshOutsideWork)
+    return () => { stopped = true; window.clearInterval(timer); window.removeEventListener('focus', refreshOutsideWork) }
+  }, [date, frozen, readOnly, draftContext, draftState, workers])
+
   const availableTeams = useMemo(() => supervisorSheetTeams(teams), [teams])
-  const sheet = useMemo(() => buildSupervisorSheet({ workers: locked ? [] : workers, attendance, mappings, date, teamId, exactPopulation }), [workers, attendance, mappings, date, teamId, locked, exactPopulation])
-  const allSheet = useMemo(() => buildSupervisorSheet({ workers: locked ? [] : workers, attendance, mappings, date, exactPopulation }), [workers, attendance, mappings, date, locked, exactPopulation])
+  const sheet = useMemo(() => buildSupervisorSheet({ workers: locked ? [] : workers, attendance, mappings, date, teamId, exactPopulation, preserveFinalSheet: readOnly || draftState === 'finalized' }), [workers, attendance, mappings, date, teamId, locked, exactPopulation, readOnly, draftState])
+  const allSheet = useMemo(() => buildSupervisorSheet({ workers: locked ? [] : workers, attendance, mappings, date, exactPopulation, preserveFinalSheet: readOnly || draftState === 'finalized' }), [workers, attendance, mappings, date, locked, exactPopulation, readOnly, draftState])
   const missingSelections = unselectedSupervisorWorkerIds(allSheet.groups, results)
   const selectedTeamName = availableTeams.find((team) => String(team.id) === teamId)?.name || t('supervisorSheet.allTeams')
   const formattedDate = new Intl.DateTimeFormat(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : 'en-GB', {
@@ -188,7 +228,7 @@ export default function SupervisorSheet() {
   }
 
   const saveResults = async () => {
-    if (!admin?.is_active || !frozen || readOnly || loading || error || savingRef.current || !allSheet.workerCount || !draftContext || draftConflict) return
+    if (!admin?.is_active || !frozen || readOnly || loading || error || savingRef.current || !draftContext || draftConflict) return
     if (missingSelections.length) {
       setSaveError(t('supervisorSheet.missingSelections', { count: missingSelections.length }))
       return
@@ -202,7 +242,7 @@ export default function SupervisorSheet() {
       const context = await persistDraft()
       draftSaved = true
       const completed = await submitSupervisorDraftRequest({ date, context })
-      setDraftContext(completed); setDraftState('finalized')
+      setDraftContext(completed); setDraftState('finalized'); setReadOnly(true)
       baselineStateRef.current = 'finalized'
       setSaved(true)
     } catch (requestError) {
@@ -242,8 +282,8 @@ export default function SupervisorSheet() {
       <button type="button" className="btn-primary" disabled={locked || (finalWindow && !frozen) || loading || Boolean(error) || !sheet.workerCount} onClick={() => printSheet('results')}>{t('supervisorSheet.printResults')}</button>
       <button type="button" className="btn-secondary" disabled={saving} onClick={() => { setResults({ ...baselineRef.current }); setSaved(baselineStateRef.current === 'finalized'); setDraftState(baselineStateRef.current); setPrintMode('blank') }}>{t('supervisorSheet.clearResults')}</button>
       {admin?.is_active && <>
-        <button type="button" className="btn-secondary" disabled={!frozen || readOnly || loading || Boolean(error) || saving || !allSheet.workerCount || !draftContext || draftConflict} onClick={saveDraft}>{t('supervisorSheet.saveDraft')}</button>
-        <button type="button" className="btn-primary" disabled={!frozen || readOnly || loading || Boolean(error) || saving || !allSheet.workerCount || !draftContext || draftConflict} onClick={saveResults}>{t('supervisorSheet.saveResults')}</button>
+        <button type="button" className="btn-secondary" disabled={!frozen || readOnly || loading || Boolean(error) || saving || !draftContext || draftConflict} onClick={saveDraft}>{t('supervisorSheet.saveDraft')}</button>
+        <button type="button" className="btn-primary" disabled={!frozen || readOnly || loading || Boolean(error) || saving || !draftContext || draftConflict} onClick={saveResults}>{t('supervisorSheet.saveResults')}</button>
       </>}
       {(draftConflict || (error && frozen)) && <button type="button" className="btn-secondary" disabled={saving} onClick={() => {
         if (window.confirm(t('supervisorSheet.reloadDraftConfirm'))) { setSaveError(''); refreshSnapshot({ final: true, reload: true }).catch(() => {}) }

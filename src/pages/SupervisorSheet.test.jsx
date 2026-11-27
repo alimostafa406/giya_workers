@@ -241,7 +241,7 @@ describe('supervisor attendance sheet', () => {
     await screen.findByText('ROBERT')
     expect(mocks.history).toHaveBeenLastCalledWith('2026-10-13')
     expect(container.querySelector('.absence-report-header').textContent).toContain('13/10/2026')
-    expect(vi.getTimerCount()).toBe(0)
+    expect(vi.getTimerCount()).toBe(1)
     fireEvent.focus(window); fireEvent(document, new Event('visibilitychange'))
     await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
     expect(mocks.history).toHaveBeenCalledTimes(1)
@@ -377,4 +377,32 @@ describe('supervisor attendance sheet', () => {
     expect(css).toMatch(/\.supervisor-sheet-print-only\s*\{\s*display:\s*inline\s*!important/)
     expect(page).toContain('size: A4 portrait')
   })
+})
+
+
+it('removes a newly FINAL Outside Work worker on focus without losing another worker choice', async () => {
+  await showPaintTeam()
+  fireEvent.click(within(screen.getByRole('group', { name: 'ROBERT Result' })).getByRole('button', { name: 'P' }))
+  const prior = (await mocks.workers()).data
+  mocks.draft.mockResolvedValue({ revision: 0, status: 'unsaved', results: {}, snapshot_token: 'outside-updated', official_token: 'official' })
+  mocks.history.mockResolvedValue({ available: true, exact_population: true, read_only: false,
+    workers: prior.filter(worker => worker.id === 'one'), teams: [{ id: 'paint', name: 'Peinture Raghibe' }], attendance: [],
+    outside_work_excluded_worker_ids: ['other'] })
+  fireEvent.focus(window)
+  await waitFor(() => expect(mocks.history).toHaveBeenCalled())
+  await waitFor(() => expect(screen.getAllByText('Worker count: 1')[0]).toBeTruthy())
+  expect(within(screen.getByRole('group', { name: 'ROBERT Result' })).getByRole('button', { name: 'P' }).getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: /^(Save|Finalize) Results$/ }))
+  await waitFor(() => expect(mocks.saveDraft).toHaveBeenCalled())
+  expect(mocks.saveDraft.mock.calls.at(-1)[0].results).toEqual({ one: 'P' })
+})
+
+it('allows final submission of an all-Outside-Work empty actionable population', async () => {
+  mocks.finalize.mockResolvedValue({ available: true, exact_population: true, read_only: false, workers: [], teams: [], attendance: [] })
+  render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+  const save = await screen.findByRole('button', { name: /^(Save|Finalize) Results$/ })
+  await waitFor(() => expect(save.disabled).toBe(false))
+  fireEvent.click(save)
+  await waitFor(() => expect(mocks.save).toHaveBeenCalled())
+  expect(mocks.saveDraft.mock.calls.at(-1)[0].results).toEqual({})
 })
