@@ -406,3 +406,22 @@ it('allows final submission of an all-Outside-Work empty actionable population',
   await waitFor(() => expect(mocks.save).toHaveBeenCalled())
   expect(mocks.saveDraft.mock.calls.at(-1)[0].results).toEqual({})
 })
+
+
+it('keeps displayed November dates mapped to ISO and blocks only a future calendar selection', async () => {
+  vi.setSystemTime(new Date('2026-11-27T10:00:00Z'))
+  const { container } = render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+  await screen.findByText('ROBERT')
+  const picker = screen.getByLabelText('Date')
+  fireEvent.change(picker, { target: { value: '2026-11-22' } })
+  await waitFor(() => expect(mocks.history).toHaveBeenLastCalledWith('2026-11-22'))
+  await waitFor(() => expect(container.querySelector('.absence-report-header').textContent).toContain('22/11/2026'))
+  expect(picker.value).toBe('2026-11-22')
+  fireEvent.change(picker, { target: { value: '2026-11-23' } })
+  await waitFor(() => expect(mocks.history).toHaveBeenLastCalledWith('2026-11-23'))
+  fireEvent.change(picker, { target: { value: '2026-11-27' } })
+  await waitFor(() => expect(picker.value).toBe('2026-11-27'))
+  fireEvent.change(picker, { target: { value: '2026-11-28' } })
+  expect(picker.value).toBe('2026-11-27')
+  expect(mocks.history.mock.calls.every(([date]) => /^\d{4}-\d{2}-\d{2}$/.test(date))).toBe(true)
+})

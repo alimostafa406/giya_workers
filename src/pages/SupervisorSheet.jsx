@@ -1,3 +1,4 @@
+import { canonicalWorkDate, isNonFutureKinshasaWorkDate } from '../utils/workDate.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAttendanceRequest } from '../api/attendanceApi'
@@ -262,8 +263,8 @@ export default function SupervisorSheet() {
     <div className="absence-report-screen-only surface-card mb-5 flex flex-wrap items-end gap-3 p-4">
       <label className="flex flex-col gap-1 text-sm font-bold">{t('attendance.date')}
         <input aria-label={t('attendance.date')} type="date" max={today} value={date} disabled={saving} className="input-base block" dir="ltr" onChange={(event) => {
-          const next = event.target.value
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(next) || next > kinshasaClock().date || next === date) return
+          const next = canonicalWorkDate(event.target.value)
+          if (!next || !isNonFutureKinshasaWorkDate(next) || next === date) return
           selectedDateRef.current = next; frozenRef.current = false; baselineRef.current = {}
           editingRef.current = false; setDraftContext(null); setDraftState('unsaved'); setDraftConflict(false)
           baselineStateRef.current = 'unsaved'
