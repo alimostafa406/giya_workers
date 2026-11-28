@@ -76,8 +76,10 @@ export default function SupervisorSheet() {
         setReadOnly(Boolean(history && (!history.available || history.read_only || !history.exact_population)) || draft?.read_only === true || draft?.status === 'finalized')
         setExactPopulation(history?.exact_population === true)
         setReconstructed(history?.reconstructed === true)
+        const outsideIds = new Set((history?.outside_work_excluded_worker_ids || []).map(String))
+        const activeRoster = asArray(workersResult.data).filter(worker => !outsideIds.has(String(worker.id)))
         const restored = savedSupervisorResults(asArray(attendanceResult.data), date)
-        const choices = history?.exact_population ? initialSupervisorChoices(asArray(workersResult.data).map((w) => String(w.id)), restored, draft?.results) : restored
+        const choices = history?.exact_population ? initialSupervisorChoices(activeRoster.map((w) => String(w.id)), restored, draft?.results) : restored
         baselineRef.current = choices
         if (!editingRef.current || reload) setResults(choices)
         editingRef.current = false
@@ -89,8 +91,8 @@ export default function SupervisorSheet() {
         setDraftState(state)
         setSaved(state === 'finalized')
         setDraftConflict(false)
-        if (draft?.snapshot_changed) setSaveError(t('supervisorSheet.populationChanged'))
-        setWorkers(asArray(workersResult.data))
+        if (draft?.snapshot_changed && draft?.status !== 'finalized') setSaveError(t('supervisorSheet.populationChanged'))
+        setWorkers(activeRoster)
         setTeams(asArray(teamsResult.data))
         setAttendance(asArray(attendanceResult.data))
         setMappings(asArray(mappingsResult.data))
@@ -305,7 +307,7 @@ export default function SupervisorSheet() {
       {finalWindow && !frozen && !loading && <button type="button" className="btn-secondary" onClick={() => refreshSnapshot({ final: true }).catch(() => {})}>{t('supervisorSheet.retryFinalCheck')}</button>}
     </div>
     {error ? <p role="alert" className="alert alert--error mb-4">{error}</p> : null}
-    <AttendanceConflictDetails rows={attendanceConflicts} results={results} language={language} />
+    <AttendanceConflictDetails rows={attendanceConflicts.filter(row => row.outside_work_final !== true && row.conflict_type !== 'outside_work')} results={results} language={language} />
     {saveError ? <p role="alert" className="alert alert--error mb-4">{saveError}</p> : null}
     {saveMessage ? <p role="status" className="alert mb-4">{saveMessage}</p> : null}
     {frozen && draftContext && <p className="absence-report-screen-only mb-3 text-sm font-semibold" role="status">

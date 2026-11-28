@@ -427,15 +427,21 @@ it('keeps displayed November dates mapped to ISO and blocks only a future calend
 })
 
 
-it('shows exact KAFUTI A/A and FINAL Outside Work O evidence on a finalized sheet', async () => {
-  mocks.draft.mockResolvedValue({ revision: 2, status: 'finalized', results: { one: 'A' }, snapshot_token: 'population', official_token: 'official',
-    conflicts: [{ worker_id:'one',worker_name:'KAFUTI',employee_code:'95',attendance_date:'2026-10-14',protected_choice:'A',supervisor_choice:'A',conflict_type:'outside_work',attendance_source:'manual' }] })
-  render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
-  expect(await screen.findByText('Protected decision: Absent (A)')).toBeTruthy()
-  expect(screen.getByText('Supervisor choice: Absent (A)')).toBeTruthy()
-  expect(screen.getByText(/FINAL Outside Work \(O\) conflicts/)).toBeTruthy()
-  expect(screen.getByText('The supervisor choice matches the protected decision.')).toBeTruthy()
-  expect(mocks.save).not.toHaveBeenCalled()
+it('excludes KAFUTI from a finalized active view without changing stored A or exposing the admin O conflict', async () => {
+ const draft={ revision:2,status:'finalized',results:{one:'A'},snapshot_token:'population',official_token:'official',snapshot_changed:true,
+  conflicts:[{worker_id:'one',worker_name:'KAFUTI',protected_choice:'A',supervisor_choice:'A',conflict_type:'outside_work',outside_work_final:true}] }
+ const before=JSON.stringify(draft)
+ mocks.draft.mockResolvedValue(draft)
+ mocks.finalize.mockResolvedValue({available:true,exact_population:true,read_only:false,
+  workers:[{id:'one',full_name:'KAFUTI',employee_code:'95',team_id:'paint',team_name:'Peinture Raghibe'}],
+  attendance:[],teams:[],outside_work_excluded_worker_ids:['one']})
+ render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+ await screen.findByText('No workers in the selected team.')
+ expect(screen.queryByText(/KAFUTI/)).toBeNull()
+ expect(screen.queryByText(/Protected decision/)).toBeNull()
+ expect(screen.queryByRole('group',{name:'KAFUTI Result'})).toBeNull()
+ expect(JSON.stringify(draft)).toBe(before)
+ expect(mocks.save).not.toHaveBeenCalled()
 })
 
 it('shows structured protected-submit values while leaving the saved draft intact', async () => {
