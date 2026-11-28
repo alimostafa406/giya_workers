@@ -1,5 +1,11 @@
 import { getSupabaseClient } from '../lib/supabase'
 
+export async function getOutsideWorkAttendanceConflicts(start, end) {
+  const { data, error } = await getSupabaseClient().rpc('admin_get_outside_work_attendance_conflicts', { p_start: start, p_end: end })
+  if (error) throw error
+  return data || []
+}
+
 export async function getOutsideWorkMovements(start, end, { reportStatus } = {}) {
   if (reportStatus !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(end || '') || start > end || !['final', 'draft', 'all'].includes(reportStatus))) throw new Error('Invalid report date range or status')
   const rows = []

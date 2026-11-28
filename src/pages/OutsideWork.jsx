@@ -1,7 +1,8 @@
+import OutsideWorkAttendanceWarnings from '../components/OutsideWork/OutsideWorkAttendanceWarnings.jsx'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getWorkersRequest } from '../api/workersApi'
-import { deleteOutsideWorkMovement, getOutsideWorkMovements, getOutsideWorkTeams, saveOutsideWorkMovement } from '../api/outsideWorkApi'
+import { deleteOutsideWorkMovement, getOutsideWorkMovements, getOutsideWorkTeams, saveOutsideWorkMovement, getOutsideWorkAttendanceConflicts } from '../api/outsideWorkApi'
 import { getErrorMessage } from '../api/axios'
 import { useTranslation } from '../i18n/LanguageContext'
 import { kinshasaClock } from '../utils/attendanceOperationalGate'
@@ -124,6 +125,7 @@ export default function OutsideWork() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [attendanceConflicts, setAttendanceConflicts] = useState([])
   const generation = useRef(0)
   const entryRef = useRef(null)
   useEffect(() => {
@@ -136,12 +138,13 @@ export default function OutsideWork() {
     const current = ++generation.current
     setLoading(true)
     try {
-      const [rows, roster, activeTeams, identities] = await Promise.all([
+      const [rows, roster, activeTeams, identities, conflicts] = await Promise.all([
         getOutsideWorkMovements(days[0], days[6]), getWorkersRequest({ includePayrollProfiles: false }),
-        getOutsideWorkTeams(), getWorkerBiometricSearchIndexRequest(),
+        getOutsideWorkTeams(), getWorkerBiometricSearchIndexRequest(), getOutsideWorkAttendanceConflicts(days[0], days[6]),
       ])
       if (current !== generation.current) return
       setMovements(rows)
+      setAttendanceConflicts(conflicts)
       setWorkers(roster.data || [])
       setTeams(activeTeams)
       setMappings(identities.data || [])
@@ -253,6 +256,7 @@ export default function OutsideWork() {
     </div>
     {error && <p role="alert" className="alert alert--error mb-4">{error}</p>}
     {success && <p role="status" className="mb-4 text-sm font-bold text-emerald-700">{success}</p>}
+    <OutsideWorkAttendanceWarnings conflicts={attendanceConflicts} movements={movements} date={selectedDate} language={language} />
     {tab !== 'report' ? <div id="outside-work-entry-view" role="tabpanel" aria-labelledby="outside-work-entry-tab" className="outside-work-entry-layout">
       <div ref={entryRef}><OutsideWorkEntryForm key={form?.id || 'new'} value={form || newOutsideWorkForm(selectedDate)} onChange={setForm} workers={workers} teams={teams} biometricIds={biometricIds} labels={l} busy={busy || loading} showDate={false}
         onSave={save} onCancel={startNew} /></div>

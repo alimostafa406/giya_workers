@@ -7,9 +7,9 @@ import { LanguageProvider } from '../i18n/LanguageContext'
 import OutsideWork from './OutsideWork'
 
 globalThis.React = React
-const mocks = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), remove: vi.fn(), workers: vi.fn(), teams: vi.fn(), mappings: vi.fn() }))
+const mocks = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), remove: vi.fn(), workers: vi.fn(), teams: vi.fn(), mappings: vi.fn(), conflicts: vi.fn() }))
 vi.mock('../api/outsideWorkApi', () => ({ getOutsideWorkMovements: mocks.list,
-  getOutsideWorkTeams: mocks.teams, saveOutsideWorkMovement: mocks.save, deleteOutsideWorkMovement: mocks.remove }))
+  getOutsideWorkTeams: mocks.teams, saveOutsideWorkMovement: mocks.save, deleteOutsideWorkMovement: mocks.remove, getOutsideWorkAttendanceConflicts: mocks.conflicts }))
 vi.mock('../api/workersApi', () => ({ getWorkersRequest: mocks.workers }))
 vi.mock('../api/biometricMappingApi', () => ({ getWorkerBiometricSearchIndexRequest: mocks.mappings }))
 vi.mock('../utils/attendanceOperationalGate', () => ({ kinshasaClock: () => ({ date: '2026-10-14' }) }))
@@ -28,6 +28,7 @@ const movement = { id: 'movement-1', work_date: '2026-10-13', team_id: 'paint', 
   outside_work_movement_workers: [{ id: 'child-1', worker_id: 'robert', worker_name: 'ROBERT', start_time: '09:00:00', end_time: '17:00:00' }] }
 let persisted
 beforeEach(() => {
+  mocks.conflicts.mockResolvedValue([])
   localStorage.setItem('workers_app_language', 'en')
   sessionStorage.clear()
   persisted = [structuredClone(movement)]
@@ -47,6 +48,18 @@ beforeEach(() => {
   mocks.mappings.mockResolvedValue({ data: [{ worker_id: 'jeremie', device_employee_no: '064', is_active: true, mapping_review_state: 'confirmed' }] })
   window.confirm = vi.fn(() => true)
   window.print = vi.fn()
+})
+
+it('keeps FINAL Outside Work attendance conflicts in audit history, not unresolved warnings', async () => {
+ mocks.conflicts.mockResolvedValue([{worker_id:'robert',worker_name:'ROBERT',attendance_date:'2026-10-13',movement_ids:['movement-1']}])
+ render(<MemoryRouter><LanguageProvider><OutsideWork /></LanguageProvider></MemoryRouter>)
+ await screen.findByLabelText('Date')
+ fireEvent.change(screen.getByLabelText('Date'), {target:{value:'2026-10-13'}})
+ const history=await screen.findByTestId('outside-work-attendance-history')
+ expect(history.textContent).toContain('ROBERT')
+ expect(history.textContent).toContain('2026-10-13')
+ expect(screen.queryByTestId('outside-work-unresolved')).toBeNull()
+ expect(mocks.save).not.toHaveBeenCalled()
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 function WorkersStub() {
@@ -562,4 +575,23 @@ describe('outside-work separate movement ranges', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Print Report' }))
     expect(window.print).toHaveBeenCalledOnce()
   })
+})
+
+
+it('renders the real KAFUTI November 26 FINAL case without an unresolved alert', async () => {
+ const worker='d5a3617f-0b81-448c-82af-2e0925380698'
+ const id='4cf2fc2e-e9bf-4763-92e9-dac297382511'
+ persisted=[{...structuredClone(movement),id,work_date:'2026-11-26',foreman_name:'SALEH MENUISIER',
+  outside_work_movement_workers:[{id:'kafuti-participation',worker_id:worker,worker_name:'KAFUTI',start_time:'08:00:00',end_time:'17:00:00'}]}]
+ mocks.conflicts.mockResolvedValue([{worker_id:worker,worker_name:'KAFUTI',attendance_date:'2026-11-26',movement_ids:[id]}])
+ render(<MemoryRouter><LanguageProvider><OutsideWork /></LanguageProvider></MemoryRouter>)
+ fireEvent.change(await screen.findByLabelText('Date'),{target:{value:'2026-11-26'}})
+ const audit=await screen.findByTestId('outside-work-attendance-history')
+ expect(audit.textContent).toContain('KAFUTI')
+ expect(audit.textContent).toContain('2026-11-26')
+ expect(audit.textContent).toContain('No supervisor action is required')
+ expect(screen.queryByTestId('outside-work-unresolved')).toBeNull()
+ expect(screen.queryByRole('alert')).toBeNull()
+ expect(mocks.save).not.toHaveBeenCalled()
+ expect(mocks.remove).not.toHaveBeenCalled()
 })
