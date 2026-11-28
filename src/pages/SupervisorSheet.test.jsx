@@ -425,3 +425,26 @@ it('keeps displayed November dates mapped to ISO and blocks only a future calend
   expect(picker.value).toBe('2026-11-27')
   expect(mocks.history.mock.calls.every(([date]) => /^\d{4}-\d{2}-\d{2}$/.test(date))).toBe(true)
 })
+
+
+it('shows exact KAFUTI A/A and FINAL Outside Work O evidence on a finalized sheet', async () => {
+  mocks.draft.mockResolvedValue({ revision: 2, status: 'finalized', results: { one: 'A' }, snapshot_token: 'population', official_token: 'official',
+    conflicts: [{ worker_id:'one',worker_name:'KAFUTI',employee_code:'95',attendance_date:'2026-10-14',protected_choice:'A',supervisor_choice:'A',conflict_type:'outside_work',attendance_source:'manual' }] })
+  render(<MemoryRouter><LanguageProvider><SupervisorSheet /></LanguageProvider></MemoryRouter>)
+  expect(await screen.findByText('Protected decision: Absent (A)')).toBeTruthy()
+  expect(screen.getByText('Supervisor choice: Absent (A)')).toBeTruthy()
+  expect(screen.getByText(/FINAL Outside Work \(O\) conflicts/)).toBeTruthy()
+  expect(screen.getByText('The supervisor choice matches the protected decision.')).toBeTruthy()
+  expect(mocks.save).not.toHaveBeenCalled()
+})
+
+it('shows structured protected-submit values while leaving the saved draft intact', async () => {
+  mocks.save.mockRejectedValue({ code:'23514',details:JSON.stringify({ worker_id:'one',worker_name:'ROBERT',protected_choice:'A',supervisor_choice:'P',conflict_type:'manual',attendance_source:'manual' }) })
+  await showPaintTeam()
+  fireEvent.click(within(screen.getByRole('group', { name:'ROBERT Result' })).getByRole('button', { name:'P' }))
+  fireEvent.click(screen.getByRole('button', { name:/^(Save|Finalize) Results$/ }))
+  expect(await screen.findByText('Protected decision: Absent (A)')).toBeTruthy()
+  expect(screen.getByText('Supervisor choice: Present (P)')).toBeTruthy()
+  expect(mocks.saveDraft).toHaveBeenCalled()
+  expect(within(screen.getByRole('group', { name:'ROBERT Result' })).getByRole('button', { name:'P' }).getAttribute('aria-pressed')).toBe('true')
+})

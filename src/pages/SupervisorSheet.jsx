@@ -1,3 +1,4 @@
+import AttendanceConflictDetails from '../components/Attendance/AttendanceConflictDetails.jsx'
 import { canonicalWorkDate, isNonFutureKinshasaWorkDate } from '../utils/workDate.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -37,6 +38,7 @@ export default function SupervisorSheet() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saveError, setSaveError] = useState('')
+  const [attendanceConflicts, setAttendanceConflicts] = useState([])
   const [saveMessage, setSaveMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -79,6 +81,7 @@ export default function SupervisorSheet() {
         baselineRef.current = choices
         if (!editingRef.current || reload) setResults(choices)
         editingRef.current = false
+        setAttendanceConflicts(draft?.conflicts || [])
         setDraftContext(draft)
         const officiallyComplete = choices && Object.keys(choices).length > 0 && Object.keys(choices).every((id) => restored[id])
         const state = draft?.status === 'finalized' || (draft?.status !== 'draft' && officiallyComplete) ? 'finalized' : draft?.status === 'draft' ? 'saved' : 'unsaved'
@@ -156,6 +159,7 @@ export default function SupervisorSheet() {
       try {
         const context = await getSupervisorDraftRequest(date)
         if (stopped || selectedDateRef.current !== date || savingRef.current) return
+        setAttendanceConflicts(context?.conflicts || [])
         if (context?.status === 'finalized') {
           setReadOnly(true); setDraftConflict(true)
           return
@@ -214,6 +218,7 @@ export default function SupervisorSheet() {
     const workerIds = supervisorReviewWorkerIds(allSheet.groups)
     const selectedResults = Object.fromEntries(workerIds.map((id) => [id, results[id]]))
     const context = await saveSupervisorDraftRequest({ date, context: draftContext, results: selectedResults })
+    setAttendanceConflicts(context.conflicts || [])
     setDraftContext(context); setDraftState('saved'); baselineRef.current = selectedResults; baselineStateRef.current = 'saved'
     return context
   }
@@ -243,12 +248,20 @@ export default function SupervisorSheet() {
       const context = await persistDraft()
       draftSaved = true
       const completed = await submitSupervisorDraftRequest({ date, context })
-      setDraftContext(completed); setDraftState('finalized'); setReadOnly(true)
+      setAttendanceConflicts(completed.conflicts || []); setDraftContext(completed); setDraftState('finalized'); setReadOnly(true)
       baselineStateRef.current = 'finalized'
       setSaved(true)
     } catch (requestError) {
       if (requestError.code === '40001') { setDraftConflict(true); setSaveError(t('supervisorSheet.draftConflict')) }
-      else setSaveError(t(draftSaved ? 'supervisorSheet.finalFailedDraftSafe' : 'supervisorSheet.draftSaveFailed'))
+      else {
+        setSaveError(t(draftSaved ? 'supervisorSheet.finalFailedDraftSafe' : 'supervisorSheet.draftSaveFailed'))
+        if (requestError.code === '23514' && requestError.details) {
+          try {
+            const detail = JSON.parse(requestError.details)
+            if (detail?.worker_id && detail?.conflict_type) setAttendanceConflicts([detail])
+          } catch { /* Non-JSON backend details are not structured worker conflicts. */ }
+        }
+      }
     } finally {
       savingRef.current = false; setSaving(false)
     }
@@ -270,7 +283,7 @@ export default function SupervisorSheet() {
           baselineStateRef.current = 'unsaved'
           setFrozen(false); setLoading(true); setWorkers([]); setAttendance([]); setResults({}); setSaved(false)
           setExactPopulation(false); setReconstructed(false)
-          setError(''); setSaveError(''); setSaveMessage(''); setPrintMode('blank'); setNow(new Date()); setDate(next)
+          setAttendanceConflicts([]); setError(''); setSaveError(''); setSaveMessage(''); setPrintMode('blank'); setNow(new Date()); setDate(next)
         }} />
       </label>
       <label className="min-w-52 text-sm font-bold">{t('attendance.team')}
@@ -292,6 +305,7 @@ export default function SupervisorSheet() {
       {finalWindow && !frozen && !loading && <button type="button" className="btn-secondary" onClick={() => refreshSnapshot({ final: true }).catch(() => {})}>{t('supervisorSheet.retryFinalCheck')}</button>}
     </div>
     {error ? <p role="alert" className="alert alert--error mb-4">{error}</p> : null}
+    <AttendanceConflictDetails rows={attendanceConflicts} results={results} language={language} />
     {saveError ? <p role="alert" className="alert alert--error mb-4">{saveError}</p> : null}
     {saveMessage ? <p role="status" className="alert mb-4">{saveMessage}</p> : null}
     {frozen && draftContext && <p className="absence-report-screen-only mb-3 text-sm font-semibold" role="status">
